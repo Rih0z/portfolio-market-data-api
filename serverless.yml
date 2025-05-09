@@ -1,0 +1,96 @@
+service: pfwise-api
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs16.x
+  region: ${opt:region, 'ap-northeast-1'}
+  stage: ${opt:stage, 'dev'}
+  profile: ${opt:profile, ''}
+  memorySize: 256
+  timeout: 30
+  
+  environment:
+    NODE_ENV: ${self:provider.stage}
+    ADMIN_EMAIL: ${env:ADMIN_EMAIL, ''}
+    ADMIN_API_KEY: ${env:ADMIN_API_KEY, ''}
+    CRON_SECRET: ${env:CRON_SECRET, ''}
+    DAILY_REQUEST_LIMIT: ${env:DAILY_REQUEST_LIMIT, '5000'}
+    MONTHLY_REQUEST_LIMIT: ${env:MONTHLY_REQUEST_LIMIT, '100000'}
+    DISABLE_ON_LIMIT: ${env:DISABLE_ON_LIMIT, 'true'}
+    CACHE_TIME_US_STOCK: ${env:CACHE_TIME_US_STOCK, '3600'}
+    CACHE_TIME_JP_STOCK: ${env:CACHE_TIME_JP_STOCK, '3600'}
+    CACHE_TIME_MUTUAL_FUND: ${env:CACHE_TIME_MUTUAL_FUND, '10800'}
+    CACHE_TIME_EXCHANGE_RATE: ${env:CACHE_TIME_EXCHANGE_RATE, '21600'}
+  
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:*
+      Resource: !GetAtt MarketDataCacheTable.Arn
+    - Effect: Allow
+      Action:
+        - sns:Publish
+      Resource: !Ref AlertTopic
+
+functions:
+  marketData:
+    handler: src/functions/marketData.handler
+    events:
+      - http:
+          path: api/market-data
+          method: get
+          cors: true
+  
+  preWarmCache:
+    handler: src/functions/preWarmCache.handler
+    events:
+      - schedule: rate(1 hour)
+  
+  getStatus:
+    handler: src/functions/admin/getStatus.handler
+    events:
+      - http:
+          path: admin/status
+          method: get
+          cors: true
+          private: true
+  
+  resetUsage:
+    handler: src/functions/admin/resetUsage.handler
+    events:
+      - http:
+          path: admin/reset
+          method: post
+          cors: true
+          private: true
+
+resources:
+  Resources:
+    MarketDataCacheTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${self:provider.stage}-cache
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: key
+            AttributeType: S
+        KeySchema:
+          - AttributeName: key
+            KeyType: HASH
+        TimeToLiveSpecification:
+          AttributeName: expires
+          Enabled: true
+    
+    AlertTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: ${self:service}-${self:provider.stage}-alerts
+        Subscription:
+          - Protocol: email
+            Endpoint: ${env:ADMIN_EMAIL, ''}
+
+plugins:
+  - serverless-dotenv-plugin
+  - serverless-offline

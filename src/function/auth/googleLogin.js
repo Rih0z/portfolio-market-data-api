@@ -1,9 +1,10 @@
 /**
- * Google認証ログインハンドラー - 認証コードを受け取りセッション作成
+ * Google認証ログインハンドラー - 認証コードを受け取りセッションを作成する
  * 
  * @file src/function/auth/googleLogin.js
- * @author Koki Riho
+ * @author Portfolio Manager Team
  * @created 2025-05-12
+ * @updated 2025-05-13
  */
 'use strict';
 
@@ -12,7 +13,7 @@ const {
   verifyIdToken, 
   createUserSession 
 } = require('../../services/googleAuthService');
-const { formatResponse, formatErrorResponse } = require('../../utils/response');
+const { formatResponse, formatErrorResponse } = require('../../utils/responseFormatter');
 const { createSessionCookie } = require('../../utils/cookieParser');
 
 /**
@@ -20,7 +21,7 @@ const { createSessionCookie } = require('../../utils/cookieParser');
  * @param {Object} event - API Gatewayイベント
  * @returns {Object} - API Gatewayレスポンス
  */
-exports.handler = async (event) => {
+module.exports.handler = async (event) => {
   try {
     const requestBody = JSON.parse(event.body || '{}');
     const { code, redirectUri } = requestBody;
@@ -28,11 +29,7 @@ exports.handler = async (event) => {
     if (!code) {
       return formatErrorResponse({
         statusCode: 400,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
-          'Access-Control-Allow-Credentials': 'true'
-        },
+        code: 'INVALID_PARAMS',
         message: '認証コードが不足しています'
       });
     }
@@ -54,23 +51,15 @@ exports.handler = async (event) => {
       tokenExpiry: new Date(Date.now() + tokens.expires_in * 1000).toISOString()
     });
     
-    // セッションCookieを作成（1週間有効）
+    // セッションCookieを作成（7日間有効）
     const maxAge = 60 * 60 * 24 * 7; // 7日間（秒単位）
     const sessionCookie = createSessionCookie(session.sessionId, maxAge);
-    
-    // レスポンスヘッダー
-    const headers = {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
-      'Access-Control-Allow-Credentials': 'true',
-      'Set-Cookie': sessionCookie
-    };
     
     // レスポンスを整形
     return formatResponse({
       statusCode: 200,
-      headers,
-      data: {
+      body: {
+        success: true,
         isAuthenticated: true,
         user: {
           id: userInfo.sub,
@@ -82,19 +71,17 @@ exports.handler = async (event) => {
           expiresAt: session.expiresAt
         }
       },
-      source: 'Google OAuth',
-      lastUpdated: new Date().toISOString()
+      headers: {
+        'Set-Cookie': sessionCookie
+      }
     });
   } catch (error) {
     console.error('Google認証エラー:', error);
     return formatErrorResponse({
       statusCode: 401,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
-        'Access-Control-Allow-Credentials': 'true'
-      },
-      message: '認証に失敗しました: ' + error.message
+      code: 'AUTH_ERROR',
+      message: '認証に失敗しました',
+      details: error.message
     });
   }
 };

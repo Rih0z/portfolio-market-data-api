@@ -4,6 +4,7 @@
  * @file src/services/googleAuthService.js
  * @author Koki Riho
  * @created 2025-05-12
+ * @updated 2025-05-13
  */
 'use strict';
 
@@ -14,8 +15,8 @@ const { addItem, getItem, deleteItem } = require('../utils/dynamoDbService');
 
 // 定数定義
 const SESSION_TABLE = process.env.SESSION_TABLE || `${process.env.DYNAMODB_TABLE_PREFIX || 'portfolio-market-data-'}-sessions`;
-const SESSION_EXPIRES_DAYS = 7; // セッション有効期限（日）
-const DRIVE_FOLDER_NAME = 'PortfolioManagerData';
+const SESSION_EXPIRES_DAYS = parseInt(process.env.SESSION_EXPIRES_DAYS || '7', 10); // セッション有効期限（日）
+const DRIVE_FOLDER_NAME = process.env.DRIVE_FOLDER_NAME || 'PortfolioManagerData';
 
 // Google OAuth2 クライアントの初期化
 const oAuth2Client = new OAuth2Client(

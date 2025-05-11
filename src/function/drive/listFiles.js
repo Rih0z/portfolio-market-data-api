@@ -4,6 +4,7 @@
  * @file src/function/drive/listFiles.js
  * @author Koki Riho
  * @created 2025-05-12
+ * @updated 2025-05-13
  */
 'use strict';
 
@@ -12,7 +13,7 @@ const {
   refreshAccessToken,
   listPortfolioFiles 
 } = require('../../services/googleAuthService');
-const { formatResponse, formatErrorResponse } = require('../../utils/response');
+const { formatResponse, formatErrorResponse } = require('../../utils/responseFormatter');
 const { parseCookies } = require('../../utils/cookieParser');
 
 /**
@@ -20,7 +21,7 @@ const { parseCookies } = require('../../utils/cookieParser');
  * @param {Object} event - API Gatewayイベント
  * @returns {Object} - API Gatewayレスポンス
  */
-exports.handler = async (event) => {
+module.exports.handler = async (event) => {
   try {
     // Cookieからセッションを取得
     const cookies = parseCookies(event.headers.Cookie || event.headers.cookie || '');
@@ -29,11 +30,7 @@ exports.handler = async (event) => {
     if (!sessionId) {
       return formatErrorResponse({
         statusCode: 401,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
-          'Access-Control-Allow-Credentials': 'true'
-        },
+        code: 'NO_SESSION',
         message: 'セッションが存在しません'
       });
     }
@@ -44,11 +41,7 @@ exports.handler = async (event) => {
     if (!session) {
       return formatErrorResponse({
         statusCode: 401,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
-          'Access-Control-Allow-Credentials': 'true'
-        },
+        code: 'INVALID_SESSION',
         message: 'セッションが無効です'
       });
     }
@@ -67,12 +60,9 @@ exports.handler = async (event) => {
         console.error('トークン更新エラー:', refreshError);
         return formatErrorResponse({
           statusCode: 401,
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
-            'Access-Control-Allow-Credentials': 'true'
-          },
-          message: 'アクセストークンの更新に失敗しました'
+          code: 'TOKEN_REFRESH_ERROR',
+          message: 'アクセストークンの更新に失敗しました',
+          details: refreshError.message
         });
       }
     }
@@ -91,35 +81,22 @@ exports.handler = async (event) => {
       webViewLink: file.webViewLink
     }));
     
-    // レスポンスヘッダー
-    const headers = {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
-      'Access-Control-Allow-Credentials': 'true'
-    };
-    
     // レスポンスを整形
     return formatResponse({
       statusCode: 200,
-      headers,
-      data: {
+      body: {
         success: true,
         files: formattedFiles,
         count: formattedFiles.length
-      },
-      source: 'Google Drive API',
-      lastUpdated: new Date().toISOString()
+      }
     });
   } catch (error) {
     console.error('Driveファイル一覧取得エラー:', error);
     return formatErrorResponse({
       statusCode: 500,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
-        'Access-Control-Allow-Credentials': 'true'
-      },
-      message: 'Google Driveのファイル一覧取得に失敗しました: ' + error.message
+      code: 'DRIVE_LIST_ERROR',
+      message: 'Google Driveのファイル一覧取得に失敗しました',
+      details: error.message
     });
   }
 };

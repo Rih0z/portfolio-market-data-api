@@ -1,26 +1,26 @@
 /**
- * Google Driveファイル保存ハンドラー - ポートフォリオデータの保存
+ * Google Driveファイル読み込みハンドラー - ポートフォリオデータの読み込み
  * 
- * @file src/function/drive/saveFile.js
- * @author Koki Riho
- * @created 2025-05-12
+ * @file src/function/drive/loadFile.js
+ * @author Portfolio Manager Team
+ * @created 2025-05-13
  */
 'use strict';
 
 const { 
   getSession,
   refreshAccessToken,
-  savePortfolioToDrive 
+  loadPortfolioFromDrive 
 } = require('../../services/googleAuthService');
-const { formatResponse, formatErrorResponse } = require('../../utils/response');
+const { formatResponse, formatErrorResponse } = require('../../utils/responseFormatter');
 const { parseCookies } = require('../../utils/cookieParser');
 
 /**
- * Google Driveデータ保存ハンドラー
+ * Google Driveデータ読み込みハンドラー
  * @param {Object} event - API Gatewayイベント
  * @returns {Object} - API Gatewayレスポンス
  */
-exports.handler = async (event) => {
+module.exports.handler = async (event) => {
   try {
     // Cookieからセッションを取得
     const cookies = parseCookies(event.headers.Cookie || event.headers.cookie || '');
@@ -29,11 +29,7 @@ exports.handler = async (event) => {
     if (!sessionId) {
       return formatErrorResponse({
         statusCode: 401,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
-          'Access-Control-Allow-Credentials': 'true'
-        },
+        code: 'NO_SESSION',
         message: 'セッションが存在しません'
       });
     }
@@ -44,28 +40,20 @@ exports.handler = async (event) => {
     if (!session) {
       return formatErrorResponse({
         statusCode: 401,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
-          'Access-Control-Allow-Credentials': 'true'
-        },
+        code: 'INVALID_SESSION',
         message: 'セッションが無効です'
       });
     }
     
-    // リクエストボディを解析
-    const requestBody = JSON.parse(event.body || '{}');
-    const { portfolioData } = requestBody;
+    // クエリパラメータからファイルIDを取得
+    const queryParams = event.queryStringParameters || {};
+    const { fileId } = queryParams;
     
-    if (!portfolioData) {
+    if (!fileId) {
       return formatErrorResponse({
         statusCode: 400,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
-          'Access-Control-Allow-Credentials': 'true'
-        },
-        message: 'ポートフォリオデータが不足しています'
+        code: 'INVALID_PARAMS',
+        message: 'ファイルIDが不足しています'
       });
     }
     
@@ -83,53 +71,37 @@ exports.handler = async (event) => {
         console.error('トークン更新エラー:', refreshError);
         return formatErrorResponse({
           statusCode: 401,
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
-            'Access-Control-Allow-Credentials': 'true'
-          },
-          message: 'アクセストークンの更新に失敗しました'
+          code: 'TOKEN_REFRESH_ERROR',
+          message: 'アクセストークンの更新に失敗しました',
+          details: refreshError.message
         });
       }
     }
     
-    // Google Driveにデータを保存
-    const result = await savePortfolioToDrive(accessToken, portfolioData);
-    
-    // レスポンスヘッダー
-    const headers = {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
-      'Access-Control-Allow-Credentials': 'true'
-    };
+    // Google Driveからデータを読み込み
+    const result = await loadPortfolioFromDrive(accessToken, fileId);
     
     // レスポンスを整形
     return formatResponse({
       statusCode: 200,
-      headers,
-      data: {
+      body: {
         success: true,
-        message: 'ポートフォリオデータをGoogle Driveに保存しました',
+        message: 'ポートフォリオデータをGoogle Driveから読み込みました',
         file: {
-          id: result.fileId,
           name: result.fileName,
-          url: result.webViewLink,
-          createdAt: result.createdTime
-        }
-      },
-      source: 'Google Drive API',
-      lastUpdated: new Date().toISOString()
+          createdAt: result.createdTime,
+          modifiedAt: result.modifiedTime
+        },
+        data: result.data
+      }
     });
   } catch (error) {
-    console.error('Drive保存エラー:', error);
+    console.error('Drive読み込みエラー:', error);
     return formatErrorResponse({
       statusCode: 500,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
-        'Access-Control-Allow-Credentials': 'true'
-      },
-      message: 'Google Driveへの保存に失敗しました: ' + error.message
+      code: 'DRIVE_LOAD_ERROR',
+      message: 'Google Driveからの読み込みに失敗しました',
+      details: error.message
     });
   }
 };

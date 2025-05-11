@@ -16,6 +16,11 @@
 - アクセスキーとシークレットアクセスキー
 - AWSアカウントID（デプロイ時に必要）
 
+### 1.3 Google Cloud Platform
+- Googleアカウント
+- Google Cloud Platformプロジェクト
+- OAuth 2.0クライアントID（Google認証に必要）
+
 ## 2. 開発環境のセットアップ
 
 ### 2.1 Homebrewのインストール（未導入の場合）
@@ -111,7 +116,7 @@ npm install --save-dev serverless serverless-offline serverless-dotenv-plugin
 ### 3.3 プロジェクト構造の作成（新規プロジェクトの場合）
 ```bash
 # ディレクトリ構造の作成
-mkdir -p src/{functions,services/{sources},utils,config} resources scripts
+mkdir -p src/{function/{admin,auth,drive},services,utils,config} resources scripts
 ```
 
 ### 3.4 Node.jsバージョンの固定
@@ -175,6 +180,16 @@ CRON_SECRET=<生成したランダム値>
 AWS_ACCOUNT_ID=123456789012
 AWS_REGION=ap-northeast-1
 
+# Google OAuth設定
+GOOGLE_CLIENT_ID=<Google Cloud Consoleから取得したクライアントID>
+GOOGLE_CLIENT_SECRET=<Google Cloud Consoleから取得したシークレット>
+SESSION_TABLE=pfwise-api-${stage}-sessions
+SESSION_EXPIRES_DAYS=7
+DRIVE_FOLDER_NAME=PortfolioManagerData
+
+# CORS設定
+CORS_ALLOW_ORIGIN=http://localhost:3000,https://portfolio.example.com
+
 # 外部APIキー（必要に応じて）
 ALPACA_API_KEY=
 ALPACA_API_SECRET=
@@ -217,7 +232,7 @@ echo ".env.local" >> .gitignore
 touch serverless.yml
 ```
 
-### 6.2 基本的なserverless.yml設定
+### 6.2 基本的なserverless.yml設定（Google認証追加）
 ```yaml
 service: pfwise-api
 
@@ -244,20 +259,28 @@ provider:
     CACHE_TIME_JP_STOCK: ${env:CACHE_TIME_JP_STOCK, '3600'}
     CACHE_TIME_MUTUAL_FUND: ${env:CACHE_TIME_MUTUAL_FUND, '10800'}
     CACHE_TIME_EXCHANGE_RATE: ${env:CACHE_TIME_EXCHANGE_RATE, '21600'}
+    GOOGLE_CLIENT_ID: ${env:GOOGLE_CLIENT_ID, ''}
+    GOOGLE_CLIENT_SECRET: ${env:GOOGLE_CLIENT_SECRET, ''}
+    SESSION_TABLE: ${env:SESSION_TABLE, '${self:service}-${self:provider.stage}-sessions'}
+    CORS_ALLOW_ORIGIN: ${env:CORS_ALLOW_ORIGIN, '*'}
+    DRIVE_FOLDER_NAME: ${env:DRIVE_FOLDER_NAME, 'PortfolioManagerData'}
   
   iamRoleStatements:
     - Effect: Allow
       Action:
         - dynamodb:*
-      Resource: !GetAtt MarketDataCacheTable.Arn
+      Resource: 
+        - !GetAtt MarketDataCacheTable.Arn
+        - !GetAtt SessionsTable.Arn
     - Effect: Allow
       Action:
         - sns:Publish
       Resource: !Ref AlertTopic
 
 functions:
+  # 既存のマーケットデータ関連機能
   marketData:
-    handler: src/functions/marketData.handler
+    handler: src/function/marketData.handler
     events:
       - http:
           path: api/market-data
@@ -265,12 +288,12 @@ functions:
           cors: true
   
   preWarmCache:
-    handler: src/functions/preWarmCache.handler
+    handler: src/function/preWarmCache.handler
     events:
       - schedule: rate(1 hour)
   
   getStatus:
-    handler: src/functions/admin/getStatus.handler
+    handler: src/function/admin/getStatus.handler
     events:
       - http:
           path: admin/status
@@ -279,13 +302,63 @@ functions:
           private: true
   
   resetUsage:
-    handler: src/functions/admin/resetUsage.handler
+    handler: src/function/admin/resetUsage.handler
     events:
       - http:
           path: admin/reset
           method: post
           cors: true
           private: true
+  
+  # 新規追加: Google認証関連
+  googleLogin:
+    handler: src/function/auth/googleLogin.handler
+    events:
+      - http:
+          path: auth/google/login
+          method: post
+          cors: true
+  
+  getSession:
+    handler: src/function/auth/getSession.handler
+    events:
+      - http:
+          path: auth/session
+          method: get
+          cors: true
+  
+  logout:
+    handler: src/function/auth/logout.handler
+    events:
+      - http:
+          path: auth/logout
+          method: post
+          cors: true
+  
+  # Google Drive連携
+  saveFile:
+    handler: src/function/drive/saveFile.handler
+    events:
+      - http:
+          path: drive/save
+          method: post
+          cors: true
+  
+  loadFile:
+    handler: src/function/drive/loadFile.handler
+    events:
+      - http:
+          path: drive/load
+          method: get
+          cors: true
+  
+  listFiles:
+    handler: src/function/drive/listFiles.handler
+    events:
+      - http:
+          path: drive/files
+          method: get
+          cors: true
 
 resources:
   Resources:
@@ -304,6 +377,22 @@ resources:
           AttributeName: expires
           Enabled: true
     
+    # 新規追加: セッション管理用DynamoDBテーブル
+    SessionsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${env:SESSION_TABLE, '${self:service}-${self:provider.stage}-sessions'}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: sessionId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: sessionId
+            KeyType: HASH
+        TimeToLiveSpecification:
+          AttributeName: ttl
+          Enabled: true
+    
     AlertTopic:
       Type: AWS::SNS::Topic
       Properties:
@@ -315,79 +404,6 @@ resources:
 plugins:
   - serverless-dotenv-plugin
   - serverless-offline
-```
-
-### 6.3 基本的な関数ファイルを作成
-
-```bash
-# marketData.js関数を作成
-mkdir -p src/functions/admin
-touch src/functions/marketData.js
-touch src/functions/preWarmCache.js
-touch src/functions/admin/getStatus.js
-touch src/functions/admin/resetUsage.js
-```
-
-marketData.js の基本実装:
-
-```javascript
-'use strict';
-
-// 市場データ取得API
-module.exports.handler = async (event) => {
-  try {
-    const queryParams = event.queryStringParameters || {};
-    const { type, symbols, base, target, refresh } = queryParams;
-    
-    // レスポンス作成（テスト用）
-    return {
-      statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*'
-      },
-      body: JSON.stringify({
-        success: true,
-        data: {
-          // サンプルデータ
-          AAPL: {
-            ticker: 'AAPL',
-            price: 174.79,
-            name: 'Apple Inc.',
-            currency: 'USD',
-            lastUpdated: new Date().toISOString(),
-            source: 'Test Data',
-            isStock: true,
-            isMutualFund: false
-          }
-        },
-        source: 'AWS Lambda & DynamoDB',
-        lastUpdated: new Date().toISOString(),
-        processingTime: '10ms',
-        usage: {
-          daily: 1,
-          monthly: 1,
-          dailyLimit: 5000,
-          monthlyLimit: 100000
-        }
-      })
-    };
-  } catch (error) {
-    console.error('Error:', error);
-    
-    return {
-      statusCode: 500,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*'
-      },
-      body: JSON.stringify({
-        success: false,
-        error: 'サーバーエラーが発生しました。'
-      })
-    };
-  }
-};
 ```
 
 ## 7. ローカル開発
@@ -409,6 +425,9 @@ Server ready: http://localhost:3000 🚀
 ```bash
 # 米国株データの取得テスト
 curl "http://localhost:3000/dev/api/market-data?type=us-stock&symbols=AAPL,MSFT" | jq
+
+# セッション情報の取得テスト
+curl -H "Cookie: session=test-session-id" "http://localhost:3000/dev/auth/session" | jq
 
 # 管理者ステータス確認（APIキー認証が必要）
 curl -H "x-api-key: [生成したADMIN_API_KEY]" "http://localhost:3000/dev/admin/status" | jq
@@ -454,50 +473,34 @@ rm -rf node_modules package-lock.json
 npm install
 ```
 
-### 8.3 AWS認証情報エラー
-```
-The specified profile [profile] could not be found
-```
+### 8.3 Google認証関連の問題
 
-**解決策**:
-```bash
-# AWS認証情報を確認
-cat ~/.aws/credentials
-
-# 必要なプロファイルを設定
-aws configure --profile [profile]
+#### 8.3.1 リダイレクトURI不一致エラー
 ```
-
-### 8.4 Serverless Frameworkエラー
-```
-Cannot find module 'serverless-offline'
+error=redirect_uri_mismatch&error_description=The+redirect+URI+in+the+request
 ```
 
 **解決策**:
+Google Cloud Consoleで認証済みリダイレクトURIを正しく設定します：
+1. Google Cloud Consoleにアクセス
+2. 「認証情報」→「OAuth 2.0 クライアントID」
+3. 使用しているクライアントIDを選択
+4. 「承認済みのリダイレクトURI」に以下を追加：
+   - 開発環境: `http://localhost:3000/auth/callback`
+   - 本番環境: `https://portfolio.example.com/auth/callback`
+
+#### 8.3.2 セッション関連のエラー
+**解決策**:
+セッションテーブルが正しく作成されていることを確認：
 ```bash
-npm install --save-dev serverless-offline
+# セッションテーブルの確認
+aws dynamodb describe-table --table-name pfwise-api-dev-sessions
 ```
 
-### 8.5 MacBook固有の問題
-
-#### ターミナルでのNode.jsバージョン切り替え
-```bash
-# 特定のバージョンに切り替え
-nvm use 18
-
-# .nvmrcファイルに基づいて自動切り替え
-nvm use
-```
-
-#### 秘密キーの管理
-MacBookのKeychain Accessを使用してAPIキーを安全に管理:
-```bash
-# キーチェーンにAPIキーを保存
-security add-generic-password -a $USER -s "pfwise_admin_api_key" -w "生成したAPIキー"
-
-# キーチェーンからAPIキーを取得
-security find-generic-password -a $USER -s "pfwise_admin_api_key" -w
-```
+Cookie設定が正しいことを確認：
+- HttpOnly
+- Secure（本番環境では必須）
+- SameSite=Strict
 
 ## 9. デプロイ手順
 
@@ -528,29 +531,71 @@ serverless info --stage prod
 serverless info --stage prod | grep -A 3 endpoints | pbcopy
 ```
 
-## 10. ロギングとモニタリング
+## 10. Google Cloud設定
 
-### 10.1 ログの確認
+### 10.1 Google Cloud Projectの設定
+1. [Google Cloud Console](https://console.cloud.google.com/)にアクセス
+2. 新しいプロジェクトを作成または既存のプロジェクトを選択
+3. 左メニューから「APIとサービス」→「ダッシュボード」を選択
+4. 「APIとサービスの有効化」をクリック
+5. 以下のAPIを有効化：
+   - Google OAuth2 API
+   - Google Drive API
+
+### 10.2 OAuth同意画面の設定
+1. 左メニューから「APIとサービス」→「OAuth同意画面」を選択
+2. ユーザータイプ（外部または内部）を選択
+3. アプリ情報を入力：
+   - アプリ名: ポートフォリオマネージャー
+   - ユーザーサポートメール: your-email@example.com
+   - デベロッパーの連絡先情報: your-email@example.com
+4. スコープの追加：
+   - `.../auth/userinfo.email`
+   - `.../auth/userinfo.profile`
+   - `.../auth/drive.file`
+5. テストユーザーの追加（外部タイプの場合）
+
+### 10.3 OAuth認証情報の作成
+1. 左メニューから「APIとサービス」→「認証情報」を選択
+2. 「認証情報を作成」→「OAuth 2.0 クライアントID」をクリック
+3. アプリケーションタイプ: Webアプリケーション
+4. 名前: ポートフォリオマネージャーWeb
+5. 承認済みのリダイレクトURI:
+   - 開発環境: `http://localhost:3000/auth/callback`
+   - 本番環境: `https://portfolio.example.com/auth/callback`
+6. 「作成」をクリック
+7. 表示されたクライアントIDとクライアントシークレットを保存
+
+### 10.4 認証情報の環境変数への設定
+```bash
+# .envファイルに追加
+GOOGLE_CLIENT_ID=<作成したクライアントID>
+GOOGLE_CLIENT_SECRET=<作成したクライアントシークレット>
+```
+
+## 11. ロギングとモニタリング
+
+### 11.1 ログの確認
 ```bash
 # 特定の関数のログを確認
-npm run logs
+serverless logs -f googleLogin -t --stage dev
 
-# または特定の関数を指定
-serverless logs -f marketData -t --stage prod
+# または複数の関数を同時に確認
+serverless logs -f googleLogin -f getSession -t --stage dev
 ```
 
-### 10.2 CloudWatch Logsの確認
+### 11.2 CloudWatch Logsの確認
 ```bash
 # AWS CLIでの最新ログの表示
-aws logs filter-log-events --log-group-name "/aws/lambda/pfwise-api-prod-marketData" --limit 20
+aws logs filter-log-events --log-group-name "/aws/lambda/pfwise-api-dev-googleLogin" --limit 20
 
 # エラーログのみ表示
-aws logs filter-log-events --log-group-name "/aws/lambda/pfwise-api-prod-marketData" --filter-pattern "ERROR"
+aws logs filter-log-events --log-group-name "/aws/lambda/pfwise-api-dev-googleLogin" --filter-pattern "ERROR"
 ```
 
-## 11. 効率的な開発のためのTips
+## 12. 効率的な開発のためのTips
 
-### 11.1 ターミナルエイリアスの設定
+### 12.1 ターミナルエイリアスの設定
 ~/.zshrcに以下を追加:
 ```bash
 # AWS/Serverlessのエイリアス
@@ -561,81 +606,119 @@ alias sls-deploy-prod="serverless deploy --stage prod"
 alias sls-logs="serverless logs -f marketData -t"
 ```
 
-### 11.2 MacBook省エネ対策
+### 12.2 MacBook省エネ対策
 長時間のデプロイ中にスリープを防止:
 ```bash
 # デプロイ中にディスプレイをオンに維持
 caffeinate -d npm run deploy:prod
 ```
 
-### 11.3 デプロイ進行状況の視覚化
+### 12.3 デプロイ進行状況の視覚化
 ```bash
 # カラー表示有効化
 export FORCE_COLOR=1
 FORCE_COLOR=1 npm run deploy
 ```
 
-## 12. セキュリティのベストプラクティス
+## 13. セキュリティのベストプラクティス
 
 - `.env`ファイル内のキーは定期的に更新する
 - 本番環境ではAWS Secret ManagerやParameter Storeを使用する
 - IAMロールは最小権限の原則に従って設定する
 - API Gatewayでのレート制限を設定する
 - CloudWatch Alarmsを設定して異常な使用パターンを検出する
+- セッションCookieは必ずHTTP Only, Secure, SameSiteの設定を行う
+- Google OAuth認証情報は安全に管理し、公開リポジトリにコミットしない
 
-## 13. フロントエンド側の更新
+## 14. フロントエンド側の更新
 
-フロントエンドアプリケーションでのAPIエンドポイント更新例:
+### 14.1 Google認証のフロントエンド実装
+フロントエンドアプリケーションでのGoogle認証の実装例:
 
 ```javascript
-// 変更前: Netlify Functions呼び出し
-const fetchStockData = async (ticker) => {
-  const response = await axios.get(`/.netlify/functions/alpaca-api-proxy?symbol=${ticker}`);
-  return response.data;
+// 必要なパッケージ
+// npm install @react-oauth/google axios
+import { GoogleLogin } from '@react-oauth/google';
+import axios from 'axios';
+
+const handleGoogleLogin = async (credentialResponse) => {
+  try {
+    // バックエンドに認証コードを送信
+    const response = await axios.post(
+      'https://xxxxxxxx.execute-api.ap-northeast-1.amazonaws.com/prod/auth/google/login',
+      {
+        code: credentialResponse.code,
+        redirectUri: window.location.origin + '/auth/callback'
+      },
+      {
+        withCredentials: true // Cookieを送受信するために必要
+      }
+    );
+    
+    if (response.data.success) {
+      // ログイン成功処理
+      setUser(response.data.user);
+      setIsAuthenticated(true);
+    }
+  } catch (error) {
+    console.error('Google認証エラー:', error);
+  }
 };
 
-// 変更後: AWS Lambda API呼び出し
-const fetchStockData = async (ticker) => {
-  const isJapaneseStock = /^\d{4}(\.T)?$/.test(ticker);
-  const isMutualFund = /^\d{7,8}C(\.T)?$/.test(ticker);
-  
-  const type = isJapaneseStock 
-    ? 'jp-stock' 
-    : isMutualFund 
-      ? 'mutual-fund' 
-      : 'us-stock';
-  
+// Googleログインボタンの表示
+<GoogleOAuthProvider clientId="YOUR_GOOGLE_CLIENT_ID">
+  <GoogleLogin
+    flow="auth-code"
+    onSuccess={handleGoogleLogin}
+    onError={() => {
+      console.log('ログインに失敗しました');
+    }}
+    useOneTap
+  />
+</GoogleOAuthProvider>
+```
+
+### 14.2 セッション管理
+```javascript
+// セッション情報の取得
+const checkSession = async () => {
   try {
-    const response = await axios.get(`https://xxxxxxxx.execute-api.ap-northeast-1.amazonaws.com/prod/api/market-data`, {
-      params: { 
-        type, 
-        symbols: ticker 
-      }
-    });
-    return response.data;
-  } catch (error) {
-    // エラー時のフォールバック処理
-    if (error.response && error.response.status === 429) {
-      // 使用量制限エラー
-      console.warn('API使用量制限に達しました。ローカルデータを使用します。');
-    }
+    const response = await axios.get(
+      'https://xxxxxxxx.execute-api.ap-northeast-1.amazonaws.com/prod/auth/session',
+      { withCredentials: true }
+    );
     
-    // クライアント側でフォールバックデータを提供
-    return {
-      success: true,
-      data: {
-        [ticker]: {
-          ticker: ticker,
-          price: isJapaneseStock ? 2500 : isMutualFund ? 10000 : 100,
-          name: ticker,
-          currency: isJapaneseStock || isMutualFund ? 'JPY' : 'USD',
-          lastUpdated: new Date().toISOString(),
-          source: 'Client Fallback',
-          isStock: !isMutualFund,
-          isMutualFund: isMutualFund
-        }
-      }
-    };
+    if (response.data.success && response.data.isAuthenticated) {
+      setUser(response.data.user);
+      setIsAuthenticated(true);
+    }
+  } catch (error) {
+    console.error('セッション確認エラー:', error);
+    setUser(null);
+    setIsAuthenticated(false);
+  }
+};
+
+// ページロード時にセッション確認
+useEffect(() => {
+  checkSession();
+}, []);
+```
+
+### 14.3 ログアウト処理
+```javascript
+const handleLogout = async () => {
+  try {
+    await axios.post(
+      'https://xxxxxxxx.execute-api.ap-northeast-1.amazonaws.com/prod/auth/logout',
+      {},
+      { withCredentials: true }
+    );
+    
+    setUser(null);
+    setIsAuthenticated(false);
+  } catch (error) {
+    console.error('ログアウトエラー:', error);
   }
 };
 ```

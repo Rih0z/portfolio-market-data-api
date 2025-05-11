@@ -4,7 +4,7 @@
 
 ## 1. APIの概要
 
-このAPIは株式や投資信託などの市場データを取得するためのものです。米国株、日本株、投資信託、為替レートなど様々な金融商品の最新価格データを提供します。
+このAPIは株式や投資信託などの市場データを取得するためのものです。米国株、日本株、投資信託、為替レートなど様々な金融商品の最新価格データを提供します。また、Google認証によるユーザー認証およびGoogle Driveとの連携機能も備えています。
 
 **主な機能：**
 - 米国株式データ取得
@@ -13,6 +13,8 @@
 - 為替レート取得
 - データキャッシング
 - 使用量制限
+- Google認証（新機能）
+- Google Driveデータ同期（新機能）
 
 ## 2. 環境とエンドポイント
 
@@ -35,7 +37,33 @@ https://[prod-api-id].execute-api.ap-northeast-1.amazonaws.com/prod/api/market-d
 
 ※実際の`[dev-api-id]`と`[prod-api-id]`は、システム管理者にお問い合わせください。
 
-### 2.2 管理者用エンドポイント
+### 2.2 認証エンドポイント（新機能）
+
+```
+# Google認証処理
+https://[api-id].execute-api.ap-northeast-1.amazonaws.com/[stage]/auth/google/login
+
+# セッション情報取得
+https://[api-id].execute-api.ap-northeast-1.amazonaws.com/[stage]/auth/session
+
+# ログアウト処理
+https://[api-id].execute-api.ap-northeast-1.amazonaws.com/[stage]/auth/logout
+```
+
+### 2.3 Google Drive連携エンドポイント（新機能）
+
+```
+# ポートフォリオデータの保存
+https://[api-id].execute-api.ap-northeast-1.amazonaws.com/[stage]/drive/save
+
+# ポートフォリオデータの読み込み
+https://[api-id].execute-api.ap-northeast-1.amazonaws.com/[stage]/drive/load
+
+# ファイル一覧の取得
+https://[api-id].execute-api.ap-northeast-1.amazonaws.com/[stage]/drive/files
+```
+
+### 2.4 管理者用エンドポイント
 
 APIステータス確認や使用量リセットなどの管理者機能も提供しています。
 
@@ -44,7 +72,7 @@ https://[api-id].execute-api.ap-northeast-1.amazonaws.com/[stage]/admin/status
 https://[api-id].execute-api.ap-northeast-1.amazonaws.com/[stage]/admin/reset
 ```
 
-## 3. リクエスト方法
+## 3. マーケットデータ取得API
 
 ### 3.1 基本的なリクエスト形式
 
@@ -144,68 +172,318 @@ const fetchExchangeRate = async (base = 'USD', target = 'JPY') => {
 - **日本株**: 4桁の数字、オプションでサフィックス `.T`（例: `7203`, `9984`, `7203.T`）
 - **投資信託**: 7-8桁の数字 + `C`、オプションでサフィックス `.T`（例: `2931113C`, `0131103C.T`）
 
-## 4. レスポンス形式
+## 4. 認証API（新機能）
 
-### 4.1 成功時のレスポンス
+### 4.1 Google認証プロセス
+
+#### 4.1.1 Google認証の初期化と設定
+
+```javascript
+// Google認証の初期化（React向け例）
+// npm install @react-oauth/google
+import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
+
+const App = () => {
+  return (
+    <GoogleOAuthProvider clientId="YOUR_GOOGLE_CLIENT_ID">
+      {/* アプリケーションコンポーネント */}
+      <LoginComponent />
+    </GoogleOAuthProvider>
+  );
+};
+
+const LoginComponent = () => {
+  const handleGoogleLogin = async (credentialResponse) => {
+    try {
+      // バックエンドに認証コードを送信
+      const response = await axios.post(
+        'https://[api-id].execute-api.ap-northeast-1.amazonaws.com/prod/auth/google/login',
+        {
+          code: credentialResponse.code,
+          redirectUri: window.location.origin + '/auth/callback'
+        },
+        {
+          withCredentials: true // Cookieを送受信するために必要
+        }
+      );
+      
+      if (response.data.success) {
+        // ログイン成功処理
+        console.log('認証成功:', response.data.user);
+        // ユーザー情報の保存やリダイレクト処理
+      }
+    } catch (error) {
+      console.error('Google認証エラー:', error);
+    }
+  };
+  
+  return (
+    <div>
+      <h2>Googleアカウントでログイン</h2>
+      <GoogleLogin
+        flow="auth-code" // 重要: フローを設定
+        onSuccess={handleGoogleLogin}
+        onError={() => console.error('ログイン失敗')}
+        useOneTap
+      />
+    </div>
+  );
+};
+```
+
+#### 4.1.2 セッション確認
+
+```javascript
+const checkSession = async () => {
+  try {
+    const response = await axios.get(
+      'https://[api-id].execute-api.ap-northeast-1.amazonaws.com/prod/auth/session',
+      { withCredentials: true }
+    );
+    
+    if (response.data.success && response.data.isAuthenticated) {
+      console.log('認証済みユーザー:', response.data.user);
+      return response.data.user;
+    } else {
+      console.log('未認証状態');
+      return null;
+    }
+  } catch (error) {
+    console.error('セッション確認エラー:', error);
+    return null;
+  }
+};
+```
+
+#### 4.1.3 ログアウト処理
+
+```javascript
+const handleLogout = async () => {
+  try {
+    const response = await axios.post(
+      'https://[api-id].execute-api.ap-northeast-1.amazonaws.com/prod/auth/logout',
+      {},
+      { withCredentials: true }
+    );
+    
+    if (response.data.success) {
+      console.log('ログアウト成功');
+      // ログアウト後の処理（ローカルストレージのクリアなど）
+      return true;
+    }
+  } catch (error) {
+    console.error('ログアウトエラー:', error);
+  }
+  return false;
+};
+```
+
+### 4.2 認証APIレスポンス形式
+
+#### 4.2.1 ログイン成功時
 
 ```json
 {
   "success": true,
-  "data": {
-    "AAPL": {
-      "ticker": "AAPL",
-      "price": 174.79,
-      "name": "Apple Inc.",
-      "currency": "USD",
-      "lastUpdated": "2025-05-11T12:34:56.789Z",
-      "source": "AlpacaAPI",
-      "isStock": true,
-      "isMutualFund": false
-    },
-    "MSFT": {
-      "ticker": "MSFT",
-      "price": 296.45,
-      "name": "Microsoft Corporation",
-      "currency": "USD",
-      "lastUpdated": "2025-05-11T12:34:56.789Z",
-      "source": "AlpacaAPI",
-      "isStock": true,
-      "isMutualFund": false
-    }
+  "isAuthenticated": true,
+  "user": {
+    "id": "109476395873295845628",
+    "email": "user@example.com",
+    "name": "サンプルユーザー",
+    "picture": "https://lh3.googleusercontent.com/a/..."
   },
-  "source": "AWS Lambda & DynamoDB",
-  "lastUpdated": "2025-05-11T12:34:56.789Z",
-  "processingTime": "210ms",
-  "usage": {
-    "daily": 31,
-    "monthly": 512,
-    "dailyLimit": 5000,
-    "monthlyLimit": 100000
+  "session": {
+    "expiresAt": "2025-05-18T12:34:56.789Z"
   }
 }
 ```
 
-### 4.2 エラー時のレスポンス
+#### 4.2.2 セッション確認時
 
 ```json
 {
-  "success": false,
-  "error": "リクエストパラメータが不正です。",
-  "details": "Type パラメータは必須です。",
-  "code": "INVALID_PARAMS"
+  "success": true,
+  "isAuthenticated": true,
+  "user": {
+    "id": "109476395873295845628",
+    "email": "user@example.com",
+    "name": "サンプルユーザー",
+    "picture": "https://lh3.googleusercontent.com/a/..."
+  },
+  "session": {
+    "expiresAt": "2025-05-18T12:34:56.789Z"
+  }
 }
 ```
 
-一般的なエラーコード：
-- `INVALID_PARAMS`: パラメータ不正
-- `LIMIT_EXCEEDED`: 使用量制限超過
-- `SOURCE_ERROR`: データソースからの取得エラー
-- `NOT_FOUND`: 指定された銘柄が見つからない
-- `SERVER_ERROR`: サーバー内部エラー
+#### 4.2.3 ログアウト成功時
 
-## 5. エラーハンドリング
+```json
+{
+  "success": true,
+  "message": "ログアウトしました"
+}
+```
 
-### 5.1 基本的なエラーハンドリング
+## 5. Google Drive連携API（新機能）
+
+### 5.1 ポートフォリオデータの保存
+
+```javascript
+const savePortfolioToGoogleDrive = async (portfolioData) => {
+  try {
+    const response = await axios.post(
+      'https://[api-id].execute-api.ap-northeast-1.amazonaws.com/prod/drive/save',
+      {
+        portfolioData: portfolioData
+      },
+      { withCredentials: true }
+    );
+    
+    if (response.data.success) {
+      console.log('Google Driveに保存成功:', response.data.file);
+      return response.data.file;
+    }
+  } catch (error) {
+    console.error('Google Drive保存エラー:', error);
+    if (error.response && error.response.status === 401) {
+      // 認証エラーの処理（ログイン画面への遷移など）
+    }
+  }
+  return null;
+};
+```
+
+### 5.2 ポートフォリオデータの読み込み
+
+```javascript
+const loadPortfolioFromGoogleDrive = async (fileId) => {
+  try {
+    const response = await axios.get(
+      'https://[api-id].execute-api.ap-northeast-1.amazonaws.com/prod/drive/load',
+      {
+        params: { fileId },
+        withCredentials: true
+      }
+    );
+    
+    if (response.data.success) {
+      console.log('Google Driveから読み込み成功:', response.data.file);
+      return response.data.data; // ポートフォリオデータ
+    }
+  } catch (error) {
+    console.error('Google Drive読み込みエラー:', error);
+    if (error.response && error.response.status === 401) {
+      // 認証エラーの処理
+    }
+  }
+  return null;
+};
+```
+
+### 5.3 ファイル一覧の取得
+
+```javascript
+const listGoogleDriveFiles = async () => {
+  try {
+    const response = await axios.get(
+      'https://[api-id].execute-api.ap-northeast-1.amazonaws.com/prod/drive/files',
+      { withCredentials: true }
+    );
+    
+    if (response.data.success) {
+      console.log('Google Driveファイル一覧取得成功:', response.data.files);
+      return response.data.files;
+    }
+  } catch (error) {
+    console.error('Google Driveファイル一覧取得エラー:', error);
+    if (error.response && error.response.status === 401) {
+      // 認証エラーの処理
+    }
+  }
+  return [];
+};
+```
+
+### 5.4 Google Drive連携APIレスポンス形式
+
+#### 5.4.1 ファイル保存成功時
+
+```json
+{
+  "success": true,
+  "message": "ポートフォリオデータをGoogle Driveに保存しました",
+  "file": {
+    "id": "1Zt8jKX7H3gFzN9v2X5yM6fGhJkLpQr7s",
+    "name": "portfolio-data-2025-05-11T12-34-56-789Z.json",
+    "url": "https://drive.google.com/file/d/1Zt8jKX7H3gFzN9v2X5yM6fGhJkLpQr7s/view",
+    "createdAt": "2025-05-11T12:34:56.789Z"
+  }
+}
+```
+
+#### 5.4.2 ファイル読み込み成功時
+
+```json
+{
+  "success": true,
+  "message": "ポートフォリオデータをGoogle Driveから読み込みました",
+  "file": {
+    "name": "portfolio-data-2025-05-10T15-22-33-456Z.json",
+    "createdAt": "2025-05-10T15:22:33.456Z",
+    "modifiedAt": "2025-05-10T15:22:33.456Z"
+  },
+  "data": {
+    "name": "マイポートフォリオ",
+    "holdings": [
+      {
+        "ticker": "AAPL",
+        "shares": 10,
+        "costBasis": 150.25
+      },
+      {
+        "ticker": "7203.T",
+        "shares": 100,
+        "costBasis": 2100
+      }
+    ],
+    "createdAt": "2025-05-10T15:22:33.456Z"
+  }
+}
+```
+
+#### 5.4.3 ファイル一覧取得成功時
+
+```json
+{
+  "success": true,
+  "files": [
+    {
+      "id": "1Zt8jKX7H3gFzN9v2X5yM6fGhJkLpQr7s",
+      "name": "portfolio-data-2025-05-11T12-34-56-789Z.json",
+      "size": 1024,
+      "mimeType": "application/json",
+      "createdAt": "2025-05-11T12:34:56.789Z",
+      "modifiedAt": "2025-05-11T12:34:56.789Z",
+      "webViewLink": "https://drive.google.com/file/d/1Zt8jKX7H3gFzN9v2X5yM6fGhJkLpQr7s/view"
+    },
+    {
+      "id": "2Ab9cDe3F4gHi5J6kLmN7oP8qRsT9uVw",
+      "name": "portfolio-data-2025-05-10T15-22-33-456Z.json",
+      "size": 980,
+      "mimeType": "application/json",
+      "createdAt": "2025-05-10T15:22:33.456Z",
+      "modifiedAt": "2025-05-10T15:22:33.456Z",
+      "webViewLink": "https://drive.google.com/file/d/2Ab9cDe3F4gHi5J6kLmN7oP8qRsT9uVw/view"
+    }
+  ],
+  "count": 2
+}
+```
+
+## 6. エラーハンドリング
+
+### 6.1 基本的なエラーハンドリング
 
 ```javascript
 const fetchMarketData = async (type, symbols) => {
@@ -237,12 +515,58 @@ const fetchMarketData = async (type, symbols) => {
 };
 ```
 
-### 5.2 使用量制限の処理
+### 6.2 認証エラーの処理
+
+```javascript
+const handleApiRequest = async (url, method = 'get', data = null, params = null) => {
+  try {
+    const config = {
+      withCredentials: true
+    };
+    
+    if (params) {
+      config.params = params;
+    }
+    
+    let response;
+    if (method === 'get') {
+      response = await axios.get(url, config);
+    } else {
+      response = await axios.post(url, data, config);
+    }
+    
+    return response.data;
+  } catch (error) {
+    // 認証エラー（401）の場合はログイン画面にリダイレクト
+    if (error.response && error.response.status === 401) {
+      console.error('認証エラー - ログインが必要です');
+      
+      // ログイン状態をクリア
+      localStorage.removeItem('user');
+      
+      // 未認証状態を通知
+      if (typeof onAuthChange === 'function') {
+        onAuthChange(false);
+      }
+      
+      // ログインページへリダイレクト
+      window.location.href = '/login';
+      return { success: false, error: 'ログインが必要です' };
+    }
+    
+    // その他のエラー処理
+    console.error('APIエラー:', error);
+    return { success: false, error: error.message };
+  }
+};
+```
+
+### 6.3 使用量制限の処理
 
 APIには日次と月次の使用量制限があります。制限に達した場合は`429 Too Many Requests`エラーが返されます。
 
 ```javascript
-const fetchStockData = async (ticker) => {
+const fetchStockDataWithRateLimitHandling = async (ticker) => {
   try {
     const response = await axios.get('https://[api-id].execute-api.ap-northeast-1.amazonaws.com/prod/api/market-data', {
       params: { 
@@ -281,145 +605,220 @@ const fetchStockData = async (ticker) => {
 };
 ```
 
-### 5.3 オフライン対応
-
-ネットワーク接続がない場合や、APIが利用できない場合のフォールバック処理：
-
-```javascript
-const fetchMarketDataWithOfflineSupport = async (type, symbols, cacheDuration = 24 * 60 * 60 * 1000) => {
-  // ローカルストレージからキャッシュデータを取得
-  const cachedDataStr = localStorage.getItem(`market_data_${type}_${symbols}`);
-  let cachedData = null;
-  
-  if (cachedDataStr) {
-    try {
-      const parsed = JSON.parse(cachedDataStr);
-      // キャッシュが有効期限内かチェック
-      if (Date.now() - parsed.timestamp < cacheDuration) {
-        cachedData = parsed.data;
-      }
-    } catch (e) {
-      console.warn('キャッシュデータの解析エラー:', e);
-    }
-  }
-  
-  // オンラインチェック
-  if (!navigator.onLine) {
-    console.warn('オフラインモード: キャッシュデータを使用');
-    return cachedData || createFallbackData(type, symbols);
-  }
-  
-  try {
-    // APIからデータ取得を試みる
-    const response = await axios.get('https://[api-id].execute-api.ap-northeast-1.amazonaws.com/prod/api/market-data', {
-      params: { type, symbols },
-      timeout: 5000 // タイムアウト設定
-    });
-    
-    if (response.data.success) {
-      // 取得したデータをキャッシュに保存
-      localStorage.setItem(`market_data_${type}_${symbols}`, JSON.stringify({
-        timestamp: Date.now(),
-        data: response.data.data
-      }));
-      return response.data.data;
-    } else {
-      console.error('APIエラー:', response.data.error);
-      return cachedData || createFallbackData(type, symbols);
-    }
-  } catch (error) {
-    console.error('API呼び出しエラー:', error);
-    return cachedData || createFallbackData(type, symbols);
-  }
-};
-
-// フォールバックデータの作成
-const createFallbackData = (type, symbols) => {
-  const result = {};
-  const symbolList = symbols.split(',');
-  
-  symbolList.forEach(symbol => {
-    const isJapaneseStock = /^\d{4}(\.T)?$/.test(symbol);
-    const isMutualFund = /^\d{7,8}C(\.T)?$/.test(symbol);
-    
-    result[symbol] = {
-      ticker: symbol,
-      price: isJapaneseStock ? 2500 : isMutualFund ? 10000 : 100, // デフォルト値
-      name: `${symbol} (Offline Data)`,
-      currency: isJapaneseStock || isMutualFund ? 'JPY' : 'USD',
-      lastUpdated: new Date().toISOString(),
-      source: 'Client Fallback',
-      isStock: !isMutualFund,
-      isMutualFund: isMutualFund
-    };
-  });
-  
-  return result;
-};
-```
-
-## 6. ローカル開発環境での利用
-
-### 6.1 Serverless Offlineへの接続
-
-ローカル開発時は、Serverless Frameworkが提供するローカルサーバーに接続します。
-
-```javascript
-// 環境変数に基づいてAPIエンドポイントを切り替え
-const getApiEndpoint = () => {
-  if (process.env.NODE_ENV === 'development') {
-    return 'http://localhost:3000/dev/api/market-data';
-  } else if (process.env.NODE_ENV === 'staging') {
-    return 'https://[dev-api-id].execute-api.ap-northeast-1.amazonaws.com/dev/api/market-data';
-  } else {
-    return 'https://[prod-api-id].execute-api.ap-northeast-1.amazonaws.com/prod/api/market-data';
-  }
-};
-
-const fetchMarketData = async (type, symbols) => {
-  try {
-    const endpoint = getApiEndpoint();
-    const response = await axios.get(endpoint, {
-      params: { type, symbols }
-    });
-    return response.data;
-  } catch (error) {
-    console.error('API呼び出しエラー:', error);
-    return null;
-  }
-};
-```
-
-### 6.2 CORS対応
-
-ローカル開発環境でCORSエラーが発生する場合の対処法：
-
-1. **Reactアプリの場合（package.jsonに追加）**
-```json
-"proxy": "http://localhost:3000"
-```
-
-2. **その他のフレームワークの場合**
-```javascript
-// APIリクエスト関数内でCORSプロキシを使用
-const fetchWithCorsProxy = async (url, params) => {
-  // 開発環境のみCORSプロキシを使用
-  if (process.env.NODE_ENV === 'development') {
-    const corsProxy = 'http://localhost:8080/proxy?url=';
-    const encodedUrl = encodeURIComponent(`${url}?${new URLSearchParams(params).toString()}`);
-    const response = await axios.get(`${corsProxy}${encodedUrl}`);
-    return response.data;
-  } else {
-    // 本番環境では通常のリクエスト
-    const response = await axios.get(url, { params });
-    return response.data;
-  }
-};
-```
-
 ## 7. React用ユーティリティフック
 
-### 7.1 useMarketData カスタムフック
+### 7.1 認証フック（新機能）
+
+```javascript
+import { useState, useEffect, useContext, createContext } from 'react';
+import axios from 'axios';
+
+// 認証コンテキストの作成
+const AuthContext = createContext();
+
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  
+  // セッション確認
+  const checkSession = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.get(
+        'https://[api-id].execute-api.ap-northeast-1.amazonaws.com/prod/auth/session',
+        { withCredentials: true }
+      );
+      
+      if (response.data.success && response.data.isAuthenticated) {
+        setUser(response.data.user);
+      } else {
+        setUser(null);
+      }
+    } catch (error) {
+      console.error('セッション確認エラー:', error);
+      setUser(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // ログアウト処理
+  const logout = async () => {
+    try {
+      await axios.post(
+        'https://[api-id].execute-api.ap-northeast-1.amazonaws.com/prod/auth/logout',
+        {},
+        { withCredentials: true }
+      );
+      setUser(null);
+    } catch (error) {
+      console.error('ログアウトエラー:', error);
+    }
+  };
+  
+  // Googleログイン処理
+  const loginWithGoogle = async (credentialResponse) => {
+    try {
+      const response = await axios.post(
+        'https://[api-id].execute-api.ap-northeast-1.amazonaws.com/prod/auth/google/login',
+        {
+          code: credentialResponse.code,
+          redirectUri: window.location.origin + '/auth/callback'
+        },
+        { withCredentials: true }
+      );
+      
+      if (response.data.success) {
+        setUser(response.data.user);
+        return true;
+      }
+    } catch (error) {
+      console.error('Google認証エラー:', error);
+    }
+    return false;
+  };
+  
+  // 初回マウント時にセッション確認
+  useEffect(() => {
+    checkSession();
+  }, []);
+  
+  // 提供する値
+  const value = {
+    user,
+    isAuthenticated: !!user,
+    loading,
+    loginWithGoogle,
+    logout,
+    checkSession
+  };
+  
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+};
+
+// カスタムフック
+export const useAuth = () => {
+  return useContext(AuthContext);
+};
+```
+
+### 7.2 Google Drive連携フック（新機能）
+
+```javascript
+import { useState } from 'react';
+import axios from 'axios';
+import { useAuth } from './useAuth';
+
+export const useGoogleDrive = () => {
+  const { isAuthenticated } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  
+  // ファイル一覧取得
+  const listFiles = async () => {
+    if (!isAuthenticated) {
+      setError('認証が必要です');
+      return null;
+    }
+    
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const response = await axios.get(
+        'https://[api-id].execute-api.ap-northeast-1.amazonaws.com/prod/drive/files',
+        { withCredentials: true }
+      );
+      
+      if (response.data.success) {
+        return response.data.files;
+      } else {
+        setError(response.data.message || '不明なエラー');
+        return null;
+      }
+    } catch (error) {
+      setError(error.message || 'ファイル一覧取得エラー');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // ファイル保存
+  const saveFile = async (portfolioData) => {
+    if (!isAuthenticated) {
+      setError('認証が必要です');
+      return null;
+    }
+    
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const response = await axios.post(
+        'https://[api-id].execute-api.ap-northeast-1.amazonaws.com/prod/drive/save',
+        { portfolioData },
+        { withCredentials: true }
+      );
+      
+      if (response.data.success) {
+        return response.data.file;
+      } else {
+        setError(response.data.message || '不明なエラー');
+        return null;
+      }
+    } catch (error) {
+      setError(error.message || 'ファイル保存エラー');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // ファイル読み込み
+  const loadFile = async (fileId) => {
+    if (!isAuthenticated) {
+      setError('認証が必要です');
+      return null;
+    }
+    
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const response = await axios.get(
+        'https://[api-id].execute-api.ap-northeast-1.amazonaws.com/prod/drive/load',
+        {
+          params: { fileId },
+          withCredentials: true
+        }
+      );
+      
+      if (response.data.success) {
+        return response.data.data;
+      } else {
+        setError(response.data.message || '不明なエラー');
+        return null;
+      }
+    } catch (error) {
+      setError(error.message || 'ファイル読み込みエラー');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  return {
+    listFiles,
+    saveFile,
+    loadFile,
+    loading,
+    error
+  };
+};
+```
+
+### 7.3 マーケットデータフック
 
 ```javascript
 import { useState, useEffect } from 'react';
@@ -482,265 +881,389 @@ export const useMarketData = (type, symbols, refreshInterval = 0) => {
 };
 ```
 
-### 7.2 使用例
+## 8. コンポーネント使用例
+
+### 8.1 Google認証ボタンの実装
 
 ```jsx
+// LoginPage.jsx
 import React from 'react';
-import { useMarketData } from './hooks/useMarketData';
+import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
+import { useAuth } from '../hooks/useAuth';
+import { useNavigate } from 'react-router-dom';
 
-const StockDisplay = ({ symbols }) => {
-  const { data, loading, error } = useMarketData('us-stock', symbols.join(','), 60000);
+const LoginPage = () => {
+  const { loginWithGoogle } = useAuth();
+  const navigate = useNavigate();
   
-  if (loading) return <div>データを読み込み中...</div>;
-  if (error) return <div>エラー: {error}</div>;
-  if (!data) return <div>データがありません</div>;
+  const handleGoogleLoginSuccess = async (credentialResponse) => {
+    const success = await loginWithGoogle(credentialResponse);
+    if (success) {
+      navigate('/dashboard');
+    }
+  };
   
   return (
-    <div>
-      <h2>株価情報</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>銘柄</th>
-            <th>企業名</th>
-            <th>価格</th>
-            <th>通貨</th>
-            <th>最終更新</th>
-          </tr>
-        </thead>
-        <tbody>
-          {Object.values(data).map(stock => (
-            <tr key={stock.ticker}>
-              <td>{stock.ticker}</td>
-              <td>{stock.name}</td>
-              <td>{stock.price.toLocaleString()}</td>
-              <td>{stock.currency}</td>
-              <td>{new Date(stock.lastUpdated).toLocaleString()}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="login-container">
+      <h1>ポートフォリオマネージャー</h1>
+      <p>Googleアカウントでログインして全ての機能を利用しましょう</p>
+      
+      <div className="login-buttons">
+        <GoogleOAuthProvider clientId="YOUR_GOOGLE_CLIENT_ID">
+          <GoogleLogin
+            flow="auth-code"
+            onSuccess={handleGoogleLoginSuccess}
+            onError={() => console.error('ログイン失敗')}
+            useOneTap
+            shape="pill"
+            theme="filled_blue"
+            text="continue_with"
+          />
+        </GoogleOAuthProvider>
+      </div>
     </div>
   );
 };
 
-export default StockDisplay;
+export default LoginPage;
 ```
 
-## 8. よくある問題と解決策
+### 8.2 Google Driveファイル一覧の表示
 
-### 8.1 CORS問題
+```jsx
+// GoogleDriveFiles.jsx
+import React, { useEffect, useState } from 'react';
+import { useGoogleDrive } from '../hooks/useGoogleDrive';
+import { useAuth } from '../hooks/useAuth';
 
-**問題**: APIを呼び出すとCORSエラーが発生する
-
-**解決策**:
-- ローカル開発では、上記のプロキシ設定を行う
-- 本番環境では、API側でプロパーなCORS設定がされていることを確認する
-- API開発者に連絡して、フロントエンドアプリケーションのオリジンをCORS許可リストに追加してもらう
-
-### 8.2 使用量制限
-
-**問題**: 頻繁にAPIを呼び出していると使用量制限に達してしまう
-
-**解決策**:
-- データの更新頻度を下げる（例：1分ごと→5分ごと）
-- ローカルキャッシュを活用してAPI呼び出し回数を減らす
-- 複数の銘柄を一度のリクエストでバッチ処理する
-- リフレッシュパラメータ（`refresh=true`）の使用を最小限に抑える
-
-### 8.3 データ鮮度
-
-**問題**: キャッシュされたデータが古い可能性がある
-
-**解決策**:
-- 重要な取引前に`refresh=true`パラメータを使用して最新データを取得
-- レスポンスの`lastUpdated`タイムスタンプを確認し、古すぎる場合は警告表示
-- `usage`情報をモニタリングし、制限に近づいている場合は更新頻度を下げる
-
-### 8.4 ネットワークエラー
-
-**問題**: モバイルデバイスやネットワーク状況の悪い環境での接続エラー
-
-**解決策**:
-- Section 5.3で紹介したオフラインサポート機能を実装
-- リトライロジックを実装（指数バックオフとジッターを使用）
-- ユーザーにエラーとデータの鮮度を通知
-
-```javascript
-// リトライロジックの例
-const fetchWithRetry = async (url, params, maxRetries = 3, initialDelay = 1000) => {
-  let retries = 0;
+const GoogleDriveFiles = ({ onFileSelect }) => {
+  const { isAuthenticated } = useAuth();
+  const { listFiles, loadFile, loading, error } = useGoogleDrive();
+  const [files, setFiles] = useState([]);
   
-  while (retries < maxRetries) {
-    try {
-      return await axios.get(url, { params });
-    } catch (error) {
-      if (retries === maxRetries - 1) throw error;
-      
-      // 500番台のエラーやネットワークエラーのみリトライ
-      if (!error.response || (error.response && error.response.status >= 500)) {
-        // 指数バックオフ + ジッター
-        const delay = initialDelay * Math.pow(2, retries) * (0.9 + Math.random() * 0.2);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        retries++;
-      } else {
-        throw error; // 400番台エラーはすぐに失敗
-      }
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchFiles();
     }
+  }, [isAuthenticated]);
+  
+  const fetchFiles = async () => {
+    const filesList = await listFiles();
+    if (filesList) {
+      setFiles(filesList);
+    }
+  };
+  
+  const handleFileSelect = async (fileId) => {
+    const data = await loadFile(fileId);
+    if (data && onFileSelect) {
+      onFileSelect(data);
+    }
+  };
+  
+  if (!isAuthenticated) {
+    return <p>ファイル一覧を表示するにはログインしてください</p>;
   }
+  
+  if (loading) {
+    return <p>ファイル一覧を読み込み中...</p>;
+  }
+  
+  if (error) {
+    return <p>エラー: {error}</p>;
+  }
+  
+  return (
+    <div className="drive-files">
+      <h2>Google Driveのポートフォリオデータ</h2>
+      {files.length === 0 ? (
+        <p>保存されたファイルがありません</p>
+      ) : (
+        <ul className="file-list">
+          {files.map(file => (
+            <li key={file.id} className="file-item">
+              <div className="file-info">
+                <span className="file-name">{file.name}</span>
+                <span className="file-date">
+                  {new Date(file.createdAt).toLocaleString()}
+                </span>
+              </div>
+              <div className="file-actions">
+                <button
+                  onClick={() => handleFileSelect(file.id)}
+                  className="btn btn-primary"
+                >
+                  読み込む
+                </button>
+                <a
+                  href={file.webViewLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-secondary"
+                >
+                  表示
+                </a>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      <button onClick={fetchFiles} className="btn btn-refresh">
+        更新
+      </button>
+    </div>
+  );
 };
+
+export default GoogleDriveFiles;
 ```
 
-## 9. 高度な使用方法
+### 8.3 ポートフォリオデータ保存ボタン
 
-### 9.1 複数タイプのデータ同時取得
+```jsx
+// SavePortfolioButton.jsx
+import React, { useState } from 'react';
+import { useGoogleDrive } from '../hooks/useGoogleDrive';
+import { useAuth } from '../hooks/useAuth';
 
-```javascript
-const fetchMultipleMarketData = async () => {
-  try {
-    // 並列リクエストでパフォーマンス向上
-    const [usStocksResponse, jpStocksResponse, exchangeRateResponse] = await Promise.all([
-      axios.get('https://[api-id].execute-api.ap-northeast-1.amazonaws.com/prod/api/market-data', {
-        params: { type: 'us-stock', symbols: 'AAPL,MSFT,GOOGL' }
-      }),
-      axios.get('https://[api-id].execute-api.ap-northeast-1.amazonaws.com/prod/api/market-data', {
-        params: { type: 'jp-stock', symbols: '7203,9984,6758' }
-      }),
-      axios.get('https://[api-id].execute-api.ap-northeast-1.amazonaws.com/prod/api/market-data', {
-        params: { type: 'exchange-rate', base: 'USD', target: 'JPY' }
-      })
-    ]);
-    
-    // 結果の結合と処理
-    return {
-      usStocks: usStocksResponse.data.success ? usStocksResponse.data.data : {},
-      jpStocks: jpStocksResponse.data.success ? jpStocksResponse.data.data : {},
-      exchangeRate: exchangeRateResponse.data.success ? exchangeRateResponse.data.data : {}
-    };
-  } catch (error) {
-    console.error('マーケットデータ取得エラー:', error);
-    return { usStocks: {}, jpStocks: {}, exchangeRate: {} };
-  }
-};
-```
-
-### 9.2 応用例：ポートフォリオ評価
-
-```javascript
-const evaluatePortfolio = async (holdings) => {
-  try {
-    // 保有銘柄データの取得
-    const stockSymbols = holdings
-      .filter(h => h.type === 'stock')
-      .map(h => h.symbol)
-      .join(',');
-    
-    const fundSymbols = holdings
-      .filter(h => h.type === 'fund')
-      .map(h => h.symbol)
-      .join(',');
-    
-    // 並列でデータを取得
-    const [stocksResponse, fundsResponse, rateResponse] = await Promise.all([
-      stockSymbols ? axios.get('https://[api-id].execute-api.ap-northeast-1.amazonaws.com/prod/api/market-data', {
-        params: { type: 'us-stock', symbols: stockSymbols }
-      }) : Promise.resolve({ data: { success: true, data: {} } }),
-      
-      fundSymbols ? axios.get('https://[api-id].execute-api.ap-northeast-1.amazonaws.com/prod/api/market-data', {
-        params: { type: 'mutual-fund', symbols: fundSymbols }
-      }) : Promise.resolve({ data: { success: true, data: {} } }),
-      
-      axios.get('https://[api-id].execute-api.ap-northeast-1.amazonaws.com/prod/api/market-data', {
-        params: { type: 'exchange-rate', base: 'USD', target: 'JPY' }
-      })
-    ]);
-    
-    // レスポンスの有効性チェック
-    if (!stocksResponse.data.success || !fundsResponse.data.success || !rateResponse.data.success) {
-      throw new Error('データ取得エラー');
+const SavePortfolioButton = ({ portfolioData }) => {
+  const { isAuthenticated, user } = useAuth();
+  const { saveFile, loading, error } = useGoogleDrive();
+  const [saveStatus, setSaveStatus] = useState(null);
+  
+  const handleSave = async () => {
+    if (!isAuthenticated) {
+      setSaveStatus({
+        success: false,
+        message: 'Google Driveに保存するにはログインしてください'
+      });
+      return;
     }
     
-    // 為替レートの取得
-    const usdJpy = rateResponse.data.data.USDJPY ? rateResponse.data.data.USDJPY.rate : 150.0;
+    if (!portfolioData) {
+      setSaveStatus({
+        success: false,
+        message: '保存するデータがありません'
+      });
+      return;
+    }
     
-    // すべてのデータを結合
-    const marketData = {
-      ...stocksResponse.data.data,
-      ...fundsResponse.data.data
+    // タイムスタンプとユーザー情報を追加
+    const dataToSave = {
+      ...portfolioData,
+      lastSaved: new Date().toISOString(),
+      savedBy: user ? {
+        email: user.email,
+        name: user.name
+      } : 'unknown'
     };
     
-    // ポートフォリオの評価
-    const evaluatedHoldings = holdings.map(holding => {
-      const marketInfo = marketData[holding.symbol] || null;
-      
-      if (!marketInfo) {
-        return {
-          ...holding,
-          currentPrice: null,
-          currentValue: null,
-          isDataAvailable: false
-        };
-      }
-      
-      // 通貨変換が必要か
-      const needsCurrencyConversion = holding.currency !== 'JPY' && marketInfo.currency === 'JPY';
-      const currentPrice = marketInfo.price;
-      
-      // 現在価値の計算
-      let currentValue = holding.quantity * currentPrice;
-      
-      // 必要に応じて通貨変換
-      if (needsCurrencyConversion) {
-        currentValue = currentValue / usdJpy;
-      }
-      
-      return {
-        ...holding,
-        currentPrice,
-        currentValue,
-        lastUpdated: marketInfo.lastUpdated,
-        isDataAvailable: true
-      };
-    });
+    const result = await saveFile(dataToSave);
     
-    // 合計値の計算
-    const totalValue = evaluatedHoldings.reduce((sum, holding) => {
-      return sum + (holding.currentValue || 0);
+    if (result) {
+      setSaveStatus({
+        success: true,
+        message: 'ポートフォリオデータをGoogle Driveに保存しました',
+        file: result
+      });
+    } else {
+      setSaveStatus({
+        success: false,
+        message: error || 'Google Driveへの保存に失敗しました'
+      });
+    }
+  };
+  
+  return (
+    <div className="save-portfolio">
+      <button
+        onClick={handleSave}
+        disabled={loading || !isAuthenticated}
+        className={`btn ${isAuthenticated ? 'btn-primary' : 'btn-secondary'}`}
+      >
+        {loading ? '保存中...' : 'Google Driveに保存'}
+      </button>
+      
+      {saveStatus && (
+        <div className={`save-status ${saveStatus.success ? 'success' : 'error'}`}>
+          <p>{saveStatus.message}</p>
+          {saveStatus.success && saveStatus.file && (
+            <a
+              href={saveStatus.file.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="view-file"
+            >
+              保存したファイルを表示
+            </a>
+          )}
+        </div>
+      )}
+      
+      {!isAuthenticated && (
+        <p className="login-prompt">
+          Google Driveに保存するには、ログインしてください。
+        </p>
+      )}
+    </div>
+  );
+};
+
+export default SavePortfolioButton;
+```
+
+## 9. CORS対応と認証関連の注意点
+
+### 9.1 CORS設定
+
+認証でCookieを使用するため、APIとフロントエンドのCORS設定が重要です。
+
+```javascript
+// axiosのデフォルト設定を変更
+axios.defaults.withCredentials = true;
+
+// または個別のリクエストで設定
+const response = await axios.get(url, { withCredentials: true });
+```
+
+フロントエンドのオリジンがバックエンドのCORS許可リストに含まれていることを確認してください。
+
+### 9.2 Cookieの扱い
+
+- セッションCookieはHTTP Onlyフラグが設定されているため、JavaScriptから直接アクセスできません
+- 認証関連の全てのAPIリクエストには `withCredentials: true` を設定してください
+- SPAの場合、ルーティングによってCookieのパスが問題になる場合があります（Path: `/`で設定されていることを確認）
+
+### 9.3 セキュリティのベストプラクティス
+
+- Google Client IDは公開情報ですが、クライアントシークレットは厳重に保護してください
+- 認証状態の確認は定期的に行い、無効なセッションでのAPI呼び出しを防止してください
+- ログイン状態の永続化にはCookieのみを使用し、LocalStorageには機密情報を保存しないでください
+
+## 10. 応用例：認証と市場データの連携
+
+### 10.1 認証済みユーザー向けの拡張機能
+
+```jsx
+// PortfolioPage.jsx
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../hooks/useAuth';
+import { useMarketData } from '../hooks/useMarketData';
+import { useGoogleDrive } from '../hooks/useGoogleDrive';
+import GoogleDriveFiles from '../components/GoogleDriveFiles';
+import SavePortfolioButton from '../components/SavePortfolioButton';
+
+const PortfolioPage = () => {
+  const { isAuthenticated, user } = useAuth();
+  const { listFiles, loadFile, saveFile } = useGoogleDrive();
+  const [portfolio, setPortfolio] = useState(null);
+  const [selectedSymbols, setSelectedSymbols] = useState([]);
+  
+  // 選択された銘柄の市場データを取得
+  const { data: marketData, loading: marketLoading } = useMarketData(
+    'us-stock',
+    selectedSymbols.join(','),
+    isAuthenticated ? 60000 : 300000 // 認証済みユーザーはより頻繁に更新
+  );
+  
+  // ポートフォリオからシンボルを抽出
+  useEffect(() => {
+    if (portfolio && portfolio.holdings) {
+      const symbols = portfolio.holdings.map(holding => holding.ticker);
+      setSelectedSymbols(symbols);
+    }
+  }, [portfolio]);
+  
+  // ポートフォリオデータの読み込み
+  const handleFileSelect = (data) => {
+    setPortfolio(data);
+  };
+  
+  // ポートフォリオの現在価値を計算
+  const calculatePortfolioValue = () => {
+    if (!portfolio || !marketData) return 0;
+    
+    return portfolio.holdings.reduce((total, holding) => {
+      const marketInfo = marketData[holding.ticker];
+      if (marketInfo) {
+        return total + (holding.shares * marketInfo.price);
+      }
+      return total;
     }, 0);
-    
-    return {
-      holdings: evaluatedHoldings,
-      totalValue,
-      usdJpy,
-      lastUpdated: new Date().toISOString()
-    };
-  } catch (error) {
-    console.error('ポートフォリオ評価エラー:', error);
-    throw error;
-  }
+  };
+  
+  return (
+    <div className="portfolio-page">
+      <h1>マイポートフォリオ</h1>
+      
+      {isAuthenticated ? (
+        <>
+          <div className="user-info">
+            <img src={user.picture} alt={user.name} className="user-avatar" />
+            <span className="user-name">こんにちは、{user.name}さん</span>
+          </div>
+          
+          <div className="portfolio-tools">
+            <GoogleDriveFiles onFileSelect={handleFileSelect} />
+            
+            {portfolio && (
+              <>
+                <div className="portfolio-summary">
+                  <h2>{portfolio.name || 'マイポートフォリオ'}</h2>
+                  <p className="portfolio-value">
+                    総資産価値: ${calculatePortfolioValue().toLocaleString()}
+                  </p>
+                  
+                  <table className="holdings-table">
+                    <thead>
+                      <tr>
+                        <th>銘柄</th>
+                        <th>数量</th>
+                        <th>現在価格</th>
+                        <th>評価額</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {portfolio.holdings.map(holding => {
+                        const marketInfo = marketData && marketData[holding.ticker];
+                        return (
+                          <tr key={holding.ticker}>
+                            <td>{holding.ticker}</td>
+                            <td>{holding.shares}</td>
+                            <td>
+                              {marketInfo ? 
+                                `$${marketInfo.price.toLocaleString()}` : 
+                                '読み込み中...'}
+                            </td>
+                            <td>
+                              {marketInfo ?
+                                `$${(holding.shares * marketInfo.price).toLocaleString()}` :
+                                '-'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                
+                <SavePortfolioButton portfolioData={portfolio} />
+              </>
+            )}
+          </div>
+        </>
+      ) : (
+        <div className="login-prompt">
+          <p>ポートフォリオの管理にはログインが必要です。</p>
+          <a href="/login" className="btn btn-primary">ログインする</a>
+        </div>
+      )}
+    </div>
+  );
 };
+
+export default PortfolioPage;
 ```
-
-## 10. API使用のベストプラクティス
-
-1. **バッチ処理で呼び出し回数を減らす**
-   - 個別リクエストではなく、カンマ区切りで複数銘柄を指定
-
-2. **適切なキャッシュ戦略を実装する**
-   - 一定期間内は同じデータをキャッシュ
-   - サードパーティのキャッシュライブラリを検討（react-query, SWRなど）
-
-3. **エラー処理を丁寧に行う**
-   - ユーザーにわかりやすいエラーメッセージを表示
-   - 適切なフォールバック処理を実装
-
-4. **パフォーマンスの最適化**
-   - 必要なときだけデータを更新
-   - 銘柄ごとに更新頻度を調整（頻繁に変動する銘柄vs安定している銘柄）
-
-5. **使用量モニタリング**
-   - レスポンスの`usage`オブジェクトをモニタリング
-   - 制限に近づいている場合はアラートを表示
 
 ---
 

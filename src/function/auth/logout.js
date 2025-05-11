@@ -1,14 +1,15 @@
 /**
- * ログアウトハンドラー - セッション無効化とCookie削除
+ * ログアウトハンドラー - セッションを無効化してCookieを削除する
  * 
  * @file src/function/auth/logout.js
- * @author Koki Riho
+ * @author Portfolio Manager Team
  * @created 2025-05-12
+ * @updated 2025-05-13
  */
 'use strict';
 
 const { invalidateSession } = require('../../services/googleAuthService');
-const { formatResponse, formatErrorResponse } = require('../../utils/response');
+const { formatResponse, formatErrorResponse } = require('../../utils/responseFormatter');
 const { parseCookies, createClearSessionCookie } = require('../../utils/cookieParser');
 
 /**
@@ -16,7 +17,7 @@ const { parseCookies, createClearSessionCookie } = require('../../utils/cookiePa
  * @param {Object} event - API Gatewayイベント
  * @returns {Object} - API Gatewayレスポンス
  */
-exports.handler = async (event) => {
+module.exports.handler = async (event) => {
   try {
     // Cookieからセッションを取得
     const cookies = parseCookies(event.headers.Cookie || event.headers.cookie || '');
@@ -26,42 +27,29 @@ exports.handler = async (event) => {
     if (!sessionId) {
       return formatResponse({
         statusCode: 200,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
-          'Access-Control-Allow-Credentials': 'true',
-          'Set-Cookie': createClearSessionCookie()
-        },
-        data: {
+        body: {
           success: true,
           message: 'すでにログアウトしています'
         },
-        source: 'Auth Service',
-        lastUpdated: new Date().toISOString()
+        headers: {
+          'Set-Cookie': createClearSessionCookie()
+        }
       });
     }
     
     // セッションを無効化
     await invalidateSession(sessionId);
     
-    // レスポンスヘッダー（Cookieを削除）
-    const headers = {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
-      'Access-Control-Allow-Credentials': 'true',
-      'Set-Cookie': createClearSessionCookie()
-    };
-    
-    // レスポンスを整形
+    // レスポンスを整形（Cookieを削除）
     return formatResponse({
       statusCode: 200,
-      headers,
-      data: {
+      body: {
         success: true,
         message: 'ログアウトしました'
       },
-      source: 'Auth Service',
-      lastUpdated: new Date().toISOString()
+      headers: {
+        'Set-Cookie': createClearSessionCookie()
+      }
     });
   } catch (error) {
     console.error('ログアウトエラー:', error);
@@ -69,13 +57,12 @@ exports.handler = async (event) => {
     // エラーの場合でもCookieは削除
     return formatErrorResponse({
       statusCode: 500,
+      code: 'SERVER_ERROR',
+      message: 'ログアウト中にエラーが発生しましたが、セッションは削除されました',
+      details: error.message,
       headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
-        'Access-Control-Allow-Credentials': 'true',
         'Set-Cookie': createClearSessionCookie()
-      },
-      message: 'ログアウト中にエラーが発生しましたが、セッションは削除されました'
+      }
     });
   }
 };

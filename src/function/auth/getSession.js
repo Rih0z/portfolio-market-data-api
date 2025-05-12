@@ -1,92 +1,90 @@
 /**
- * セッション情報取得ハンドラー - 現在のセッション情報を取得
+ * セッション情報取得ハンドラー
+ * ブラウザから送信されたCookieに基づいてセッション情報を取得する
  * 
  * @file src/function/auth/getSession.js
- * @author Koki Riho
- * @created 2025-05-12
+ * @author Portfolio Manager Team
+ * @updated Koki - 2025-05-12 バグ修正: モジュールパスを修正
  */
-'use strict';
 
-const { getSession } = require('../../services/googleAuthService');
-const { formatResponse, formatErrorResponse } = require('../../utils/response');
-const { parseCookies } = require('../../utils/cookieParser');
+const googleAuthService = require('../../services/googleAuthService');
+const cookieParser = require('../../utils/cookieParser');
+
+// モジュールパス修正: response → responseUtils
+const { formatResponse, formatErrorResponse } = require('../../utils/responseUtils');
 
 /**
- * セッション情報取得ハンドラー
- * @param {Object} event - API Gatewayイベント
- * @returns {Object} - API Gatewayレスポンス
+ * セッション情報取得ハンドラー関数
+ * 
+ * @param {Object} event - API Gatewayイベントオブジェクト
+ * @returns {Object} API Gateway形式のレスポンス
  */
-exports.handler = async (event) => {
+const handler = async (event) => {
   try {
     // Cookieからセッションを取得
-    const cookies = parseCookies(event.headers.Cookie || event.headers.cookie || '');
+    const cookies = cookieParser.parseCookies(event);
     const sessionId = cookies.session;
     
     if (!sessionId) {
-      return formatErrorResponse({
+      return await formatErrorResponse({
         statusCode: 401,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
-          'Access-Control-Allow-Credentials': 'true'
-        },
+        code: 'NO_SESSION',
         message: 'セッションが存在しません'
       });
     }
     
     // セッション情報を取得
-    const session = await getSession(sessionId);
+    const session = await googleAuthService.getSession(sessionId);
     
     if (!session) {
-      return formatErrorResponse({
+      return await formatErrorResponse({
         statusCode: 401,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
-          'Access-Control-Allow-Credentials': 'true'
-        },
-        message: 'セッションが無効です'
+        code: 'NO_SESSION',
+        message: 'セッションが存在しません'
       });
     }
     
-    // レスポンスヘッダー
-    const headers = {
-      'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
-      'Access-Control-Allow-Credentials': 'true'
-    };
+    // セッションが有効期限切れの場合
+    const expiresAt = new Date(session.expiresAt).getTime();
+    if (expiresAt < Date.now()) {
+      await googleAuthService.invalidateSession(sessionId);
+      
+      return await formatErrorResponse({
+        statusCode: 401,
+        code: 'SESSION_EXPIRED',
+        message: 'セッションの有効期限が切れています'
+      });
+    }
     
-    // レスポンスを整形
-    return formatResponse({
+    // 認証済みユーザー情報を返す
+    return await formatResponse({
       statusCode: 200,
-      headers,
-      data: {
+      body: {
+        success: true,
         isAuthenticated: true,
         user: {
           id: session.googleId,
           email: session.email,
-          name: session.name,
-          picture: session.picture
+          name: session.name || '',
+          picture: session.picture || ''
         },
         session: {
           expiresAt: session.expiresAt
         }
-      },
-      source: 'Session Store',
-      lastUpdated: new Date().toISOString()
+      }
     });
   } catch (error) {
-    console.error('セッション取得エラー:', error);
-    return formatErrorResponse({
+    console.error('Session retrieval error:', error);
+    
+    return await formatErrorResponse({
       statusCode: 500,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
-        'Access-Control-Allow-Credentials': 'true'
-      },
-      message: 'サーバーエラーが発生しました'
+      code: 'SERVER_ERROR',
+      message: 'セッション情報の取得中にエラーが発生しました',
+      details: error.message
     });
   }
 };
 
-
+module.exports = {
+  handler
+};

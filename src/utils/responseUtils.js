@@ -1,198 +1,164 @@
 /**
- * プロジェクト: portfolio-market-data-api
- * ファイルパス: src/utils/responseUtils.js
+ * レスポンス形式を標準化するユーティリティ関数
  * 
- * 説明: 
- * API レスポンスを標準化する共通ユーティリティ。
- * 成功レスポンス、エラーレスポンス、リダイレクトレスポンスを
- * 一貫したフォーマットで提供します。予算警告も統合されています。
- * 
+ * @file src/utils/responseUtils.js
  * @author Portfolio Manager Team
- * @updated 2025-05-17
+ * @updated Koki - 2025-05-12 バグ修正: 未定義プロパティへのアクセスを防止
  */
-'use strict';
 
-const { ENV } = require('../config/envConfig');
-const { ERROR_CODES, RESPONSE_FORMATS } = require('../config/constants');
-const { addBudgetWarningToResponse } = require('./budgetCheck');
-const logger = require('./logger');
+const { getBudgetWarningMessage, addBudgetWarningToResponse, isBudgetCritical } = require('./budgetCheck');
 
 /**
- * 成功レスポンスを整形する
- * @param {Object} options - レスポンスオプション
- * @param {number} [options.statusCode=200] - HTTPステータスコード
- * @param {Object} [options.data={}] - レスポンスデータ
- * @param {Object} [options.headers={}] - レスポンスヘッダー
- * @param {string} [options.source='API'] - データソース情報
- * @param {string} [options.lastUpdated] - 最終更新日時
- * @param {string} [options.processingTime=''] - 処理時間
- * @param {Object} [options.usage=null] - 使用量情報
- * @param {boolean} [options.skipBudgetWarning=false] - 予算警告をスキップするかどうか
- * @returns {Promise<Object>} 整形されたレスポンス
+ * 正常レスポンスの形式を標準化する
+ * 
+ * @param {Object} params - レスポンスパラメータ
+ * @param {number} [params.statusCode=200] - HTTPステータスコード
+ * @param {Object} [params.headers={}] - レスポンスヘッダー
+ * @param {Object} [params.data={}] - レスポンスデータ
+ * @param {string} [params.source] - データソース情報
+ * @param {string} [params.lastUpdated] - 最終更新日時
+ * @param {string} [params.processingTime] - 処理時間
+ * @param {Object} [params.usage] - API使用量情報
+ * @param {boolean} [params.skipBudgetWarning=false] - 予算警告をスキップするかどうか
+ * @returns {Object} 標準化されたレスポンスオブジェクト
  */
-const formatResponse = async (options = {}) => {
-  const {
-    statusCode = 200,
-    data = {},
-    headers = {},
-    source = 'API',
-    lastUpdated = new Date().toISOString(),
-    processingTime = '',
-    usage = null,
-    skipBudgetWarning = false
-  } = options;
-
-  // デフォルトのCORSヘッダーを設定
-  const defaultHeaders = {
-    'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': ENV.CORS_ALLOW_ORIGIN,
-    'Access-Control-Allow-Credentials': 'true',
-    'Cache-Control': 'no-cache, no-store, must-revalidate' // キャッシュ無効化
-  };
-
-  // レスポンスボディを構築
-  const responseBody = {
-    success: true,
-    data,
-    source,
-    lastUpdated
-  };
-
-  // オプションフィールドを追加
-  if (processingTime) {
-    responseBody.processingTime = processingTime;
-  }
-
-  if (usage) {
-    responseBody.usage = usage;
-  }
-
+const formatResponse = async (params = {}) => {
+  // デフォルト値を設定して未定義アクセスを防止
+  const statusCode = params.statusCode || 200;
+  const headers = params.headers || {};
+  const data = params.data || {};
+  
+  // レスポンスオブジェクトの構築
   const response = {
     statusCode,
-    headers: { ...defaultHeaders, ...headers },
-    body: JSON.stringify(responseBody)
+    headers: { 
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
+      'Access-Control-Allow-Credentials': 'true',
+      ...headers 
+    },
+    body: JSON.stringify({
+      success: true,
+      data,
+      ...(params.source && { source: params.source }),
+      ...(params.lastUpdated && { lastUpdated: params.lastUpdated }),
+      ...(params.processingTime && { processingTime: params.processingTime }),
+      ...(params.usage && { usage: params.usage })
+    })
   };
-
-  // 予算警告をスキップしない場合は追加
-  if (!skipBudgetWarning) {
-    return await addBudgetWarningToResponse(response);
-  }
-
-  return response;
-};
-
-/**
- * エラーレスポンスを整形する
- * @param {Object} options - エラーレスポンスオプション
- * @param {number} [options.statusCode=500] - HTTPステータスコード
- * @param {string} [options.code] - エラーコード
- * @param {string} [options.message='サーバー内部エラーが発生しました'] - エラーメッセージ
- * @param {string|Object} [options.details=null] - 詳細情報（開発環境のみ）
- * @param {Object} [options.headers={}] - レスポンスヘッダー
- * @param {Object} [options.usage=null] - 使用量情報
- * @param {boolean} [options.skipBudgetWarning=false] - 予算警告をスキップするかどうか
- * @returns {Promise<Object>} 整形されたエラーレスポンス
- */
-const formatErrorResponse = async (options = {}) => {
-  const {
-    statusCode = 500,
-    code = ERROR_CODES.SERVER_ERROR,
-    message = 'サーバー内部エラーが発生しました',
-    details = null,
-    headers = {},
-    usage = null,
-    skipBudgetWarning = false
-  } = options;
-
-  // エラーのログ記録（重大なエラーのみ）
-  if (statusCode >= 500) {
-    logger.error(`API Error Response (${statusCode}):`, { code, message, details });
-  } else if (statusCode >= 400) {
-    logger.warn(`API Error Response (${statusCode}):`, { code, message });
-  }
-
-  // デフォルトのCORSヘッダー
-  const defaultHeaders = {
-    'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': ENV.CORS_ALLOW_ORIGIN,
-    'Access-Control-Allow-Credentials': 'true',
-    'Cache-Control': 'no-cache, no-store, must-revalidate' // キャッシュ無効化
-  };
-
-  // エラーボディを構築
-  const errorBody = {
-    success: false,
-    error: {
-      code,
-      message
+  
+  // 予算警告の追加（オプション）
+  if (!params.skipBudgetWarning) {
+    try {
+      return await addBudgetWarningToResponse(response);
+    } catch (error) {
+      console.error('Budget warning error:', error);
+      return response;  // エラー時は元のレスポンスを返す
     }
-  };
-
-  // 開発環境の場合は詳細情報も含める
-  if (details && (ENV.NODE_ENV === 'development' || ENV.NODE_ENV === 'test')) {
-    errorBody.error.details = details;
   }
-
-  // 使用量情報がある場合は追加
-  if (usage) {
-    errorBody.usage = usage;
-  }
-
-  const response = {
-    statusCode,
-    headers: { ...defaultHeaders, ...headers },
-    body: JSON.stringify(errorBody)
-  };
-
-  // 予算警告をスキップしない場合は追加
-  if (!skipBudgetWarning) {
-    return await addBudgetWarningToResponse(response);
-  }
-
+  
   return response;
 };
 
 /**
- * リダイレクトレスポンスを作成する
- * @param {string} location - リダイレクト先URL
- * @param {number} [statusCode=302] - HTTPステータスコード (301: 恒久的, 302: 一時的)
- * @returns {Object} - API Gatewayレスポンス
+ * エラーレスポンスの形式を標準化する
+ * 
+ * @param {Object} params - エラーパラメータ
+ * @param {number} [params.statusCode=500] - HTTPステータスコード
+ * @param {Object} [params.headers={}] - レスポンスヘッダー
+ * @param {string} [params.code='SERVER_ERROR'] - エラーコード
+ * @param {string} params.message - エラーメッセージ
+ * @param {string} [params.details] - 詳細なエラー情報（開発環境のみ）
+ * @param {Object} [params.usage] - API使用量情報
+ * @returns {Object} 標準化されたエラーレスポンスオブジェクト
  */
-const formatRedirectResponse = (location, statusCode = 302) => {
+const formatErrorResponse = async (params = {}) => {
+  // デフォルト値を設定
+  const statusCode = params.statusCode || 500;
+  const code = params.code || 'SERVER_ERROR';
+  const message = params.message || 'Internal server error';
+  const headers = params.headers || {};
+  
+  // エラーオブジェクトの構築
+  const errorObj = {
+    code,
+    message
+  };
+  
+  // 開発環境の場合は詳細なエラー情報を含める
+  if ((process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') && params.details) {
+    errorObj.details = params.details;
+  }
+  
+  // レスポンスボディの構築
+  const bodyObj = {
+    success: false,
+    error: errorObj
+  };
+  
+  // 使用量情報の追加（オプション）
+  if (params.usage) {
+    bodyObj.usage = params.usage;
+  }
+  
+  // レスポンスオブジェクトの構築
+  return {
+    statusCode,
+    headers: { 
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
+      'Access-Control-Allow-Credentials': 'true',
+      ...headers 
+    },
+    body: JSON.stringify(bodyObj)
+  };
+};
+
+/**
+ * リダイレクトレスポンスの形式を標準化する
+ * 
+ * @param {string} url - リダイレクト先URL
+ * @param {number} [statusCode=302] - HTTPステータスコード (301: 恒久的, 302: 一時的)
+ * @param {Object} [headers={}] - 追加のレスポンスヘッダー
+ * @returns {Object} 標準化されたリダイレクトレスポンスオブジェクト
+ */
+const formatRedirectResponse = (url, statusCode = 302, headers = {}) => {
   return {
     statusCode,
     headers: {
-      Location: location,
-      'Access-Control-Allow-Origin': ENV.CORS_ALLOW_ORIGIN,
-      'Access-Control-Allow-Credentials': 'true'
+      Location: url,
+      'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
+      'Access-Control-Allow-Credentials': 'true',
+      ...headers
     },
     body: ''
   };
 };
 
 /**
- * OPTIONSリクエストのレスポンスを作成する（CORS対応）
+ * OPTIONSリクエストへのレスポンスを形式化する
+ * 
  * @param {Object} [headers={}] - 追加のレスポンスヘッダー
- * @returns {Object} - API Gatewayレスポンス
+ * @returns {Object} 標準化されたOPTIONSレスポンスオブジェクト
  */
 const formatOptionsResponse = (headers = {}) => {
-  const defaultHeaders = {
-    'Access-Control-Allow-Origin': ENV.CORS_ALLOW_ORIGIN,
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Credentials': 'true'
-  };
-
   return {
     statusCode: 204,
-    headers: { ...defaultHeaders, ...headers },
+    headers: {
+      'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Amz-Date, X-Api-Key, X-Amz-Security-Token',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Credentials': 'true',
+      ...headers
+    },
     body: ''
   };
 };
 
 /**
- * APIリクエストのOPTIONSメソッドをハンドルする
- * @param {Object} event - API Gatewayイベント
+ * OPTIONSリクエストを処理する
+ * 
+ * @param {Object} event - API Gatewayイベントオブジェクト
  * @returns {Object|null} OPTIONSレスポンスまたはnull
  */
 const handleOptions = (event) => {

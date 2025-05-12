@@ -4,6 +4,7 @@
  * @file __tests__/integration/auth/googleLogin.test.js
  * @author Portfolio Manager Team
  * @created 2025-05-18
+ * @updated 2025-05-25 - テスト計画書に準拠するよう拡張
  */
 
 // テスト対象の関数をインポート
@@ -13,6 +14,10 @@ const { handler } = require('../../../src/function/auth/googleLogin');
 const googleAuthService = require('../../../src/services/googleAuthService');
 const responseUtils = require('../../../src/utils/responseUtils');
 const cookieParser = require('../../../src/utils/cookieParser');
+
+// テスト用ユーティリティをインポート
+const { setupLocalStackEmulator } = require('../../testUtils/awsEmulator');
+const { setupGoogleOAuth2Mock } = require('../../testUtils/googleMock');
 
 jest.mock('../../../src/services/googleAuthService');
 jest.mock('../../../src/utils/responseUtils');
@@ -25,7 +30,30 @@ const mockResponseObject = {
   body: JSON.stringify({ success: true })
 };
 
+// LocalStackとGoogleモックの参照
+let localstack;
+let googleMock;
+
 describe('Google Login Handler', () => {
+  // 全テスト前のセットアップ
+  beforeAll(async () => {
+    // LocalStackエミュレーターのセットアップ（DynamoDB, SNS）
+    localstack = await setupLocalStackEmulator({
+      services: ['dynamodb', 'sns'],
+      region: 'us-east-1'
+    });
+
+    // Google OAuth2モックのセットアップ
+    googleMock = await setupGoogleOAuth2Mock();
+  });
+
+  // 全テスト後のクリーンアップ
+  afterAll(async () => {
+    // モックのクローズ
+    await localstack.stop();
+    await googleMock.stop();
+  });
+
   // 各テスト実行前にモックをリセット
   beforeEach(() => {
     jest.clearAllMocks();
@@ -112,6 +140,17 @@ describe('Google Login Handler', () => {
     }));
     
     expect(response).toBe(mockResponseObject);
+    
+    // DynamoDBにセッションが保存されていることを確認 (LocalStackを使用)
+    const sessionData = await localstack.getDynamoDBItem({
+      TableName: process.env.SESSION_TABLE || 'test-sessions',
+      Key: {
+        sessionId: { S: 'session-123' }
+      }
+    });
+    
+    expect(sessionData.Item).toBeDefined();
+    expect(sessionData.Item.googleId.S).toBe('user-123');
   });
   
   test('認証コードなしでの呼び出し', async () => {
@@ -164,6 +203,13 @@ describe('Google Login Handler', () => {
       code: 'AUTH_ERROR',
       message: '認証に失敗しました',
       details: '無効な認証コード'
+    }));
+    
+    // Google OAuth2 モックの呼び出し確認
+    expect(googleMock.getTokenCallCount()).toBe(1);
+    expect(googleMock.getLastTokenRequest()).toEqual(expect.objectContaining({
+      code: 'invalid-code',
+      redirect_uri: 'https://app.example.com/callback'
     }));
   });
   
@@ -247,6 +293,120 @@ describe('Google Login Handler', () => {
       code: 'AUTH_ERROR',
       message: '認証に失敗しました',
       details: 'セッション作成エラー'
+    }));
+  });
+  
+  // テスト計画書に従って追加: 認証フローの完全なテスト
+  test('完全な認証フロー（ログイン→セッション確認→ログアウト）', async () => {
+    // このテストでは他のハンドラーも含めた完全なフローをシミュレートする
+    // 注: モック方式のため実際のAPI呼び出しは行わない
+    
+    // 1. ログインハンドラーのモック準備
+    googleAuthService.exchangeCodeForTokens.mockResolvedValue({
+      id_token: 'test-id-token',
+      access_token: 'test-access-token',
+      refresh_token: 'test-refresh-token',
+      expires_in: 3600
+    });
+    
+    googleAuthService.verifyIdToken.mockResolvedValue({
+      sub: 'user-123',
+      email: 'test@example.com',
+      name: 'Test User',
+      picture: 'https://example.com/pic.jpg'
+    });
+    
+    googleAuthService.createUserSession.mockResolvedValue({
+      sessionId: 'complete-flow-session-id',
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+    });
+    
+    // 2. セッション取得・検証ハンドラーのモック準備
+    const { handler: getSessionHandler } = require('../../../src/function/auth/getSession');
+    
+    // セッション取得関数のモック
+    googleAuthService.getSession = jest.fn().mockResolvedValue({
+      sessionId: 'complete-flow-session-id',
+      googleId: 'user-123',
+      email: 'test@example.com',
+      name: 'Test User',
+      picture: 'https://example.com/pic.jpg',
+      accessToken: 'test-access-token',
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+    });
+    
+    // 3. ログアウトハンドラーのモック準備
+    const { handler: logoutHandler } = require('../../../src/function/auth/logout');
+    
+    // ログアウト関数のモック
+    googleAuthService.invalidateSession = jest.fn().mockResolvedValue(true);
+    cookieParser.createClearSessionCookie = jest.fn().mockReturnValue('session=; HttpOnly; Secure; Max-Age=0');
+    
+    // 4. ログインリクエスト
+    const loginEvent = {
+      body: JSON.stringify({
+        code: 'complete-flow-auth-code',
+        redirectUri: 'https://app.example.com/callback'
+      })
+    };
+    
+    const loginResponse = await handler(loginEvent);
+    expect(loginResponse.statusCode).toBe(200);
+    
+    // セッションクッキーの取得（実際の値はモックから返される）
+    const sessionCookie = 'session=complete-flow-session-id; HttpOnly; Secure';
+    
+    // 5. セッション確認リクエスト
+    const sessionEvent = {
+      headers: {
+        Cookie: sessionCookie
+      }
+    };
+    
+    responseUtils.formatResponse.mockClear(); // モック状態をクリア
+    const sessionResponse = await getSessionHandler(sessionEvent);
+    expect(googleAuthService.getSession).toHaveBeenCalledWith('complete-flow-session-id');
+    expect(responseUtils.formatResponse).toHaveBeenCalledWith(expect.objectContaining({
+      statusCode: 200,
+      body: expect.objectContaining({
+        success: true,
+        isAuthenticated: true
+      })
+    }));
+    
+    // 6. ログアウトリクエスト
+    const logoutEvent = {
+      headers: {
+        Cookie: sessionCookie
+      }
+    };
+    
+    responseUtils.formatResponse.mockClear(); // モック状態をクリア
+    const logoutResponse = await logoutHandler(logoutEvent);
+    expect(googleAuthService.invalidateSession).toHaveBeenCalledWith('complete-flow-session-id');
+    expect(cookieParser.createClearSessionCookie).toHaveBeenCalled();
+    expect(responseUtils.formatResponse).toHaveBeenCalledWith(expect.objectContaining({
+      statusCode: 200,
+      body: expect.objectContaining({
+        success: true,
+        message: 'ログアウトしました'
+      }),
+      headers: expect.objectContaining({
+        'Set-Cookie': 'session=; HttpOnly; Secure; Max-Age=0'
+      })
+    }));
+    
+    // 7. ログアウト後のセッション確認
+    // セッション不存在をシミュレート
+    googleAuthService.getSession.mockResolvedValue(null);
+    
+    responseUtils.formatErrorResponse.mockClear(); // モック状態をクリア
+    await getSessionHandler(sessionEvent);
+    expect(googleAuthService.getSession).toHaveBeenCalledWith('complete-flow-session-id');
+    expect(responseUtils.formatErrorResponse).toHaveBeenCalledWith(expect.objectContaining({
+      statusCode: 401,
+      code: 'NO_SESSION',
+      message: 'セッションが存在しません'
     }));
   });
 });

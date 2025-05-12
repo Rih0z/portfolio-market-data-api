@@ -921,6 +921,303 @@ POST /admin/reset - 使用量カウンターリセット
 GET /admin/getBudgetStatus - AWS予算使用状況の確認
 ```
 
+# Docker不要のテスト環境構築 (MacBook向け)
+
+このセクションでは、Docker環境なしでPortfolio Market Data APIの開発とテストを行う方法を説明します。DynamoDB Localとモックサーバーを使用してAWSサービスとAPIをエミュレートします。
+
+## 1. 前提条件
+
+### 1.1 JavaのインストールとJAVA_HOMEの設定
+
+DynamoDB Localを実行するにはJavaランタイムが必要です：
+
+```bash
+# Javaがインストールされているか確認
+java -version
+
+# インストールされていない場合は以下を実行
+brew install openjdk@17
+
+# JAVA_HOMEを設定
+echo 'export JAVA_HOME=$(/usr/libexec/java_home)' >> ~/.zshrc
+source ~/.zshrc
+```
+
+### 1.2 必要なツール
+- Node.js（**18.x系推奨**）
+- npm または yarn
+- Java 8 以上（DynamoDB Localに必要）
+- Git（リポジトリのクローン用）
+
+## 2. テスト環境のセットアップ
+
+### 2.1 テスト関連パッケージのインストール
+
+```bash
+# テスト関連パッケージのインストール
+npm install --save-dev \
+  jest \
+  jest-junit \
+  jest-html-reporter \
+  aws-sdk-mock \
+  @aws-sdk/client-dynamodb \
+  @aws-sdk/lib-dynamodb \
+  @aws-sdk/util-dynamodb \
+  nock \
+  sinon \
+  supertest \
+  mock-fs
+```
+
+### 2.2 DynamoDB Localのセットアップ
+
+セットアップスクリプトを使用して自動的にDynamoDB Localのダウンロードと設定を行います：
+
+```bash
+# ディレクトリ構造が存在することを確認
+mkdir -p scripts __tests__/testUtils
+
+# セットアップスクリプトを実行
+node scripts/setup-test-env.js
+```
+
+手動でセットアップする場合：
+
+```bash
+# DynamoDB Localをダウンロード
+mkdir -p ./dynamodb-local
+cd dynamodb-local
+curl -O https://d1ni2b6xgvw0s0.cloudfront.net/dynamodb_local_latest.tar.gz
+tar -xvzf dynamodb_local_latest.tar.gz
+rm dynamodb_local_latest.tar.gz
+cd ..
+
+# DynamoDB Localを起動
+java -Djava.library.path=./dynamodb-local/DynamoDBLocal_lib -jar ./dynamodb-local/DynamoDBLocal.jar -inMemory -port 8000
+```
+
+### 2.3 package.jsonへのテストスクリプト追加
+
+package.jsonのscriptsセクションに以下を追加します：
+
+```json
+"scripts": {
+  "test": "jest",
+  "test:unit": "jest --selectProjects unit",
+  "test:integration": "jest --selectProjects integration",
+  "test:e2e": "jest --selectProjects e2e",
+  "test:coverage": "jest --coverage",
+  "test:watch": "jest --watch",
+  "test:ci": "jest --ci --reporters=default --reporters=jest-junit",
+  "dynamodb:start": "java -Djava.library.path=./dynamodb-local/DynamoDBLocal_lib -jar ./dynamodb-local/DynamoDBLocal.jar -inMemory -port 8000",
+  "test:setup": "node scripts/setup-test-env.js"
+}
+```
+
+## 3. テストの実行
+
+### 3.1 DynamoDB Localを実行
+
+別のターミナルウィンドウでDynamoDB Localを起動します：
+
+```bash
+npm run dynamodb:start
+```
+
+または、setup-test-env.jsスクリプトで自動的に起動することもできます：
+
+```bash
+npm run test:setup
+```
+
+### 3.2 テストの実行
+
+```bash
+# すべてのテストを実行
+npm test
+
+# ユニットテストのみを実行
+npm run test:unit
+
+# 統合テストのみを実行
+npm run test:integration
+
+# エンドツーエンドテストのみを実行
+npm run test:e2e
+
+# カバレッジレポートを生成
+npm run test:coverage
+```
+
+カバレッジレポートは `coverage/lcov-report/index.html` で確認できます。
+
+### 3.3 特定のテストファイルのみを実行
+
+```bash
+# 特定のテストファイルを実行
+npm test -- __tests__/unit/utils/responseUtils.test.js
+
+# 特定のテスト名でフィルター
+npm test -- -t "米国株データ取得"
+```
+
+## 4. テスト環境のクリーンアップ
+
+テスト完了後、または別のテストの実行前にDynamoDB Localなどのリソースをクリーンアップします：
+
+```bash
+# DynamoDB Localプロセスを検索
+lsof -i :8000
+
+# プロセスを終了（PIDは実際の値に置き換えてください）
+kill -9 <PID>
+```
+
+または setup-test-env.js スクリプトを使用：
+
+```bash
+node scripts/setup-test-env.js --cleanup
+```
+
+## 5. テストプロジェクト構造
+
+```
+プロジェクトルート/
+├── __tests__/                      # テストのルートディレクトリ
+│   ├── unit/                       # ユニットテスト
+│   │   ├── utils/                  # ユーティリティのテスト
+│   │   │   └── responseUtils.test.js
+│   │   └── services/               # サービスのテスト
+│   ├── integration/                # 統合テスト
+│   │   ├── auth/                   # 認証関連の統合テスト
+│   │   │   └── googleLogin.test.js
+│   │   └── function/               # Lambda関数の統合テスト
+│   ├── e2e/                        # エンドツーエンドテスト
+│   │   └── API_test.js
+│   └── testUtils/                  # テストユーティリティ
+│       ├── dynamodbLocal.js        # DynamoDB Local管理
+│       ├── environment.js          # テスト環境管理
+│       ├── mockServer.js           # モックサーバー
+│       ├── apiMocks.js             # 外部APIモック
+│       ├── failureSimulator.js     # 障害シミュレーション
+│       ├── googleMock.js           # Google認証モック
+│       └── awsEmulator.js          # AWSサービスエミュレーション
+├── dynamodb-local/                 # DynamoDB Localファイル
+├── jest.config.js                  # Jestの設定
+├── jest.setup.js                   # Jestの環境設定
+├── scripts/                        # スクリプトファイル
+│   └── setup-test-env.js           # テスト環境セットアップスクリプト
+└── package.json                    # プロジェクト設定
+```
+
+## 6. トラブルシューティング
+
+### 6.1 DynamoDB Localの起動問題
+
+```
+Error: Failed to start DynamoDB Local: Error: spawn java ENOENT
+```
+
+**解決策**:
+Javaがインストールされていることを確認し、PATHが正しく設定されていることを確認します：
+
+```bash
+# Javaのインストール
+brew install openjdk@17
+
+# PATHの更新
+echo 'export PATH="/usr/local/opt/openjdk@17/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+
+# 確認
+java -version
+```
+
+### 6.2 ポート競合エラー
+
+```
+Error: listen EADDRINUSE: address already in use :::8000
+```
+
+**解決策**:
+すでに使用中のポート8000を別のプロセスが使用している場合：
+
+```bash
+# ポート8000を使用しているプロセスを特定
+lsof -i :8000
+
+# プロセスを停止
+kill -9 <PID>
+
+# または別のポートを使用
+java -Djava.library.path=./dynamodb-local/DynamoDBLocal_lib -jar ./dynamodb-local/DynamoDBLocal.jar -inMemory -port 8001
+```
+
+環境変数を更新して、別のポートを使用：
+
+```bash
+# .env.testファイルで
+DYNAMODB_ENDPOINT=http://localhost:8001
+```
+
+### 6.3 メモリ不足エラー
+
+```
+Error: java.lang.OutOfMemoryError: Java heap space
+```
+
+**解決策**:
+JavaのVMオプションでヒープサイズを増やす：
+
+```bash
+# メモリを増やしてDynamoDB Localを起動
+java -Xmx1G -Djava.library.path=./dynamodb-local/DynamoDBLocal_lib -jar ./dynamodb-local/DynamoDBLocal.jar -inMemory -port 8000
+```
+
+### 6.4 テストのタイムアウト
+
+```
+Timeout - Async callback was not invoked within the 5000 ms timeout
+```
+
+**解決策**:
+テストのタイムアウト値を増やす：
+
+```javascript
+// テストファイル内で
+jest.setTimeout(30000); // 30秒
+
+// または jest.config.js で
+module.exports = {
+  testTimeout: 30000
+};
+```
+
+### 6.5 AWSプロファイル関連のエラー
+
+```
+Error: Cannot read property 'default' of undefined
+```
+
+**解決策**:
+テスト環境での認証情報を正しく設定：
+
+```javascript
+// jest.setup.js に追加
+process.env.AWS_SDK_LOAD_CONFIG = 'false';
+process.env.AWS_ACCESS_KEY_ID = 'test';
+process.env.AWS_SECRET_ACCESS_KEY = 'test';
+```
+
+## 7. 注意事項
+
+- **テスト用APIキー**: テスト環境では、環境変数で設定された簡易的なAPIキーを使用します
+- **テストデータの分離**: 本番データと混同しないよう、テスト用のプレフィックスを使用してください
+- **外部API依存**: 実際の外部APIに依存せず、常にnockなどでモック化してください
+- **キャッシュの有効期限**: テスト用に短いTTL（60秒程度）を設定することで、テストの高速化が可能です
+- **AWS SDK v2とv3の互換性**: 両方のバージョンが混在している場合、適切にモック設定を行ってください
+
+これでDocker環境なしでもローカルでテストを実行できる環境が整いました。開発効率の向上とテスト駆動開発をお楽しみください！
 ---
 
 このガイドは、特にMacBookでの開発に最適化されています。実際のプロジェクト要件に応じて適宜調整してください。

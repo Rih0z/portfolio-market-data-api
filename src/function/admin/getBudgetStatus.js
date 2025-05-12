@@ -14,6 +14,7 @@
 
 const { getBudgetStatus } = require('../../utils/budgetCheck');
 const { ADMIN } = require('../../config/constants');
+const { formatResponse, formatErrorResponse } = require('../../utils/responseUtils');
 
 /**
  * 予算情報を取得するハンドラー
@@ -45,14 +46,11 @@ exports.handler = async (event, context) => {
     
     if (!apiKey || apiKey !== ADMIN.API_KEY) {
       console.warn('Invalid API key provided');
-      return {
+      return formatErrorResponse({
         statusCode: 401,
         headers,
-        body: JSON.stringify({
-          success: false,
-          error: '無効なAPIキーです'
-        })
-      };
+        message: '無効なAPIキーです'
+      });
     }
     
     // クエリパラメータの解析
@@ -63,26 +61,22 @@ exports.handler = async (event, context) => {
     const budgetInfo = await getBudgetStatus(forceRefresh);
     
     // レスポンスを整形
-    return {
+    return formatResponse({
       statusCode: 200,
       headers,
-      body: JSON.stringify({
-        success: true,
+      data: {
         budget: budgetInfo,
         timestamp: new Date().toISOString()
-      })
-    };
+      }
+    });
   } catch (error) {
     console.error('Error getting budget status:', error);
     
-    return {
+    return formatErrorResponse({
       statusCode: 500,
       headers,
-      body: JSON.stringify({
-        success: false,
-        error: '予算情報の取得に失敗しました',
-        message: error.message
-      })
-    };
+      message: '予算情報の取得に失敗しました',
+      details: error.message
+    });
   }
 };

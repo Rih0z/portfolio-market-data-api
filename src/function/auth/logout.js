@@ -9,7 +9,7 @@
 'use strict';
 
 const { invalidateSession } = require('../../services/googleAuthService');
-const { formatResponse, formatErrorResponse } = require('../../utils/responseFormatter');
+const { formatResponse, formatErrorResponse } = require('../../utils/responseUtils');
 const { parseCookies, createClearSessionCookie } = require('../../utils/cookieParser');
 
 /**

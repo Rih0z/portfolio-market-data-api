@@ -10,6 +10,7 @@
 const usageService = require('../../services/usage');
 const alertService = require('../../services/alerts');
 const { ADMIN } = require('../../config/constants');
+const { formatResponse, formatErrorResponse } = require('../../utils/responseUtils');
 
 /**
  * 使用量カウンターをリセットするハンドラー
@@ -41,14 +42,11 @@ exports.handler = async (event, context) => {
     
     if (!apiKey || apiKey !== ADMIN.API_KEY) {
       console.warn('Invalid API key provided');
-      return {
+      return formatErrorResponse({
         statusCode: 401,
         headers,
-        body: JSON.stringify({
-          success: false,
-          error: '無効なAPIキーです'
-        })
-      };
+        message: '無効なAPIキーです'
+      });
     }
     
     // リクエストボディの解析
@@ -77,22 +75,19 @@ exports.handler = async (event, context) => {
       detail: JSON.stringify(resetResult)
     });
     
-    return {
+    return formatResponse({
       statusCode: 200,
       headers,
-      body: JSON.stringify(resetResult)
-    };
+      data: resetResult
+    });
   } catch (error) {
     console.error('Error resetting usage counters:', error);
     
-    return {
+    return formatErrorResponse({
       statusCode: 500,
       headers,
-      body: JSON.stringify({
-        success: false,
-        error: '使用量カウンターのリセットに失敗しました',
-        message: error.message
-      })
-    };
+      message: '使用量カウンターのリセットに失敗しました',
+      details: error.message
+    });
   }
 };

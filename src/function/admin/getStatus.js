@@ -10,6 +10,7 @@
 const cacheService = require('../../services/cache');
 const usageService = require('../../services/usage');
 const { ADMIN, CACHE_TIMES } = require('../../config/constants');
+const { formatResponse, formatErrorResponse } = require('../../utils/responseUtils');
 
 /**
  * API使用状況とキャッシュ情報を取得するハンドラー
@@ -41,14 +42,11 @@ exports.handler = async (event, context) => {
     
     if (!apiKey || apiKey !== ADMIN.API_KEY) {
       console.warn('Invalid API key provided');
-      return {
+      return formatErrorResponse({
         statusCode: 401,
         headers,
-        body: JSON.stringify({
-          success: false,
-          error: '無効なAPIキーです'
-        })
-      };
+        message: '無効なAPIキーです'
+      });
     }
     
     // 使用量統計を取得
@@ -65,31 +63,25 @@ exports.handler = async (event, context) => {
     };
     
     // 情報をまとめる
-    const statusInfo = {
-      success: true,
-      timestamp: new Date().toISOString(),
-      usage: usageStats.current,
-      history: usageStats.history,
-      cache: cacheStats,
-      config
-    };
-    
-    return {
+    return formatResponse({
       statusCode: 200,
       headers,
-      body: JSON.stringify(statusInfo)
-    };
+      data: {
+        timestamp: new Date().toISOString(),
+        usage: usageStats.current,
+        history: usageStats.history,
+        cache: cacheStats,
+        config
+      }
+    });
   } catch (error) {
     console.error('Error getting status information:', error);
     
-    return {
+    return formatErrorResponse({
       statusCode: 500,
       headers,
-      body: JSON.stringify({
-        success: false,
-        error: 'ステータス情報の取得に失敗しました',
-        message: error.message
-      })
-    };
+      message: 'ステータス情報の取得に失敗しました',
+      details: error.message
+    });
   }
 };

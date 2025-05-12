@@ -12,7 +12,7 @@ const {
   refreshAccessToken,
   loadPortfolioFromDrive 
 } = require('../../services/googleAuthService');
-const { formatResponse, formatErrorResponse } = require('../../utils/responseFormatter');
+const { formatResponse, formatErrorResponse } = require('../../utils/responseUtils');
 const { parseCookies } = require('../../utils/cookieParser');
 
 /**

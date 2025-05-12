@@ -439,3 +439,4 @@ module.exports = {
   getExchangeRate,
   getBatchExchangeRates
 };
+

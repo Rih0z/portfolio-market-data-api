@@ -6,22 +6,22 @@
  * マーケットデータAPIのLambdaハンドラー関数。
  * API Gatewayからのリクエストを受け取り、様々なデータソースから
  * 株式・投資信託・為替レートのデータを取得して返却します。
- * キャッシュ機能と使用量制限も管理します。
+ * フォールバックデータとギットハブからの情報を統合しています。
  * 
  * @author Portfolio Manager Team
- * @updated 2025-05-16
+ * @updated 2025-05-20
  */
 'use strict';
 
-const yahooFinanceService = require('../services/sources/yahooFinance');
-const scrapingService = require('../services/sources/scraping');
-const exchangeRateService = require('../services/sources/exchangeRate');
+const enhancedMarketDataService = require('../services/sources/enhancedMarketDataService');
+const fallbackDataStore = require('../services/fallbackDataStore');
 const cacheService = require('../services/cache');
 const usageService = require('../services/usage');
 const alertService = require('../services/alerts');
 const { DATA_TYPES, CACHE_TIMES, ERROR_CODES, RESPONSE_FORMATS } = require('../config/constants');
 const { isBudgetCritical, getBudgetWarningMessage } = require('../utils/budgetCheck');
 const { formatResponse, formatErrorResponse } = require('../utils/responseUtils');
+const logger = require('../utils/logger');
 
 /**
  * リクエストパラメータを検証する
@@ -83,7 +83,7 @@ exports.handler = async (event, context) => {
   const startTime = Date.now();
   
   try {
-    console.log('Received market data request:', JSON.stringify({ 
+    logger.info('Received market data request:', JSON.stringify({ 
       path: event.path,
       queryParams: event.queryStringParameters,
       headers: { 
@@ -186,7 +186,7 @@ exports.handler = async (event, context) => {
       }
     });
   } catch (error) {
-    console.error('Error processing market data request:', error);
+    logger.error('Error processing market data request:', error);
 
     // 重大エラーの場合はアラート通知
     await alertService.notifyError(
@@ -210,197 +210,245 @@ exports.handler = async (event, context) => {
 };
 
 /**
- * 複数銘柄のデータを取得する共通関数
+ * 複数銘柄の米国株データを取得する
  * @param {Array<string>} symbols - ティッカーシンボルの配列
  * @param {boolean} refresh - キャッシュを無視するかどうか
- * @param {Object} options - オプション 
  * @returns {Promise<Object>} データオブジェクト
  */
-const getMarketData = async (symbols, refresh, options) => {
-  const { 
-    dataType, 
-    cacheTime, 
-    fetchFunction, 
-    defaultValue = {} 
-  } = options;
-
-  const result = {};
+const getUsStockData = async (symbols, refresh = false) => {
+  logger.info(`Getting US stock data for ${symbols.length} symbols. Refresh: ${refresh}`);
   
-  // キャッシュチェックを並列で実行
-  const cacheChecks = await Promise.all(
-    symbols.map(async (symbol) => {
-      const cacheKey = `${dataType}:${symbol}`;
-      if (!refresh) {
-        const cachedData = await cacheService.get(cacheKey);
-        return { symbol, cachedData, cacheKey };
-      }
-      return { symbol, cachedData: null, cacheKey };
-    })
-  );
-  
-  // キャッシュヒットとミスを分類
-  const cacheMisses = [];
-  cacheChecks.forEach(({ symbol, cachedData, cacheKey }) => {
-    if (cachedData) {
-      result[symbol] = cachedData;
-    } else {
-      cacheMisses.push({ symbol, cacheKey });
-    }
-  });
-  
-  // キャッシュにないデータを取得
-  if (cacheMisses.length > 0) {
-    console.log(`Fetching ${dataType} data for ${cacheMisses.length} symbols`);
+  try {
+    // 強化版サービスで取得
+    const result = await enhancedMarketDataService.getUsStocksData(symbols, refresh);
     
-    try {
-      // バッチ取得または個別取得は実装によって異なる
-      const fetchedData = await fetchFunction(cacheMisses.map(item => item.symbol));
-      
-      // 結果を処理
-      for (const { symbol, cacheKey } of cacheMisses) {
-        if (fetchedData[symbol]) {
-          await cacheService.set(cacheKey, fetchedData[symbol], cacheTime);
-          result[symbol] = fetchedData[symbol];
+    // フォールバックデータの記録と検証
+    for (const symbol of symbols) {
+      if (!result[symbol] || result[symbol].error) {
+        // データが取得できなかった銘柄を記録
+        await fallbackDataStore.recordFailedFetch(
+          symbol,
+          DATA_TYPES.US_STOCK,
+          result[symbol]?.error || 'No data returned'
+        );
+      }
+    }
+    
+    return result;
+  } catch (error) {
+    logger.error(`Error getting US stock data: ${error.message}`);
+    
+    // エラー時はフォールバックデータを試みる
+    const fallbackResults = {};
+    
+    for (const symbol of symbols) {
+      try {
+        const fallbackData = await fallbackDataStore.getFallbackForSymbol(symbol, DATA_TYPES.US_STOCK);
+        
+        if (fallbackData) {
+          fallbackResults[symbol] = {
+            ...fallbackData,
+            source: 'Fallback Data',
+            timestamp: new Date().toISOString()
+          };
         } else {
-          // デフォルト値を適用
-          result[symbol] = {
-            ...defaultValue,
+          fallbackResults[symbol] = {
             ticker: symbol,
-            lastUpdated: new Date().toISOString(),
-            source: 'API Error',
-            error: 'Data not available'
+            price: null,
+            change: null,
+            changePercent: null,
+            name: symbol,
+            currency: 'USD',
+            isStock: true,
+            isMutualFund: false,
+            error: 'Data retrieval failed',
+            source: 'Error',
+            lastUpdated: new Date().toISOString()
           };
         }
-      }
-    } catch (error) {
-      console.error(`Error fetching ${dataType} data:`, error);
-      
-      // エラー時は全てのミスにデフォルト値を設定
-      for (const { symbol } of cacheMisses) {
-        result[symbol] = {
-          ...defaultValue,
+      } catch (fallbackError) {
+        logger.error(`Error getting fallback data for ${symbol}: ${fallbackError.message}`);
+        
+        fallbackResults[symbol] = {
           ticker: symbol,
-          lastUpdated: new Date().toISOString(),
-          source: 'API Error',
-          error: error.message
+          price: null,
+          change: null,
+          changePercent: null,
+          name: symbol,
+          currency: 'USD',
+          isStock: true,
+          isMutualFund: false,
+          error: 'Data retrieval failed',
+          source: 'Error',
+          lastUpdated: new Date().toISOString()
         };
       }
     }
+    
+    return fallbackResults;
   }
-  
-  return result;
 };
 
 /**
- * 米国株データを取得する
- * @param {Array<string>} symbols - ティッカーシンボルの配列
- * @param {boolean} refresh - キャッシュを無視するかどうか
- * @returns {Promise<Object>} 株価データ
- */
-const getUsStockData = async (symbols, refresh = false) => {
-  return await getMarketData(symbols, refresh, {
-    dataType: DATA_TYPES.US_STOCK,
-    cacheTime: CACHE_TIMES.US_STOCK,
-    fetchFunction: async (symbolsList) => {
-      try {
-        // まずバッチ取得を試みる
-        return await yahooFinanceService.getStocksData(symbolsList);
-      } catch (error) {
-        console.error('Error in batch fetch, falling back to individual fetch:', error);
-        
-        // バッチ取得失敗時は個別取得
-        const result = {};
-        await Promise.allSettled(
-          symbolsList.map(async (symbol) => {
-            try {
-              const data = await yahooFinanceService.getStockData(symbol);
-              if (data) result[symbol] = data;
-            } catch (err) {
-              console.error(`Individual fetch failed for ${symbol}:`, err);
-            }
-          })
-        );
-        return result;
-      }
-    },
-    defaultValue: {
-      price: null,
-      change: null,
-      changePercent: null,
-      currency: 'USD',
-      isStock: true,
-      isMutualFund: false
-    }
-  });
-};
-
-/**
- * 日本株データを取得する
+ * 複数銘柄の日本株データを取得する
  * @param {Array<string>} codes - 証券コードの配列
  * @param {boolean} refresh - キャッシュを無視するかどうか
- * @returns {Promise<Object>} 株価データ
+ * @returns {Promise<Object>} データオブジェクト
  */
 const getJpStockData = async (codes, refresh = false) => {
-  return await getMarketData(codes, refresh, {
-    dataType: DATA_TYPES.JP_STOCK,
-    cacheTime: CACHE_TIMES.JP_STOCK,
-    fetchFunction: async (codesList) => {
-      try {
-        return await scrapingService.scrapeJpStocksParallel(codesList);
-      } catch (error) {
-        console.error('Error in batch scraping, falling back to individual fetch:', error);
-        
-        // バッチ取得失敗時は個別取得
-        const result = {};
-        await Promise.allSettled(
-          codesList.map(async (code) => {
-            try {
-              const data = await scrapingService.scrapeJpStock(code);
-              if (data) result[code] = data;
-            } catch (err) {
-              console.error(`Individual scrape failed for ${code}:`, err);
-            }
-          })
+  logger.info(`Getting JP stock data for ${codes.length} codes. Refresh: ${refresh}`);
+  
+  try {
+    // 強化版サービスで取得
+    const result = await enhancedMarketDataService.getJpStocksData(codes, refresh);
+    
+    // フォールバックデータの記録と検証
+    for (const code of codes) {
+      if (!result[code] || result[code].error) {
+        // データが取得できなかった銘柄を記録
+        await fallbackDataStore.recordFailedFetch(
+          code,
+          DATA_TYPES.JP_STOCK,
+          result[code]?.error || 'No data returned'
         );
-        return result;
       }
-    },
-    defaultValue: {
-      price: null,
-      change: null,
-      changePercent: null,
-      name: (code) => `日本株 ${code}`,
-      currency: 'JPY',
-      isStock: true,
-      isMutualFund: false
     }
-  });
+    
+    return result;
+  } catch (error) {
+    logger.error(`Error getting JP stock data: ${error.message}`);
+    
+    // エラー時はフォールバックデータを試みる
+    const fallbackResults = {};
+    
+    for (const code of codes) {
+      try {
+        const fallbackData = await fallbackDataStore.getFallbackForSymbol(code, DATA_TYPES.JP_STOCK);
+        
+        if (fallbackData) {
+          fallbackResults[code] = {
+            ...fallbackData,
+            source: 'Fallback Data',
+            timestamp: new Date().toISOString()
+          };
+        } else {
+          fallbackResults[code] = {
+            ticker: code,
+            price: null,
+            change: null,
+            changePercent: null,
+            name: `日本株 ${code}`,
+            currency: 'JPY',
+            isStock: true,
+            isMutualFund: false,
+            error: 'Data retrieval failed',
+            source: 'Error',
+            lastUpdated: new Date().toISOString()
+          };
+        }
+      } catch (fallbackError) {
+        logger.error(`Error getting fallback data for ${code}: ${fallbackError.message}`);
+        
+        fallbackResults[code] = {
+          ticker: code,
+          price: null,
+          change: null,
+          changePercent: null,
+          name: `日本株 ${code}`,
+          currency: 'JPY',
+          isStock: true,
+          isMutualFund: false,
+          error: 'Data retrieval failed',
+          source: 'Error',
+          lastUpdated: new Date().toISOString()
+        };
+      }
+    }
+    
+    return fallbackResults;
+  }
 };
 
 /**
- * 投資信託データを取得する
+ * 複数銘柄の投資信託データを取得する
  * @param {Array<string>} codes - ファンドコードの配列
  * @param {boolean} refresh - キャッシュを無視するかどうか
- * @returns {Promise<Object>} 投資信託データ
+ * @returns {Promise<Object>} データオブジェクト
  */
 const getMutualFundData = async (codes, refresh = false) => {
-  return await getMarketData(codes, refresh, {
-    dataType: DATA_TYPES.MUTUAL_FUND,
-    cacheTime: CACHE_TIMES.MUTUAL_FUND,
-    fetchFunction: async (codesList) => {
-      return await scrapingService.scrapeMutualFundsParallel(codesList);
-    },
-    defaultValue: {
-      price: null,
-      change: null,
-      changePercent: null,
-      name: (code) => `投資信託 ${code}C`,
-      currency: 'JPY',
-      isStock: false,
-      isMutualFund: true,
-      priceLabel: '基準価額'
+  logger.info(`Getting mutual fund data for ${codes.length} codes. Refresh: ${refresh}`);
+  
+  try {
+    // 強化版サービスで取得
+    const result = await enhancedMarketDataService.getMutualFundsData(codes, refresh);
+    
+    // フォールバックデータの記録と検証
+    for (const code of codes) {
+      if (!result[code] || result[code].error) {
+        // データが取得できなかった銘柄を記録
+        await fallbackDataStore.recordFailedFetch(
+          code,
+          DATA_TYPES.MUTUAL_FUND,
+          result[code]?.error || 'No data returned'
+        );
+      }
     }
-  });
+    
+    return result;
+  } catch (error) {
+    logger.error(`Error getting mutual fund data: ${error.message}`);
+    
+    // エラー時はフォールバックデータを試みる
+    const fallbackResults = {};
+    
+    for (const code of codes) {
+      try {
+        const fallbackData = await fallbackDataStore.getFallbackForSymbol(code, DATA_TYPES.MUTUAL_FUND);
+        
+        if (fallbackData) {
+          fallbackResults[code] = {
+            ...fallbackData,
+            source: 'Fallback Data',
+            timestamp: new Date().toISOString()
+          };
+        } else {
+          fallbackResults[code] = {
+            ticker: code,
+            price: null,
+            change: null,
+            changePercent: null,
+            name: `投資信託 ${code}`,
+            currency: 'JPY',
+            isStock: false,
+            isMutualFund: true,
+            priceLabel: '基準価額',
+            error: 'Data retrieval failed',
+            source: 'Error',
+            lastUpdated: new Date().toISOString()
+          };
+        }
+      } catch (fallbackError) {
+        logger.error(`Error getting fallback data for ${code}: ${fallbackError.message}`);
+        
+        fallbackResults[code] = {
+          ticker: code,
+          price: null,
+          change: null,
+          changePercent: null,
+          name: `投資信託 ${code}`,
+          currency: 'JPY',
+          isStock: false,
+          isMutualFund: true,
+          priceLabel: '基準価額',
+          error: 'Data retrieval failed',
+          source: 'Error',
+          lastUpdated: new Date().toISOString()
+        };
+      }
+    }
+    
+    return fallbackResults;
+  }
 };
 
 /**
@@ -411,46 +459,70 @@ const getMutualFundData = async (codes, refresh = false) => {
  * @returns {Promise<Object>} 為替レートデータ
  */
 const getExchangeRateData = async (base, target, refresh = false) => {
+  logger.info(`Getting exchange rate data for ${base}/${target}. Refresh: ${refresh}`);
+  
   const pair = `${base}-${target}`;
-  const cacheKey = `${DATA_TYPES.EXCHANGE_RATE}:${pair}`;
   
-  // キャッシュをチェック
-  if (!refresh) {
-    const cachedData = await cacheService.get(cacheKey);
-    
-    if (cachedData) {
-      return { [pair]: cachedData };
-    }
-  }
-  
-  // キャッシュにないデータを取得
   try {
-    const exchangeRate = await exchangeRateService.getExchangeRate(base, target);
+    // 強化版サービスで取得
+    const result = await enhancedMarketDataService.getExchangeRateData(base, target, refresh);
     
-    if (exchangeRate) {
-      // キャッシュに保存
-      await cacheService.set(cacheKey, exchangeRate, CACHE_TIMES.EXCHANGE_RATE);
-      return { [pair]: exchangeRate };
-    }
-  } catch (error) {
-    console.error(`Error fetching exchange rate data for ${pair}:`, error);
-    
-    // エラーでも何か返せるようにフォールバック値を設定
-    return {
-      [pair]: {
+    // データが取得できない場合はフォールバックデータを記録
+    if (!result || result.error) {
+      await fallbackDataStore.recordFailedFetch(
         pair,
-        base,
-        target,
-        rate: null,
-        change: null,
-        changePercent: null,
-        lastUpdated: new Date().toISOString(),
-        source: 'API Error',
-        error: error.message
+        DATA_TYPES.EXCHANGE_RATE,
+        result?.error || 'No data returned'
+      );
+    }
+    
+    return { [pair]: result };
+  } catch (error) {
+    logger.error(`Error getting exchange rate data: ${error.message}`);
+    
+    // エラー時はフォールバックデータを試みる
+    try {
+      const fallbackData = await fallbackDataStore.getFallbackForSymbol(pair, DATA_TYPES.EXCHANGE_RATE);
+      
+      if (fallbackData) {
+        return {
+          [pair]: {
+            ...fallbackData,
+            source: 'Fallback Data',
+            timestamp: new Date().toISOString()
+          }
+        };
+      } else {
+        return {
+          [pair]: {
+            pair,
+            base,
+            target,
+            rate: base === 'USD' && target === 'JPY' ? 148.5 : 1.0,
+            change: 0,
+            changePercent: 0,
+            lastUpdated: new Date().toISOString(),
+            source: 'Default Fallback',
+            error: 'Data retrieval failed'
+          }
+        };
       }
-    };
+    } catch (fallbackError) {
+      logger.error(`Error getting fallback data for ${pair}: ${fallbackError.message}`);
+      
+      return {
+        [pair]: {
+          pair,
+          base,
+          target,
+          rate: base === 'USD' && target === 'JPY' ? 148.5 : 1.0,
+          change: 0,
+          changePercent: 0,
+          lastUpdated: new Date().toISOString(),
+          source: 'Default Fallback',
+          error: 'Data retrieval failed'
+        }
+      };
+    }
   }
-  
-  return {};
 };
-

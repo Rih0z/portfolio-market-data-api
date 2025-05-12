@@ -1,1 +1,62 @@
+# 環境変数ファイル
 .env
+.env.local
+.env.*
+.env.development.local
+.env.test.local
+.env.production.local
+
+# 依存関係
+/node_modules
+/bower_components
+
+# ビルド結果
+/dist
+/build
+/out
+/.next
+
+# ログ
+/logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# キャッシュ
+.npm
+.eslintcache
+.cache
+.parcel-cache
+
+# テスト
+/coverage
+/.nyc_output
+
+# エディタ関連
+/.idea
+/.vscode
+*.swp
+*.swo
+.DS_Store
+*.sublime*
+.project
+.classpath
+
+# OS関連
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# デバッグ
+.chrome
+.vscode-test
+
+# その他
+.serverless/
+.fusebox/
+.dynamodb/

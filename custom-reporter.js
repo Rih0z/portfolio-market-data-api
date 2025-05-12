@@ -594,7 +594,7 @@ ${err.error.join('\n')}
                 <div class="log-container" id="full-logs">
 <div class="log-title">テスト実行結果要約</div>
 テスト実行日時: ${this.startTime.toISOString()}
-所要時間: ${duration}ms
+所要時間: ${summary.duration}
 
 テスト統計:
 - 合計テスト数: ${summary.numTotalTests}

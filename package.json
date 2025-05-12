@@ -8,18 +8,20 @@
     "deploy": "serverless deploy --stage dev",
     "deploy:prod": "serverless deploy --stage prod",
     "logs": "serverless logs -f marketData -t",
-    "test": "jest",
-    "test:unit": "jest --selectProjects unit",
-    "test:integration": "jest --selectProjects integration",
-    "test:e2e": "jest --selectProjects e2e",
-    "test:coverage": "jest --coverage",
+    "test": "jest --forceExit",
+    "test:unit": "jest --selectProjects unit --forceExit",
+    "test:integration": "jest --selectProjects integration --forceExit",
+    "test:e2e": "jest --selectProjects e2e --forceExit",
+    "test:coverage": "jest --coverage --forceExit",
     "test:watch": "jest --watch",
-    "test:ci": "jest --ci --reporters=default --reporters=jest-junit",
-    "test:visual": "jest && open ./test-results/visual-report.html",
+    "test:ci": "jest --ci --reporters=default --reporters=jest-junit --forceExit",
+    "test:visual": "jest --forceExit && open ./test-results/visual-report.html",
     "dynamodb:start": "java -Djava.library.path=./dynamodb-local/DynamoDBLocal_lib -jar ./dynamodb-local/DynamoDBLocal.jar -inMemory -port 8000",
+    "dynamodb:stop": "pkill -f \"DynamoDBLocal.jar\" || true",
     "test:setup": "node scripts/setup-test-env.js",
     "test:reset": "rm -rf ./test-results && mkdir -p ./test-results",
-    "test:full": "npm run test:setup && sleep 2 && npm run test && open ./test-results/visual-report.html"
+    "test:full": "npm run test:reset && npm run test:setup && sleep 2 && npm run test && open ./test-results/visual-report.html",
+    "test:clean": "npm run dynamodb:stop && npm run test:reset"
   },
   "keywords": [
     "portfolio",
@@ -33,7 +35,8 @@
     "axios": "^1.6.2",
     "cheerio": "^1.0.0-rc.12",
     "google-auth-library": "^9.15.1",
-    "googleapis": "^148.0.0"
+    "googleapis": "^148.0.0",
+    "aws-sdk": "^2.1570.0"
   },
   "devDependencies": {
     "@aws-sdk/client-dynamodb": "^3.515.0",

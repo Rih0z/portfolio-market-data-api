@@ -1,4 +1,4 @@
-i/**
+/**
  * Jest テスト開始前の環境設定
  * 
  * @file jest.setup.js
@@ -45,7 +45,6 @@ process.env.GOOGLE_CLIENT_SECRET = 'test-client-secret';
 process.env.SESSION_EXPIRES_DAYS = '7';
 
 // DynamoDBモックを有効化
-const AWS = require('aws-sdk');
 const mockDynamoDb = {
   get: jest.fn().mockImplementation(() => ({
     promise: jest.fn().mockResolvedValue({ Item: null })
@@ -88,5 +87,4 @@ if (process.env.CI !== 'true') {
 
 // 日付のモック
 jest.spyOn(global.Date, 'now').mockImplementation(() => 1715900000000); // 2025-05-18T10:00:00.000Z
-
 

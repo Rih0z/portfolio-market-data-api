@@ -27,7 +27,7 @@ module.exports.handler = async (event) => {
     const { code, redirectUri } = requestBody;
     
     if (!code) {
-      return formatErrorResponse({
+      return await formatErrorResponse({
         statusCode: 400,
         code: 'INVALID_PARAMS',
         message: '認証コードが不足しています'
@@ -55,8 +55,8 @@ module.exports.handler = async (event) => {
     const maxAge = 60 * 60 * 24 * 7; // 7日間（秒単位）
     const sessionCookie = createSessionCookie(session.sessionId, maxAge);
     
-    // レスポンスを整形
-    return formatResponse({
+    // レスポンスを整形 - テストが期待する形式に合わせる
+    return await formatResponse({
       statusCode: 200,
       body: {
         success: true,
@@ -77,7 +77,7 @@ module.exports.handler = async (event) => {
     });
   } catch (error) {
     console.error('Google認証エラー:', error);
-    return formatErrorResponse({
+    return await formatErrorResponse({
       statusCode: 401,
       code: 'AUTH_ERROR',
       message: '認証に失敗しました',

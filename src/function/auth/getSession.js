@@ -58,7 +58,7 @@ const handler = async (event) => {
       });
     }
     
-    // 認証済みユーザー情報を返す
+    // 認証済みユーザー情報を返す - テストが期待する形式に合わせる
     return await formatResponse({
       statusCode: 200,
       body: {

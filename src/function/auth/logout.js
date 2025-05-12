@@ -20,12 +20,12 @@ const { parseCookies, createClearSessionCookie } = require('../../utils/cookiePa
 module.exports.handler = async (event) => {
   try {
     // Cookieからセッションを取得
-    const cookies = parseCookies(event.headers.Cookie || event.headers.cookie || '');
+    const cookies = parseCookies(event.headers ? (event.headers.Cookie || event.headers.cookie || '') : '');
     const sessionId = cookies.session;
     
     // セッションがない場合でも成功として処理
     if (!sessionId) {
-      return formatResponse({
+      return await formatResponse({
         statusCode: 200,
         body: {
           success: true,
@@ -40,8 +40,8 @@ module.exports.handler = async (event) => {
     // セッションを無効化
     await invalidateSession(sessionId);
     
-    // レスポンスを整形（Cookieを削除）
-    return formatResponse({
+    // レスポンスを整形（Cookieを削除）- テストが期待する形式に合わせる
+    return await formatResponse({
       statusCode: 200,
       body: {
         success: true,
@@ -55,7 +55,7 @@ module.exports.handler = async (event) => {
     console.error('ログアウトエラー:', error);
     
     // エラーの場合でもCookieは削除
-    return formatErrorResponse({
+    return await formatErrorResponse({
       statusCode: 500,
       code: 'SERVER_ERROR',
       message: 'ログアウト中にエラーが発生しましたが、セッションは削除されました',

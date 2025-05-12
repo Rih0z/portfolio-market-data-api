@@ -80,8 +80,8 @@ module.exports = {
       outputPath: './test-results/test-report.html',
       includeFailureMsg: true
     }],
-    // カスタムレポーターを正しい形式で追加
-    '<rootDir>/custom-reporter.js' // 文字列形式に修正
+    // カスタムレポーターを配列形式で正しく指定
+    ['<rootDir>/custom-reporter.js', {}]
   ],
   
   // 特定のテストフォルダーの優先度設定

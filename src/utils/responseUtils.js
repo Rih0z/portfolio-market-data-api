@@ -17,6 +17,7 @@ const { getBudgetWarningMessage, addBudgetWarningToResponse, isBudgetCritical } 
  * @param {number} [params.statusCode=200] - HTTPステータスコード
  * @param {Object} [params.headers={}] - レスポンスヘッダー
  * @param {Object} [params.data={}] - レスポンスデータ
+ * @param {Object} [params.body] - レスポンスボディ (dataより優先)
  * @param {string} [params.source] - データソース情報
  * @param {string} [params.lastUpdated] - 最終更新日時
  * @param {string} [params.processingTime] - 処理時間
@@ -28,7 +29,25 @@ const formatResponse = async (params = {}) => {
   // デフォルト値を設定して未定義アクセスを防止
   const statusCode = params.statusCode || 200;
   const headers = params.headers || {};
-  const data = params.data || {};
+  
+  // responseBodyの準備 - bodyが存在する場合はそれを優先
+  let responseBody;
+  
+  if (params.body) {
+    // 既に整形されたbodyが渡されている場合はそのまま使用
+    responseBody = params.body;
+  } else {
+    // dataパラメータからbodyを作成
+    const data = params.data || {};
+    responseBody = {
+      success: true,
+      data,
+      ...(params.source && { source: params.source }),
+      ...(params.lastUpdated && { lastUpdated: params.lastUpdated }),
+      ...(params.processingTime && { processingTime: params.processingTime }),
+      ...(params.usage && { usage: params.usage })
+    };
+  }
   
   // レスポンスオブジェクトの構築
   const response = {
@@ -39,14 +58,7 @@ const formatResponse = async (params = {}) => {
       'Access-Control-Allow-Credentials': 'true',
       ...headers 
     },
-    body: JSON.stringify({
-      success: true,
-      data,
-      ...(params.source && { source: params.source }),
-      ...(params.lastUpdated && { lastUpdated: params.lastUpdated }),
-      ...(params.processingTime && { processingTime: params.processingTime }),
-      ...(params.usage && { usage: params.usage })
-    })
+    body: typeof responseBody === 'string' ? responseBody : JSON.stringify(responseBody)
   };
   
   // 予算警告の追加（オプション）

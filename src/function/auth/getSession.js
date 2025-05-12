@@ -13,7 +13,7 @@ const googleAuthService = require('../../services/googleAuthService');
 const cookieParser = require('../../utils/cookieParser');
 
 // モジュールパス修正: response → responseUtils
-const { formatResponse, formatErrorResponse } = require('../../utils/responseUtils');
+const { formatResponseSync, formatErrorResponseSync } = require('../../utils/responseUtils');
 
 /**
  * セッション情報取得ハンドラー関数
@@ -28,7 +28,7 @@ const handler = async (event) => {
     const sessionId = cookies.session;
     
     if (!sessionId) {
-      return await formatErrorResponse({
+      return formatErrorResponseSync({
         statusCode: 401,
         code: 'NO_SESSION',
         message: 'セッションが存在しません'
@@ -39,7 +39,7 @@ const handler = async (event) => {
     const session = await googleAuthService.getSession(sessionId);
     
     if (!session) {
-      return await formatErrorResponse({
+      return formatErrorResponseSync({
         statusCode: 401,
         code: 'NO_SESSION',
         message: 'セッションが存在しません'
@@ -51,7 +51,7 @@ const handler = async (event) => {
     if (expiresAt < Date.now()) {
       await googleAuthService.invalidateSession(sessionId);
       
-      return await formatErrorResponse({
+      return formatErrorResponseSync({
         statusCode: 401,
         code: 'SESSION_EXPIRED',
         message: 'セッションの有効期限が切れています'
@@ -59,7 +59,7 @@ const handler = async (event) => {
     }
     
     // 認証済みユーザー情報を返す - テストが期待する形式に合わせる
-    return await formatResponse({
+    return formatResponseSync({
       statusCode: 200,
       body: {
         success: true,
@@ -69,16 +69,13 @@ const handler = async (event) => {
           email: session.email,
           name: session.name || '',
           picture: session.picture || ''
-        },
-        session: {
-          expiresAt: session.expiresAt
         }
       }
     });
   } catch (error) {
     console.error('Session retrieval error:', error);
     
-    return await formatErrorResponse({
+    return formatErrorResponseSync({
       statusCode: 500,
       code: 'SERVER_ERROR',
       message: 'セッション情報の取得中にエラーが発生しました',

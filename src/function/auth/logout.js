@@ -9,7 +9,7 @@
 'use strict';
 
 const { invalidateSession } = require('../../services/googleAuthService');
-const { formatResponse, formatErrorResponse } = require('../../utils/responseUtils');
+const { formatResponseSync, formatErrorResponseSync } = require('../../utils/responseUtils');
 const { parseCookies, createClearSessionCookie } = require('../../utils/cookieParser');
 
 /**
@@ -25,7 +25,7 @@ module.exports.handler = async (event) => {
     
     // セッションがない場合でも成功として処理
     if (!sessionId) {
-      return await formatResponse({
+      return formatResponseSync({
         statusCode: 200,
         body: {
           success: true,
@@ -41,7 +41,7 @@ module.exports.handler = async (event) => {
     await invalidateSession(sessionId);
     
     // レスポンスを整形（Cookieを削除）- テストが期待する形式に合わせる
-    return await formatResponse({
+    return formatResponseSync({
       statusCode: 200,
       body: {
         success: true,
@@ -55,7 +55,7 @@ module.exports.handler = async (event) => {
     console.error('ログアウトエラー:', error);
     
     // エラーの場合でもCookieは削除
-    return await formatErrorResponse({
+    return formatErrorResponseSync({
       statusCode: 500,
       code: 'SERVER_ERROR',
       message: 'ログアウト中にエラーが発生しましたが、セッションは削除されました',

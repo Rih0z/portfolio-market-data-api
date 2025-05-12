@@ -3,7 +3,7 @@
  * 
  * @file __tests__/testUtils/environment.js
  * @author Portfolio Manager Team
- * @updated 2025-05-12 バグ修正: エラーハンドリングを追加、テーブル作成を非同期に改善
+ * @updated 2025-05-12 修正: APIサーバー可用性チェックの追加と改善
  */
 const { startDynamoDBLocal, stopDynamoDBLocal, createTestTable } = require('./dynamodbLocal');
 const { setupMockServer, stopMockServer } = require('./mockServer');
@@ -25,8 +25,12 @@ const setupTestEnvironment = async () => {
       await axios.get(`${apiBaseUrl}/health`, { timeout: 2000 });
       console.log(`✅ API server is running at ${apiBaseUrl}`);
     } catch (apiError) {
-      console.warn(`⚠️ API server at ${apiBaseUrl} may not be running. E2E tests will likely fail.`);
-      console.warn('Please start the API server with `npm run dev` in a separate terminal window.');
+      console.warn(`⚠️ API server at ${apiBaseUrl} may not be running or not responding.`);
+      console.warn('If you plan to run E2E tests, please start the API server:');
+      console.warn('  1. Open a new terminal window');
+      console.warn(`  2. Navigate to your project directory: cd ${process.cwd()}`);
+      console.warn('  3. Run: npm run dev');
+      console.warn('Some tests will fail if the API server is not running.');
     }
     
     // DynamoDB Localを起動
@@ -45,7 +49,7 @@ const setupTestEnvironment = async () => {
     // すべてのテーブル作成が完了するか、エラーが発生するまで待機
     await Promise.allSettled(tableCreationPromises);
     
-    // モックサーバーをセットアップ
+    // モックサーバーをセットアップ - テスト支援用
     await setupMockServer().catch(error => {
       console.warn(`Mock server setup warning: ${error.message}`);
       console.warn('Continuing with tests, but API-dependent tests may fail');

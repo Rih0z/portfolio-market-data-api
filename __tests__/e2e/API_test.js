@@ -1,15 +1,17 @@
 /**
+ * ファイルパス: __tests__/e2e/API_test.js
+ * 
  * Portfolio Market Data API のエンドツーエンドテスト
  * 
- * @file __tests__/e2e/API_test.js
  * @author Portfolio Manager Team
  * @created 2025-05-18
+ * @updated 2025-05-12 修正: APIサーバー起動チェックとエラーメッセージを改善
  */
 
 const axios = require('axios');
 const { setupTestEnvironment, teardownTestEnvironment } = require('../testUtils/environment');
 
-// APIエンドポイント（テスト環境用）- APIサーバーが実際に起動していることを確認
+// APIエンドポイント（テスト環境用）
 const API_BASE_URL = process.env.API_TEST_URL || 'http://localhost:3000';
 
 // テストデータ
@@ -41,12 +43,14 @@ describe('Portfolio Market Data API E2Eテスト', () => {
   // テスト環境のセットアップ
   beforeAll(async () => {
     await setupTestEnvironment();
-    // サーバーが起動していることを確認
+    
+    // APIサーバーの起動確認
     try {
-      await axios.get(`${API_BASE_URL}/health`);
+      await axios.get(`${API_BASE_URL}/health`, { timeout: 2000 });
       console.log(`✅ API server is running at ${API_BASE_URL}`);
     } catch (error) {
-      console.error(`❌ API server is not running at ${API_BASE_URL}. Please start the server with 'npm run dev'`);
+      console.error(`❌ API server is not running at ${API_BASE_URL}`);
+      console.error(`Please start the API server with 'npm run dev' in a separate terminal.`);
       throw new Error('API server is not running');
     }
   });

@@ -137,3 +137,4 @@ module.exports = {
   getSTS,
   resetAWSConfig
 };
+

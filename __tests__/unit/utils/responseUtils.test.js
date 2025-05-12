@@ -12,7 +12,7 @@ const { getBudgetWarningMessage, addBudgetWarningToResponse } = require('../../.
 // budgetCheck モジュールをモック化
 jest.mock('../../../src/utils/budgetCheck', () => ({
   getBudgetWarningMessage: jest.fn(),
-  addBudgetWarningToResponse: jest.fn(response => response),
+  addBudgetWarningToResponse: jest.fn(async response => response), // 非同期関数に修正
   isBudgetCritical: jest.fn().mockResolvedValue(false)
 }));
 
@@ -34,7 +34,7 @@ describe('responseUtils', () => {
   describe('formatResponse', () => {
     test('デフォルトパラメータでの正常レスポンス', async () => {
       // addBudgetWarningToResponse が呼ばれるように設定
-      addBudgetWarningToResponse.mockImplementation(response => response);
+      addBudgetWarningToResponse.mockImplementation(async response => response);
       
       // テスト実行
       const response = await formatResponse({
@@ -56,6 +56,9 @@ describe('responseUtils', () => {
     });
 
     test('カスタムステータスコードとヘッダーでの正常レスポンス', async () => {
+      // モック実装を明示的に設定
+      addBudgetWarningToResponse.mockImplementation(async response => response);
+      
       // テスト実行
       const response = await formatResponse({
         statusCode: 201,

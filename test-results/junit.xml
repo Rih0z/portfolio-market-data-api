@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="jest tests" tests="20" failures="13" errors="0" time="1.401">
+  <testsuite name="responseUtils" errors="0" failures="5" skipped="0" timestamp="2025-05-12T06:53:29" time="0.258" tests="12">
+    <testcase classname="responseUtils formatResponse デフォルトパラメータでの正常レスポンス" name="responseUtils formatResponse デフォルトパラメータでの正常レスポンス" time="0.002">
+      <failure>TypeError: Cannot read properties of undefined (reading &apos;statusCode&apos;)
+    at Object.statusCode (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/unit/utils/responseUtils.test.js:42:23)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
+    </testcase>
+    <testcase classname="responseUtils formatResponse カスタムステータスコードとヘッダーでの正常レスポンス" name="responseUtils formatResponse カスタムステータスコードとヘッダーでの正常レスポンス" time="0">
+      <failure>TypeError: Cannot read properties of undefined (reading &apos;statusCode&apos;)
+    at Object.statusCode (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/unit/utils/responseUtils.test.js:67:23)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
+    </testcase>
+    <testcase classname="responseUtils formatResponse 予算警告スキップオプション" name="responseUtils formatResponse 予算警告スキップオプション" time="0.001">
+    </testcase>
+    <testcase classname="responseUtils formatErrorResponse デフォルトパラメータでのエラーレスポンス" name="responseUtils formatErrorResponse デフォルトパラメータでのエラーレスポンス" time="0.011">
+      <failure>TypeError: Cannot read properties of undefined (reading &apos;statusCode&apos;)
+    at Object.statusCode (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/unit/utils/responseUtils.test.js:98:23)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
+    </testcase>
+    <testcase classname="responseUtils formatErrorResponse 詳細エラー情報を含むエラーレスポンス（開発環境用）" name="responseUtils formatErrorResponse 詳細エラー情報を含むエラーレスポンス（開発環境用）" time="0.001">
+      <failure>TypeError: Cannot read properties of undefined (reading &apos;statusCode&apos;)
+    at Object.statusCode (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/unit/utils/responseUtils.test.js:120:23)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
+    </testcase>
+    <testcase classname="responseUtils formatErrorResponse 使用量情報を含むエラーレスポンス" name="responseUtils formatErrorResponse 使用量情報を含むエラーレスポンス" time="0.001">
+      <failure>TypeError: Cannot read properties of undefined (reading &apos;statusCode&apos;)
+    at Object.statusCode (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/unit/utils/responseUtils.test.js:141:23)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
+    </testcase>
+    <testcase classname="responseUtils formatRedirectResponse デフォルトの一時的リダイレクト" name="responseUtils formatRedirectResponse デフォルトの一時的リダイレクト" time="0">
+    </testcase>
+    <testcase classname="responseUtils formatRedirectResponse 恒久的リダイレクト" name="responseUtils formatRedirectResponse 恒久的リダイレクト" time="0">
+    </testcase>
+    <testcase classname="responseUtils formatOptionsResponse デフォルトのOPTIONSレスポンス" name="responseUtils formatOptionsResponse デフォルトのOPTIONSレスポンス" time="0">
+    </testcase>
+    <testcase classname="responseUtils formatOptionsResponse カスタムヘッダー付きのOPTIONSレスポンス" name="responseUtils formatOptionsResponse カスタムヘッダー付きのOPTIONSレスポンス" time="0">
+    </testcase>
+    <testcase classname="responseUtils handleOptions OPTIONSメソッドの処理" name="responseUtils handleOptions OPTIONSメソッドの処理" time="0">
+    </testcase>
+    <testcase classname="responseUtils handleOptions OPTIONSメソッド以外の処理" name="responseUtils handleOptions OPTIONSメソッド以外の処理" time="0">
+    </testcase>
+  </testsuite>
+  <testsuite name="Portfolio Market Data API E2Eテスト" errors="0" failures="8" skipped="0" timestamp="2025-05-12T06:53:29" time="0.819" tests="8">
+    <testcase classname="Portfolio Market Data API E2Eテスト マーケットデータAPI 米国株データ取得" name="Portfolio Market Data API E2Eテスト マーケットデータAPI 米国株データ取得" time="0.001">
+      <failure>Error: AWS SDK error wrapper for AggregateError
+    at asSdkError (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@smithy/middleware-retry/dist-cjs/index.js:103:10)
+    at /Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@smithy/middleware-retry/dist-cjs/index.js:327:21
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at /Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@aws-sdk/middleware-logger/dist-cjs/index.js:33:22
+    at createTestTable (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/testUtils/dynamodbLocal.js:116:5)
+    at setupTestEnvironment (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/testUtils/environment.js:19:3)
+    at Object.&lt;anonymous&gt; (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/e2e/API_test.js:43:5)</failure>
+    </testcase>
+    <testcase classname="Portfolio Market Data API E2Eテスト マーケットデータAPI 日本株データ取得" name="Portfolio Market Data API E2Eテスト マーケットデータAPI 日本株データ取得" time="0.001">
+      <failure>Error: AWS SDK error wrapper for AggregateError
+    at asSdkError (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@smithy/middleware-retry/dist-cjs/index.js:103:10)
+    at /Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@smithy/middleware-retry/dist-cjs/index.js:327:21
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at /Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@aws-sdk/middleware-logger/dist-cjs/index.js:33:22
+    at createTestTable (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/testUtils/dynamodbLocal.js:116:5)
+    at setupTestEnvironment (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/testUtils/environment.js:19:3)
+    at Object.&lt;anonymous&gt; (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/e2e/API_test.js:43:5)</failure>
+    </testcase>
+    <testcase classname="Portfolio Market Data API E2Eテスト マーケットデータAPI 投資信託データ取得" name="Portfolio Market Data API E2Eテスト マーケットデータAPI 投資信託データ取得" time="0">
+      <failure>Error: AWS SDK error wrapper for AggregateError
+    at asSdkError (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@smithy/middleware-retry/dist-cjs/index.js:103:10)
+    at /Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@smithy/middleware-retry/dist-cjs/index.js:327:21
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at /Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@aws-sdk/middleware-logger/dist-cjs/index.js:33:22
+    at createTestTable (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/testUtils/dynamodbLocal.js:116:5)
+    at setupTestEnvironment (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/testUtils/environment.js:19:3)
+    at Object.&lt;anonymous&gt; (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/e2e/API_test.js:43:5)</failure>
+    </testcase>
+    <testcase classname="Portfolio Market Data API E2Eテスト マーケットデータAPI 為替レートデータ取得" name="Portfolio Market Data API E2Eテスト マーケットデータAPI 為替レートデータ取得" time="0">
+      <failure>Error: AWS SDK error wrapper for AggregateError
+    at asSdkError (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@smithy/middleware-retry/dist-cjs/index.js:103:10)
+    at /Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@smithy/middleware-retry/dist-cjs/index.js:327:21
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at /Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@aws-sdk/middleware-logger/dist-cjs/index.js:33:22
+    at createTestTable (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/testUtils/dynamodbLocal.js:116:5)
+    at setupTestEnvironment (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/testUtils/environment.js:19:3)
+    at Object.&lt;anonymous&gt; (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/e2e/API_test.js:43:5)</failure>
+    </testcase>
+    <testcase classname="Portfolio Market Data API E2Eテスト マーケットデータAPI 無効なパラメータでのエラーハンドリング" name="Portfolio Market Data API E2Eテスト マーケットデータAPI 無効なパラメータでのエラーハンドリング" time="0">
+      <failure>Error: AWS SDK error wrapper for AggregateError
+    at asSdkError (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@smithy/middleware-retry/dist-cjs/index.js:103:10)
+    at /Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@smithy/middleware-retry/dist-cjs/index.js:327:21
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at /Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@aws-sdk/middleware-logger/dist-cjs/index.js:33:22
+    at createTestTable (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/testUtils/dynamodbLocal.js:116:5)
+    at setupTestEnvironment (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/testUtils/environment.js:19:3)
+    at Object.&lt;anonymous&gt; (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/e2e/API_test.js:43:5)</failure>
+    </testcase>
+    <testcase classname="Portfolio Market Data API E2Eテスト 認証API 認証フロー: ログイン、セッション取得、ログアウト" name="Portfolio Market Data API E2Eテスト 認証API 認証フロー: ログイン、セッション取得、ログアウト" time="0">
+      <failure>Error: AWS SDK error wrapper for AggregateError
+    at asSdkError (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@smithy/middleware-retry/dist-cjs/index.js:103:10)
+    at /Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@smithy/middleware-retry/dist-cjs/index.js:327:21
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at /Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@aws-sdk/middleware-logger/dist-cjs/index.js:33:22
+    at createTestTable (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/testUtils/dynamodbLocal.js:116:5)
+    at setupTestEnvironment (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/testUtils/environment.js:19:3)
+    at Object.&lt;anonymous&gt; (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/e2e/API_test.js:43:5)</failure>
+    </testcase>
+    <testcase classname="Portfolio Market Data API E2Eテスト Google Drive API ポートフォリオデータの保存と読み込み" name="Portfolio Market Data API E2Eテスト Google Drive API ポートフォリオデータの保存と読み込み" time="0">
+      <failure>Error: AWS SDK error wrapper for AggregateError
+    at asSdkError (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@smithy/middleware-retry/dist-cjs/index.js:103:10)
+    at /Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@smithy/middleware-retry/dist-cjs/index.js:327:21
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at /Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@aws-sdk/middleware-logger/dist-cjs/index.js:33:22
+    at createTestTable (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/testUtils/dynamodbLocal.js:116:5)
+    at setupTestEnvironment (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/testUtils/environment.js:19:3)
+    at Object.&lt;anonymous&gt; (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/e2e/API_test.js:43:5)</failure>
+    </testcase>
+    <testcase classname="Portfolio Market Data API E2Eテスト Google Drive API 認証なしでのアクセス拒否" name="Portfolio Market Data API E2Eテスト Google Drive API 認証なしでのアクセス拒否" time="0">
+      <failure>Error: AWS SDK error wrapper for AggregateError
+    at asSdkError (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@smithy/middleware-retry/dist-cjs/index.js:103:10)
+    at /Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@smithy/middleware-retry/dist-cjs/index.js:327:21
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at /Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@aws-sdk/middleware-logger/dist-cjs/index.js:33:22
+    at createTestTable (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/testUtils/dynamodbLocal.js:116:5)
+    at setupTestEnvironment (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/testUtils/environment.js:19:3)
+    at Object.&lt;anonymous&gt; (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/e2e/API_test.js:43:5)</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

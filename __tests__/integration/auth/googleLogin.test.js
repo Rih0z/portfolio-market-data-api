@@ -1,4 +1,6 @@
 /**
+ * ファイルパス: __tests__/integration/auth/googleLogin.test.js
+ * 
  * Google認証ログインハンドラーの統合テスト
  * 
  * @file __tests__/integration/auth/googleLogin.test.js

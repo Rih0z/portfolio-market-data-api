@@ -1,9 +1,12 @@
 /**
+ * ファイルパス: jest.config.js
+ * 
  * Jest テスト設定ファイル
  * 
  * @file jest.config.js
  * @author Portfolio Manager Team
  * @created 2025-05-18
+ * @updated Koki - 2025-05-12 - カスタムレポーターを追加、フォーマット修正
  */
 
 module.exports = {
@@ -76,7 +79,9 @@ module.exports = {
       pageTitle: 'Portfolio Market Data API テスト結果',
       outputPath: './test-results/test-report.html',
       includeFailureMsg: true
-    }]
+    }],
+    // カスタムレポーターを正しい形式で追加
+    '<rootDir>/custom-reporter.js' // 文字列形式に修正
   ],
   
   // 特定のテストフォルダーの優先度設定
@@ -98,5 +103,3 @@ module.exports = {
     }
   ]
 };
-
-

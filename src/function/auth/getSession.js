@@ -1,4 +1,6 @@
 /**
+ * ファイルパス: src/function/auth/getSession.js
+ * 
  * セッション情報取得ハンドラー
  * ブラウザから送信されたCookieに基づいてセッション情報を取得する
  * 

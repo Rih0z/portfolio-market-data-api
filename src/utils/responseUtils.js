@@ -1,4 +1,6 @@
 /**
+ * ファイルパス: src/utils/responseUtils.js
+ * 
  * レスポンス形式を標準化するユーティリティ関数
  * 
  * @file src/utils/responseUtils.js

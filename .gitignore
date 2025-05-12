@@ -33,6 +33,7 @@ yarn-error.log*
 /coverage
 /.nyc_output
 /test-results
+test-results/
 
 # エディタ関連
 /.idea

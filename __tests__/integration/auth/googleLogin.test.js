@@ -322,74 +322,104 @@ describe('Google Login Handler', () => {
   });
   
   /**
-   * このテストを修正して問題を解決
-   * セッション確認と関数呼び出しの検証を確実に行う
+   * 完全な認証フローテストを修正
+   * より明示的なモックとエラーハンドリングを追加
    */
   test('完全な認証フロー（ログイン→セッション確認→ログアウト）', async () => {
-    // モックの設定
-    // 1. セッション管理関数のモック
-    const { handler: getSessionHandler } = require('../../../src/function/auth/getSession');
-    const { handler: logoutHandler } = require('../../../src/function/auth/logout');
-    
-    // 2. セッション取得関数をモック - 明示的に関数をモック化
-    googleAuthService.getSession = jest.fn().mockImplementation(sessionId => {
-      if (sessionId === 'complete-flow-session-id') {
-        return Promise.resolve({
-          sessionId: 'complete-flow-session-id',
-          googleId: 'user-123',
-          email: 'test@example.com',
-          name: 'Test User',
-          picture: 'https://example.com/pic.jpg',
-          accessToken: 'test-access-token',
-          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-        });
-      }
-      return Promise.resolve(null);
-    });
-    
-    // Cookieパース関数の明示的なモック - 必ず正しいセッションIDを返すように
-    cookieParser.parseCookies = jest.fn().mockImplementation(cookieHeader => {
-      return { session: 'complete-flow-session-id' };
-    });
-    
-    // formatResponseSync と formatErrorResponseSync のモック
-    responseUtils.formatResponseSync = jest.fn().mockReturnValue({
-      statusCode: 200,
-      body: JSON.stringify({ success: true, data: { isAuthenticated: true } })
-    });
-    
-    responseUtils.formatErrorResponseSync = jest.fn().mockReturnValue({
-      statusCode: 401,
-      body: JSON.stringify({ success: false, error: { code: 'NO_SESSION' } })
-    });
-    
-    // セッション無効化のモック
-    googleAuthService.invalidateSession = jest.fn().mockResolvedValue(true);
-    cookieParser.createClearSessionCookie = jest.fn().mockReturnValue('session=; Max-Age=0');
-    
-    // テスト 1: セッション確認
-    const sessionEvent = {
-      headers: {
-        Cookie: 'session=complete-flow-session-id'
-      }
-    };
-    
-    await getSessionHandler(sessionEvent);
-    
-    // 正しいセッションIDを使って呼び出されたことを確認
-    expect(googleAuthService.getSession).toHaveBeenCalledWith('complete-flow-session-id');
-    
-    // テスト 2: ログアウト
-    const logoutEvent = {
-      headers: {
-        Cookie: 'session=complete-flow-session-id'
-      }
-    };
-    
-    await logoutHandler(logoutEvent);
-    
-    // ログアウト処理の確認
-    expect(googleAuthService.invalidateSession).toHaveBeenCalledWith('complete-flow-session-id');
-    expect(cookieParser.createClearSessionCookie).toHaveBeenCalled();
+    // テスト開始時にモックを明示的にクリア
+    jest.clearAllMocks();
+  
+    try {
+      // 1. getSessionおよびlogoutハンドラーのインポート
+      const { handler: getSessionHandler } = require('../../../src/function/auth/getSession');
+      const { handler: logoutHandler } = require('../../../src/function/auth/logout');
+      
+      // 2. セッション取得関数を明示的にモック化
+      googleAuthService.getSession = jest.fn().mockImplementation(sessionId => {
+        console.log(`getSession called with sessionId: ${sessionId}`); // デバッグ用ログ
+        
+        if (sessionId === 'complete-flow-session-id') {
+          return Promise.resolve({
+            sessionId: 'complete-flow-session-id',
+            googleId: 'user-123',
+            email: 'test@example.com',
+            name: 'Test User',
+            picture: 'https://example.com/pic.jpg',
+            accessToken: 'test-access-token',
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+          });
+        }
+        
+        console.warn(`No session found for ID: ${sessionId}`);
+        return Promise.resolve(null);
+      });
+      
+      // 3. Cookieパース関数を明示的かつ固定的にモック
+      cookieParser.parseCookies = jest.fn().mockReturnValue({ 
+        session: 'complete-flow-session-id' 
+      });
+      
+      // 4. formatResponseSync と formatErrorResponseSync のモック
+      responseUtils.formatResponseSync = jest.fn().mockReturnValue({
+        statusCode: 200,
+        body: JSON.stringify({ 
+          success: true, 
+          data: { 
+            isAuthenticated: true,
+            user: {
+              id: 'user-123',
+              email: 'test@example.com',
+              name: 'Test User'
+            }
+          }
+        })
+      });
+      
+      responseUtils.formatErrorResponseSync = jest.fn().mockReturnValue({
+        statusCode: 401,
+        body: JSON.stringify({ success: false, error: { code: 'NO_SESSION' } })
+      });
+      
+      // 5. セッション無効化のモック
+      googleAuthService.invalidateSession = jest.fn().mockImplementation(sessionId => {
+        console.log(`invalidateSession called with sessionId: ${sessionId}`);
+        return Promise.resolve(true);
+      });
+      
+      cookieParser.createClearSessionCookie = jest.fn().mockReturnValue('session=; Max-Age=0');
+      
+      // テスト 1: セッション確認リクエスト
+      const sessionEvent = {
+        headers: {
+          Cookie: 'session=complete-flow-session-id'
+        }
+      };
+      
+      // getSessionHandlerを呼び出し、非同期処理を完了させる
+      await getSessionHandler(sessionEvent);
+      
+      // 関数が正しいセッションIDで呼び出されたことを確認
+      expect(googleAuthService.getSession).toHaveBeenCalled();
+      expect(googleAuthService.getSession).toHaveBeenCalledWith('complete-flow-session-id');
+      
+      // テスト 2: ログアウトリクエスト
+      const logoutEvent = {
+        headers: {
+          Cookie: 'session=complete-flow-session-id'
+        }
+      };
+      
+      // logoutHandlerを呼び出し、非同期処理を完了させる
+      await logoutHandler(logoutEvent);
+      
+      // ログアウト処理の確認
+      expect(googleAuthService.invalidateSession).toHaveBeenCalledWith('complete-flow-session-id');
+      expect(cookieParser.createClearSessionCookie).toHaveBeenCalled();
+      
+    } catch (error) {
+      // テスト中のエラーをキャプチャして詳細を出力
+      console.error('認証フローテストエラー:', error);
+      throw error; // テストを失敗させる
+    }
   });
 });

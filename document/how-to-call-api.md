@@ -13,8 +13,15 @@
 - 為替レート取得
 - データキャッシング
 - 使用量制限
-- Google認証（新機能）
-- Google Driveデータ同期（新機能）
+- Google認証
+- Google Driveデータ同期
+
+**システム特長：**
+- マルチレイヤーのデータ取得戦略（キャッシュ → API → スクレイピング → フォールバック）
+- キャッシュを利用した高速なレスポンス
+- 人気銘柄のキャッシュプリウォーミング
+- 障害耐性の高い設計（データソース障害時も動作継続）
+- AWS Lambda + DynamoDBによるスケーラブルな構成
 
 ## 2. 環境とエンドポイント
 
@@ -37,7 +44,7 @@ https://[prod-api-id].execute-api.ap-northeast-1.amazonaws.com/prod/api/market-d
 
 ※実際の`[dev-api-id]`と`[prod-api-id]`は、システム管理者にお問い合わせください。
 
-### 2.2 認証エンドポイント（新機能）
+### 2.2 認証エンドポイント
 
 ```
 # Google認証処理
@@ -50,14 +57,14 @@ https://[api-id].execute-api.ap-northeast-1.amazonaws.com/[stage]/auth/session
 https://[api-id].execute-api.ap-northeast-1.amazonaws.com/[stage]/auth/logout
 ```
 
-### 2.3 Google Drive連携エンドポイント（新機能）
+### 2.3 Google Drive連携エンドポイント
 
 ```
 # ポートフォリオデータの保存
 https://[api-id].execute-api.ap-northeast-1.amazonaws.com/[stage]/drive/save
 
 # ポートフォリオデータの読み込み
-https://[api-id].execute-api.ap-northeast-1.amazonaws.com/[stage]/drive/load
+https://[api-id].execute-api.ap-northeast-1.amazonaws.com/[stage]/drive/load?fileId=[fileId]
 
 # ファイル一覧の取得
 https://[api-id].execute-api.ap-northeast-1.amazonaws.com/[stage]/drive/files
@@ -65,11 +72,20 @@ https://[api-id].execute-api.ap-northeast-1.amazonaws.com/[stage]/drive/files
 
 ### 2.4 管理者用エンドポイント
 
-APIステータス確認や使用量リセットなどの管理者機能も提供しています。
+APIステータス確認や使用量リセットなどの管理者機能も提供しています。これらは管理者用APIキーが必要です。
 
 ```
+# APIステータス確認
 https://[api-id].execute-api.ap-northeast-1.amazonaws.com/[stage]/admin/status
+
+# 使用量カウンターリセット
 https://[api-id].execute-api.ap-northeast-1.amazonaws.com/[stage]/admin/reset
+
+# 予算ステータス取得
+https://[api-id].execute-api.ap-northeast-1.amazonaws.com/[stage]/admin/budget
+
+# フォールバックデータ管理
+https://[api-id].execute-api.ap-northeast-1.amazonaws.com/[stage]/admin/fallbacks
 ```
 
 ## 3. マーケットデータ取得API
@@ -152,6 +168,7 @@ const fetchExchangeRate = async (base = 'USD', target = 'JPY') => {
     const response = await axios.get('https://[api-id].execute-api.ap-northeast-1.amazonaws.com/prod/api/market-data', {
       params: {
         type: 'exchange-rate',
+        symbols: `${base}-${target}`,
         base,
         target
       }
@@ -171,8 +188,89 @@ const fetchExchangeRate = async (base = 'USD', target = 'JPY') => {
 - **米国株**: アルファベット記号（例: `AAPL`, `MSFT`, `GOOGL`）
 - **日本株**: 4桁の数字、オプションでサフィックス `.T`（例: `7203`, `9984`, `7203.T`）
 - **投資信託**: 7-8桁の数字 + `C`、オプションでサフィックス `.T`（例: `2931113C`, `0131103C.T`）
+- **為替レート**: ベース通貨と対象通貨をハイフンで結合（例: `USD-JPY`, `EUR-USD`）
 
-## 4. 認証API（新機能）
+### 3.4 レスポンス形式
+
+#### 成功時のレスポンス
+```json
+{
+  "success": true,
+  "data": {
+    "AAPL": {
+      "ticker": "AAPL",
+      "price": 188.42,
+      "change": 1.25,
+      "changePercent": 0.67,
+      "name": "Apple Inc.",
+      "currency": "USD",
+      "lastUpdated": "2025-05-11T15:30:00.000Z",
+      "source": "Yahoo Finance API",
+      "isStock": true,
+      "isMutualFund": false,
+      "volume": 52387100,
+      "marketCap": 2883765000000
+    },
+    "MSFT": {
+      "ticker": "MSFT",
+      "price": 425.52,
+      "change": -2.48,
+      "changePercent": -0.58,
+      "name": "Microsoft Corporation",
+      "currency": "USD",
+      "lastUpdated": "2025-05-11T15:30:00.000Z",
+      "source": "Yahoo Finance API",
+      "isStock": true,
+      "isMutualFund": false,
+      "volume": 24567800,
+      "marketCap": 3162840000000
+    }
+  },
+  "source": "API",
+  "lastUpdated": "2025-05-11T15:35:22.123Z",
+  "processingTime": "523ms",
+  "usage": {
+    "daily": {
+      "count": 125,
+      "limit": 5000,
+      "percentage": 2.5
+    },
+    "monthly": {
+      "count": 2450,
+      "limit": 100000,
+      "percentage": 2.45
+    }
+  }
+}
+```
+
+### 3.5 データソースと優先順位
+
+APIは以下のデータソースから情報を取得します。優先順位順に試行され、上位のソースで失敗した場合は下位のソースにフォールバックします：
+
+#### 米国株
+1. **Yahoo Finance API** - 最も正確で高速なデータソース
+2. **Yahoo Finance（スクレイピング）** - APIが失敗した場合のバックアップ
+3. **MarketWatch（スクレイピング）** - 最後の手段
+4. **フォールバックデータ** - すべてのソースが失敗した場合
+
+#### 日本株
+1. **Yahoo Finance Japan（スクレイピング）**
+2. **Minkabu（スクレイピング）**
+3. **Kabutan（スクレイピング）**
+4. **フォールバックデータ**
+
+#### 投資信託
+1. **Morningstar CSV** - 公式データ
+2. **フォールバックデータ**
+
+#### 為替レート
+1. **Exchangerate-host API**
+2. **動的計算** - 基準レートをもとに計算
+3. **ハードコード値** - 最終手段
+4. **緊急フォールバック値**
+
+## 4. 認証API
 
 ### 4.1 Google認証プロセス
 
@@ -325,7 +423,7 @@ const handleLogout = async () => {
 }
 ```
 
-## 5. Google Drive連携API（新機能）
+## 5. Google Drive連携API
 
 ### 5.1 ポートフォリオデータの保存
 
@@ -503,9 +601,22 @@ const fetchMarketData = async (type, symbols) => {
     if (error.response) {
       // サーバーからレスポンスがあった場合
       console.error('APIエラーレスポンス:', error.response.status, error.response.data);
+      
+      // エラーコードに応じた処理
+      if (error.response.status === 429) {
+        console.warn('API使用量制限に達しました');
+        // 使用量制限エラー処理
+      } else if (error.response.status === 400) {
+        console.error('リクエストパラメータが無効です:', error.response.data);
+        // パラメータエラー処理
+      } else if (error.response.status >= 500) {
+        console.error('サーバーエラーが発生しました');
+        // サーバーエラー処理
+      }
     } else if (error.request) {
       // リクエストは送信されたがレスポンスがない場合
       console.error('APIレスポンスなし:', error.request);
+      // タイムアウトやネットワークエラー処理
     } else {
       // リクエスト設定エラー
       console.error('APIリクエストエラー:', error.message);
@@ -605,11 +716,40 @@ const fetchStockDataWithRateLimitHandling = async (ticker) => {
 };
 ```
 
+### 6.4 エラーレスポンス形式
+
+APIが返すエラーレスポンスの形式は以下の通りです：
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "INVALID_PARAMS",
+    "message": "銘柄コードが無効です"
+  }
+}
+```
+
+主なエラーコード一覧：
+
+- `INVALID_PARAMS`: リクエストパラメータが無効
+- `LIMIT_EXCEEDED`: API使用量制限に達した
+- `SOURCE_ERROR`: データソースからのデータ取得に失敗
+- `NOT_FOUND`: 要求されたリソースが見つからない
+- `SERVER_ERROR`: サーバー内部エラー
+- `AUTH_ERROR`: 認証エラー
+- `NO_SESSION`: セッションが存在しない
+- `DRIVE_ERROR`: Google Drive操作エラー
+- `DATA_SOURCE_ERROR`: データソースエラー
+- `BLACKLISTED`: スクレイピングブラックリスト登録済み
+- `DATA_VALIDATION_ERROR`: データ検証エラー
+
 ## 7. React用ユーティリティフック
 
-### 7.1 認証フック（新機能）
+### 7.1 認証フック
 
 ```javascript
+// useAuth.js
 import { useState, useEffect, useContext, createContext } from 'react';
 import axios from 'axios';
 
@@ -702,9 +842,10 @@ export const useAuth = () => {
 };
 ```
 
-### 7.2 Google Drive連携フック（新機能）
+### 7.2 Google Drive連携フック
 
 ```javascript
+// useGoogleDrive.js
 import { useState } from 'react';
 import axios from 'axios';
 import { useAuth } from './useAuth';
@@ -821,7 +962,8 @@ export const useGoogleDrive = () => {
 ### 7.3 マーケットデータフック
 
 ```javascript
-import { useState, useEffect } from 'react';
+// useMarketData.js
+import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 
 export const useMarketData = (type, symbols, refreshInterval = 0) => {
@@ -829,55 +971,59 @@ export const useMarketData = (type, symbols, refreshInterval = 0) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
+  const fetchData = useCallback(async () => {
+    if (!symbols) return;
+    
+    try {
+      setLoading(true);
+      
+      const endpoint = process.env.NODE_ENV === 'development'
+        ? 'http://localhost:3000/dev/api/market-data'
+        : 'https://[api-id].execute-api.ap-northeast-1.amazonaws.com/prod/api/market-data';
+      
+      const response = await axios.get(endpoint, {
+        params: { 
+          type, 
+          symbols: Array.isArray(symbols) ? symbols.join(',') : symbols 
+        }
+      });
+      
+      if (response.data.success) {
+        setData(response.data.data);
+        setError(null);
+      } else {
+        setError(response.data.error || '不明なエラー');
+      }
+    } catch (err) {
+      setError(err.message || 'APIエラー');
+    } finally {
+      setLoading(false);
+    }
+  }, [type, symbols]);
+  
   useEffect(() => {
     let isMounted = true;
     let intervalId = null;
     
-    const fetchData = async () => {
-      if (!symbols) return;
+    const runFetchData = async () => {
+      await fetchData();
+      if (!isMounted) return;
       
-      try {
-        setLoading(true);
-        
-        const endpoint = process.env.NODE_ENV === 'development'
-          ? 'http://localhost:3000/dev/api/market-data'
-          : 'https://[api-id].execute-api.ap-northeast-1.amazonaws.com/prod/api/market-data';
-        
-        const response = await axios.get(endpoint, {
-          params: { type, symbols }
-        });
-        
-        if (isMounted) {
-          if (response.data.success) {
-            setData(response.data.data);
-            setError(null);
-          } else {
-            setError(response.data.error || '不明なエラー');
-          }
-          setLoading(false);
-        }
-      } catch (err) {
-        if (isMounted) {
-          setError(err.message || 'APIエラー');
-          setLoading(false);
-        }
+      // 定期的な更新が必要な場合
+      if (refreshInterval > 0) {
+        intervalId = setInterval(fetchData, refreshInterval);
       }
     };
     
-    fetchData();
-    
-    // 定期的な更新が必要な場合
-    if (refreshInterval > 0) {
-      intervalId = setInterval(fetchData, refreshInterval);
-    }
+    runFetchData();
     
     return () => {
       isMounted = false;
       if (intervalId) clearInterval(intervalId);
     };
-  }, [type, symbols, refreshInterval]);
+  }, [fetchData, refreshInterval]);
   
-  return { data, loading, error, refetch: async () => await fetchData() };
+  return { data, loading, error, refetch: fetchData };
 };
 ```
 
@@ -1126,19 +1272,28 @@ axios.defaults.withCredentials = true;
 const response = await axios.get(url, { withCredentials: true });
 ```
 
-フロントエンドのオリジンがバックエンドのCORS許可リストに含まれていることを確認してください。
+フロントエンドのオリジンがバックエンドのCORS許可リストに含まれていることを確認してください。APIの実装では、以下のヘッダーが適切に設定されています：
+
+```
+Access-Control-Allow-Origin: [フロントエンドのオリジン]
+Access-Control-Allow-Credentials: true
+Access-Control-Allow-Headers: Content-Type, Authorization, x-api-key
+Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS
+```
 
 ### 9.2 Cookieの扱い
 
 - セッションCookieはHTTP Onlyフラグが設定されているため、JavaScriptから直接アクセスできません
 - 認証関連の全てのAPIリクエストには `withCredentials: true` を設定してください
 - SPAの場合、ルーティングによってCookieのパスが問題になる場合があります（Path: `/`で設定されていることを確認）
+- セッションCookieの有効期間はデフォルトで7日間です（`SESSION_EXPIRES_DAYS`環境変数で調整可能）
 
 ### 9.3 セキュリティのベストプラクティス
 
 - Google Client IDは公開情報ですが、クライアントシークレットは厳重に保護してください
 - 認証状態の確認は定期的に行い、無効なセッションでのAPI呼び出しを防止してください
 - ログイン状態の永続化にはCookieのみを使用し、LocalStorageには機密情報を保存しないでください
+- 管理者用API呼び出しにはx-api-keyヘッダーが必要です。このキーは安全に管理してください
 
 ## 10. 応用例：認証と市場データの連携
 
@@ -1265,8 +1420,20 @@ const PortfolioPage = () => {
 export default PortfolioPage;
 ```
 
+### 10.2 システム実装上の注意点
+
+1. **運用時のデータソース優先順位**  
+   ソースコードでは各データタイプに対して複数のデータソースが定義されており、優先順位によって順番に試行されます。これは`constants.js`の`DATA_SOURCES`オブジェクトで管理されています。システム運用中にデータソースの信頼性や応答速度に変化があった場合、この優先順位は動的に調整されます。
+
+2. **キャッシュ管理**  
+   システムは自動的にキャッシュのプリウォーミングを行い、人気銘柄のデータをあらかじめキャッシュに保存します。この銘柄リストは`constants.js`の`PREWARM_SYMBOLS`で定義されています。実運用環境のパフォーマンスを最適化するためには、このリストを定期的に見直し、最もアクセス頻度の高い銘柄を含めるようにしてください。
+
+3. **AWS無料枠の制限対応**  
+   AWS Free Tierの上限に近づくと、システムはより保守的な動作モードに移行します。Budget StatusがCRITICALになると、キャッシュの強制リフレッシュリクエスト（`refresh=true`）が拒否されるなど、コスト削減対策が自動的に適用されます。
+
+4. **エラー監視**  
+   システムは自動的にデータ取得の失敗や異常値を検出し、特定の閾値を超えた場合にはアラートを送信します。特に注意すべき重要なエラーが発生した場合は管理者に通知されます。
+
 ---
 
-このガイドはポートフォリオマネージャーマーケットデータAPIの基本的な使用方法を説明しています。より詳細な情報やサポートが必要な場合は、APIの開発者に問い合わせてください。
-
-
+このガイドはポートフォリオマネージャーマーケットデータAPIの基本的な使用方法を説明しています。より詳細な情報やサポートが必要な場合は、システム管理者にお問い合わせください。

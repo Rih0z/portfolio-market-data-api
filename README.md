@@ -290,4 +290,5 @@ curl -X POST https://your-api-url.execute-api.ap-northeast-1.amazonaws.com/prod/
 
 ## ライセンス
 
-&copy; 2025 Your Company. All Rights Reserved.
+&copy; 2025 Koki Riho. All Rights Reserved.
+

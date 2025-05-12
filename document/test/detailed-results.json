@@ -1,0 +1,306 @@
+{
+  "numTotalTests": 18,
+  "numPassedTests": 15,
+  "numFailedTests": 3,
+  "numPendingTests": 0,
+  "startTime": "2025-05-12T08:59:10.849Z",
+  "endTime": "2025-05-12T08:59:13.787Z",
+  "duration": "2938ms",
+  "success": false,
+  "testResults": [
+    {
+      "name": "/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/unit/utils/responseUtils.test.js",
+      "path": "/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/unit/utils/responseUtils.test.js",
+      "status": "failed",
+      "numPassingTests": 11,
+      "numFailingTests": 1,
+      "numPendingTests": 0,
+      "numTodoTests": 0,
+      "perfStats": {
+        "end": 1747040351043,
+        "runtime": 132,
+        "slow": false,
+        "start": 1747040350911
+      }
+    },
+    {
+      "name": "/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/integration/auth/googleLogin.test.js",
+      "path": "/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/integration/auth/googleLogin.test.js",
+      "status": "failed",
+      "numPassingTests": 4,
+      "numFailingTests": 2,
+      "numPendingTests": 0,
+      "numTodoTests": 0,
+      "perfStats": {
+        "end": 1747040351860,
+        "runtime": 949,
+        "slow": false,
+        "start": 1747040350911
+      }
+    },
+    {
+      "name": "/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/e2e/API_test.js",
+      "path": "/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/e2e/API_test.js",
+      "status": "passed",
+      "numPassingTests": 0,
+      "numFailingTests": 0,
+      "numPendingTests": 0,
+      "numTodoTests": 0,
+      "perfStats": {
+        "end": 0,
+        "runtime": 0,
+        "slow": false,
+        "start": 0
+      }
+    }
+  ],
+  "testSuites": [
+    {
+      "name": "responseUtils.test.js",
+      "passed": 11,
+      "failed": 1,
+      "pending": 0,
+      "total": 12,
+      "tests": [
+        {
+          "name": "デフォルトパラメータでの正常レスポンス",
+          "ancestorTitles": [
+            "responseUtils",
+            "formatResponse"
+          ],
+          "fullName": "responseUtils formatResponse デフォルトパラメータでの正常レスポンス",
+          "status": "passed",
+          "duration": 2,
+          "failureMessages": []
+        },
+        {
+          "name": "カスタムステータスコードとヘッダーでの正常レスポンス",
+          "ancestorTitles": [
+            "responseUtils",
+            "formatResponse"
+          ],
+          "fullName": "responseUtils formatResponse カスタムステータスコードとヘッダーでの正常レスポンス",
+          "status": "failed",
+          "duration": 1,
+          "failureMessages": [
+            "TypeError: Cannot read properties of undefined (reading 'statusCode')\n    at Object.statusCode (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/unit/utils/responseUtils.test.js:70:23)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)"
+          ]
+        },
+        {
+          "name": "予算警告スキップオプション",
+          "ancestorTitles": [
+            "responseUtils",
+            "formatResponse"
+          ],
+          "fullName": "responseUtils formatResponse 予算警告スキップオプション",
+          "status": "passed",
+          "duration": 0,
+          "failureMessages": []
+        },
+        {
+          "name": "デフォルトパラメータでのエラーレスポンス",
+          "ancestorTitles": [
+            "responseUtils",
+            "formatErrorResponse"
+          ],
+          "fullName": "responseUtils formatErrorResponse デフォルトパラメータでのエラーレスポンス",
+          "status": "passed",
+          "duration": 1,
+          "failureMessages": []
+        },
+        {
+          "name": "詳細エラー情報を含むエラーレスポンス（開発環境用）",
+          "ancestorTitles": [
+            "responseUtils",
+            "formatErrorResponse"
+          ],
+          "fullName": "responseUtils formatErrorResponse 詳細エラー情報を含むエラーレスポンス（開発環境用）",
+          "status": "passed",
+          "duration": 0,
+          "failureMessages": []
+        },
+        {
+          "name": "使用量情報を含むエラーレスポンス",
+          "ancestorTitles": [
+            "responseUtils",
+            "formatErrorResponse"
+          ],
+          "fullName": "responseUtils formatErrorResponse 使用量情報を含むエラーレスポンス",
+          "status": "passed",
+          "duration": 0,
+          "failureMessages": []
+        },
+        {
+          "name": "デフォルトの一時的リダイレクト",
+          "ancestorTitles": [
+            "responseUtils",
+            "formatRedirectResponse"
+          ],
+          "fullName": "responseUtils formatRedirectResponse デフォルトの一時的リダイレクト",
+          "status": "passed",
+          "duration": 0,
+          "failureMessages": []
+        },
+        {
+          "name": "恒久的リダイレクト",
+          "ancestorTitles": [
+            "responseUtils",
+            "formatRedirectResponse"
+          ],
+          "fullName": "responseUtils formatRedirectResponse 恒久的リダイレクト",
+          "status": "passed",
+          "duration": 0,
+          "failureMessages": []
+        },
+        {
+          "name": "デフォルトのOPTIONSレスポンス",
+          "ancestorTitles": [
+            "responseUtils",
+            "formatOptionsResponse"
+          ],
+          "fullName": "responseUtils formatOptionsResponse デフォルトのOPTIONSレスポンス",
+          "status": "passed",
+          "duration": 1,
+          "failureMessages": []
+        },
+        {
+          "name": "カスタムヘッダー付きのOPTIONSレスポンス",
+          "ancestorTitles": [
+            "responseUtils",
+            "formatOptionsResponse"
+          ],
+          "fullName": "responseUtils formatOptionsResponse カスタムヘッダー付きのOPTIONSレスポンス",
+          "status": "passed",
+          "duration": 0,
+          "failureMessages": []
+        },
+        {
+          "name": "OPTIONSメソッドの処理",
+          "ancestorTitles": [
+            "responseUtils",
+            "handleOptions"
+          ],
+          "fullName": "responseUtils handleOptions OPTIONSメソッドの処理",
+          "status": "passed",
+          "duration": 1,
+          "failureMessages": []
+        },
+        {
+          "name": "OPTIONSメソッド以外の処理",
+          "ancestorTitles": [
+            "responseUtils",
+            "handleOptions"
+          ],
+          "fullName": "responseUtils handleOptions OPTIONSメソッド以外の処理",
+          "status": "passed",
+          "duration": 0,
+          "failureMessages": []
+        }
+      ]
+    },
+    {
+      "name": "googleLogin.test.js",
+      "passed": 4,
+      "failed": 2,
+      "pending": 0,
+      "total": 6,
+      "tests": [
+        {
+          "name": "正常なGoogleログイン処理の実行",
+          "ancestorTitles": [
+            "Google Login Handler"
+          ],
+          "fullName": "Google Login Handler 正常なGoogleログイン処理の実行",
+          "status": "failed",
+          "duration": 24,
+          "failureMessages": [
+            "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeDefined\u001b[2m()\u001b[22m\n\nReceived: \u001b[31mundefined\u001b[39m\n    at Object.toBeDefined (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/integration/auth/googleLogin.test.js:153:30)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)"
+          ]
+        },
+        {
+          "name": "認証コードなしでの呼び出し",
+          "ancestorTitles": [
+            "Google Login Handler"
+          ],
+          "fullName": "Google Login Handler 認証コードなしでの呼び出し",
+          "status": "passed",
+          "duration": 0,
+          "failureMessages": []
+        },
+        {
+          "name": "認証コード交換エラー時の処理",
+          "ancestorTitles": [
+            "Google Login Handler"
+          ],
+          "fullName": "Google Login Handler 認証コード交換エラー時の処理",
+          "status": "passed",
+          "duration": 3,
+          "failureMessages": []
+        },
+        {
+          "name": "IDトークン検証エラー時の処理",
+          "ancestorTitles": [
+            "Google Login Handler"
+          ],
+          "fullName": "Google Login Handler IDトークン検証エラー時の処理",
+          "status": "passed",
+          "duration": 1,
+          "failureMessages": []
+        },
+        {
+          "name": "セッション作成エラー時の処理",
+          "ancestorTitles": [
+            "Google Login Handler"
+          ],
+          "fullName": "Google Login Handler セッション作成エラー時の処理",
+          "status": "passed",
+          "duration": 1,
+          "failureMessages": []
+        },
+        {
+          "name": "完全な認証フロー（ログイン→セッション確認→ログアウト）",
+          "ancestorTitles": [
+            "Google Login Handler"
+          ],
+          "fullName": "Google Login Handler 完全な認証フロー（ログイン→セッション確認→ログアウト）",
+          "status": "failed",
+          "duration": 6,
+          "failureMessages": [
+            "Error: \u001b[2mexpect(\u001b[22m\u001b[31mjest.fn()\u001b[39m\u001b[2m).\u001b[22mtoHaveBeenCalledWith\u001b[2m(\u001b[22m\u001b[32m...expected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: \u001b[32m\"complete-flow-session-id\"\u001b[39m\n\nNumber of calls: \u001b[31m0\u001b[39m\n    at Object.toHaveBeenCalledWith (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/integration/auth/googleLogin.test.js:434:42)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "API_test.js",
+      "passed": 0,
+      "failed": 0,
+      "pending": 0,
+      "total": 0,
+      "tests": []
+    }
+  ],
+  "errors": [
+    {
+      "suite": "responseUtils.test.js",
+      "test": "responseUtils formatResponse カスタムステータスコードとヘッダーでの正常レスポンス",
+      "error": [
+        "TypeError: Cannot read properties of undefined (reading 'statusCode')\n    at Object.statusCode (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/unit/utils/responseUtils.test.js:70:23)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)"
+      ]
+    },
+    {
+      "suite": "googleLogin.test.js",
+      "test": "Google Login Handler 正常なGoogleログイン処理の実行",
+      "error": [
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeDefined\u001b[2m()\u001b[22m\n\nReceived: \u001b[31mundefined\u001b[39m\n    at Object.toBeDefined (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/integration/auth/googleLogin.test.js:153:30)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)"
+      ]
+    },
+    {
+      "suite": "googleLogin.test.js",
+      "test": "Google Login Handler 完全な認証フロー（ログイン→セッション確認→ログアウト）",
+      "error": [
+        "Error: \u001b[2mexpect(\u001b[22m\u001b[31mjest.fn()\u001b[39m\u001b[2m).\u001b[22mtoHaveBeenCalledWith\u001b[2m(\u001b[22m\u001b[32m...expected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: \u001b[32m\"complete-flow-session-id\"\u001b[39m\n\nNumber of calls: \u001b[31m0\u001b[39m\n    at Object.toHaveBeenCalledWith (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/integration/auth/googleLogin.test.js:434:42)\n    at processTicksAndRejections (node:internal/process/task_queues:105:5)"
+      ]
+    }
+  ]
+}

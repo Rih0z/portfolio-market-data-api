@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portfolio Market Data API テスト結果</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        :root {
+            --primary: #4361ee;
+            --success: #4caf50;
+            --warning: #ff9800;
+            --danger: #f44336;
+            --info: #03a9f4;
+            --dark: #2d3748;
+            --light: #f8f9fa;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f5f8fa;
+            margin: 0;
+            padding: 0;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            background-color: var(--primary);
+            color: white;
+            padding: 1rem 0;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        header .container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .card {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-bottom: 1.5rem;
+            padding: 1.5rem;
+            overflow: hidden;
+        }
+        
+        .card-header {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        
+        .summary-stats {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            margin-bottom: 1.5rem;
+        }
+        
+        .stat-box {
+            flex: 1 1 280px;
+            padding: 1rem;
+            margin: 0.5rem;
+            border-radius: 8px;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+        
+        .stat-box h3 {
+            margin: 0 0 0.5rem 0;
+            font-size: 1.1rem;
+            font-weight: 500;
+        }
+        
+        .stat-box .number {
+            font-size: 2.5rem;
+            font-weight: 700;
+            line-height: 1;
+            margin-bottom: 0.5rem;
+        }
+        
+        .stat-box .description {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+        
+        .total-box {
+            background-color: var(--primary);
+        }
+        
+        .passed-box {
+            background-color: var(--success);
+        }
+        
+        .failed-box {
+            background-color: var(--danger);
+        }
+        
+        .charts-row {
+            display: flex;
+            flex-wrap: wrap;
+            margin: -0.75rem;
+        }
+        
+        .chart-container {
+            flex: 1 1 500px;
+            margin: 0.75rem;
+            min-height: 300px;
+            position: relative;
+        }
+        
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid #e5e7eb;
+            margin-bottom: 1.5rem;
+        }
+        
+        .tab {
+            padding: 0.75rem 1.5rem;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            font-weight: 500;
+        }
+        
+        .tab.active {
+            border-bottom-color: var(--primary);
+            color: var(--primary);
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .test-results {
+            margin-top: 1rem;
+        }
+        
+        .suite {
+            margin-bottom: 1.5rem;
+        }
+        
+        .suite-header {
+            display: flex;
+            justify-content: space-between;
+            background-color: #f3f4f6;
+            padding: 0.75rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        
+        .suite-header:hover {
+            background-color: #e5e7eb;
+        }
+        
+        .suite-name {
+            flex: 1;
+        }
+        
+        .suite-stats {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.9rem;
+        }
+        
+        .passed-count {
+            color: var(--success);
+        }
+        
+        .failed-count {
+            color: var(--danger);
+        }
+        
+        .test-cases {
+            display: none;
+            margin-top: 0.5rem;
+            padding-left: 1.5rem;
+        }
+        
+        .test-cases.active {
+            display: block;
+        }
+        
+        .test-case {
+            padding: 0.5rem;
+            border-left: 3px solid transparent;
+            margin-bottom: 0.25rem;
+        }
+        
+        .test-case.passed {
+            border-left-color: var(--success);
+            background-color: rgba(76, 175, 80, 0.1);
+        }
+        
+        .test-case.failed {
+            border-left-color: var(--danger);
+            background-color: rgba(244, 67, 54, 0.1);
+        }
+        
+        .error-log {
+            font-family: monospace;
+            white-space: pre-wrap;
+            background-color: #282c34;
+            color: #abb2bf;
+            padding: 1rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            margin-top: 0.5rem;
+            overflow-x: auto;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .log-container {
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            font-family: monospace;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-top: 1rem;
+            white-space: pre-wrap;
+            overflow-x: auto;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        
+        .log-title {
+            font-weight: 600;
+            border-bottom: 1px solid #444;
+            padding-bottom: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .copy-button {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            margin-top: 0.5rem;
+        }
+        
+        .copy-button:hover {
+            background-color: #3651d4;
+        }
+        
+        @media (max-width: 768px) {
+            .charts-row {
+                flex-direction: column;
+            }
+            
+            .summary-stats {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>Portfolio Market Data API テスト結果</h1>
+            <div>実行日時: 5/12/2025, 1:59:10 AM</div>
+        </div>
+    </header>
+    
+    <div class="container">
+        <div class="summary-stats">
+            <div class="stat-box total-box">
+                <h3>テスト総数</h3>
+                <div class="number">18</div>
+                <div class="description">3つのテストスイートで実行</div>
+            </div>
+            <div class="stat-box passed-box">
+                <h3>合格</h3>
+                <div class="number">15</div>
+                <div class="description">83.3% の成功率</div>
+            </div>
+            <div class="stat-box failed-box">
+                <h3>不合格</h3>
+                <div class="number">3</div>
+                <div class="description">16.7% の失敗率</div>
+            </div>
+        </div>
+        
+        <div class="tabs">
+            <div class="tab active" data-tab="overview">概要</div>
+            <div class="tab" data-tab="details">詳細結果</div>
+            <div class="tab" data-tab="logs">ログ</div>
+        </div>
+        
+        <div id="overview" class="tab-content active">
+            <div class="card">
+                <div class="card-header">テスト結果概要</div>
+                <div class="charts-row">
+                    <div class="chart-container">
+                        <canvas id="overviewChart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="testSuiteChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">エラータイプ分析</div>
+                <div class="chart-container">
+                    <canvas id="errorTypeChart"></canvas>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">修正状況</div>
+                <div class="chart-container">
+                    <canvas id="fixStatusChart"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <div id="details" class="tab-content">
+            <div class="card">
+                <div class="card-header">テスト詳細結果</div>
+                <div class="test-results">
+                    
+                        <div class="suite">
+                            <div class="suite-header" data-suite="0">
+                                <div class="suite-name">responseUtils.test.js</div>
+                                <div class="suite-stats">
+                                    <div class="passed-count">✓ 11</div>
+                                    <div class="failed-count">✗ 1</div>
+                                    <div>合計: 12</div>
+                                </div>
+                            </div>
+                            <div class="test-cases" id="suite-0">
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">responseUtils > formatResponse > デフォルトパラメータでの正常レスポンス</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case failed">
+                                        <div class="test-name">responseUtils > formatResponse > カスタムステータスコードとヘッダーでの正常レスポンス</div>
+                                        <div class="test-status">✗ 不合格</div>
+                                        
+                                            <div class="error-log">TypeError: Cannot read properties of undefined (reading 'statusCode')
+    at Object.statusCode (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/unit/utils/responseUtils.test.js:70:23)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">responseUtils > formatResponse > 予算警告スキップオプション</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">responseUtils > formatErrorResponse > デフォルトパラメータでのエラーレスポンス</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">responseUtils > formatErrorResponse > 詳細エラー情報を含むエラーレスポンス（開発環境用）</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">responseUtils > formatErrorResponse > 使用量情報を含むエラーレスポンス</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">responseUtils > formatRedirectResponse > デフォルトの一時的リダイレクト</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">responseUtils > formatRedirectResponse > 恒久的リダイレクト</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">responseUtils > formatOptionsResponse > デフォルトのOPTIONSレスポンス</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">responseUtils > formatOptionsResponse > カスタムヘッダー付きのOPTIONSレスポンス</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">responseUtils > handleOptions > OPTIONSメソッドの処理</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">responseUtils > handleOptions > OPTIONSメソッド以外の処理</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                            </div>
+                        </div>
+                    
+                        <div class="suite">
+                            <div class="suite-header" data-suite="1">
+                                <div class="suite-name">googleLogin.test.js</div>
+                                <div class="suite-stats">
+                                    <div class="passed-count">✓ 4</div>
+                                    <div class="failed-count">✗ 2</div>
+                                    <div>合計: 6</div>
+                                </div>
+                            </div>
+                            <div class="test-cases" id="suite-1">
+                                
+                                    <div class="test-case failed">
+                                        <div class="test-name">Google Login Handler > 正常なGoogleログイン処理の実行</div>
+                                        <div class="test-status">✗ 不合格</div>
+                                        
+                                            <div class="error-log">Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeDefined[2m()[22m
+
+Received: [31mundefined[39m
+    at Object.toBeDefined (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/integration/auth/googleLogin.test.js:153:30)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">Google Login Handler > 認証コードなしでの呼び出し</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">Google Login Handler > 認証コード交換エラー時の処理</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">Google Login Handler > IDトークン検証エラー時の処理</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">Google Login Handler > セッション作成エラー時の処理</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case failed">
+                                        <div class="test-name">Google Login Handler > 完全な認証フロー（ログイン→セッション確認→ログアウト）</div>
+                                        <div class="test-status">✗ 不合格</div>
+                                        
+                                            <div class="error-log">Error: [2mexpect([22m[31mjest.fn()[39m[2m).[22mtoHaveBeenCalledWith[2m([22m[32m...expected[39m[2m)[22m
+
+Expected: [32m"complete-flow-session-id"[39m
+
+Number of calls: [31m0[39m
+    at Object.toHaveBeenCalledWith (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/integration/auth/googleLogin.test.js:434:42)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)</div>
+                                        
+                                    </div>
+                                
+                            </div>
+                        </div>
+                    
+                        <div class="suite">
+                            <div class="suite-header" data-suite="2">
+                                <div class="suite-name">API_test.js</div>
+                                <div class="suite-stats">
+                                    <div class="passed-count">✓ 0</div>
+                                    <div class="failed-count">✗ 0</div>
+                                    <div>合計: 0</div>
+                                </div>
+                            </div>
+                            <div class="test-cases" id="suite-2">
+                                
+                            </div>
+                        </div>
+                    
+                </div>
+            </div>
+        </div>
+        
+        <div id="logs" class="tab-content">
+            <div class="card">
+                <div class="card-header">テストログ</div>
+                <button id="copy-logs" class="copy-button">ログをコピー</button>
+                <div class="log-container" id="full-logs">
+<div class="log-title">テスト実行結果要約</div>
+テスト実行日時: 2025-05-12T08:59:10.849Z
+所要時間: 2938ms
+
+テスト統計:
+- 合計テスト数: 18
+- 成功: 15
+- 失敗: 3
+- 保留: 0
+
+失敗したテスト:
+- responseUtils formatResponse カスタムステータスコードとヘッダーでの正常レスポンス
+- Google Login Handler 正常なGoogleログイン処理の実行
+- Google Login Handler 完全な認証フロー（ログイン→セッション確認→ログアウト）
+
+詳細なエラー:
+
+テスト: responseUtils formatResponse カスタムステータスコードとヘッダーでの正常レスポンス
+エラー:
+TypeError: Cannot read properties of undefined (reading 'statusCode')
+    at Object.statusCode (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/unit/utils/responseUtils.test.js:70:23)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+
+
+テスト: Google Login Handler 正常なGoogleログイン処理の実行
+エラー:
+Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeDefined[2m()[22m
+
+Received: [31mundefined[39m
+    at Object.toBeDefined (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/integration/auth/googleLogin.test.js:153:30)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+
+
+テスト: Google Login Handler 完全な認証フロー（ログイン→セッション確認→ログアウト）
+エラー:
+Error: [2mexpect([22m[31mjest.fn()[39m[2m).[22mtoHaveBeenCalledWith[2m([22m[32m...expected[39m[2m)[22m
+
+Expected: [32m"complete-flow-session-id"[39m
+
+Number of calls: [31m0[39m
+    at Object.toHaveBeenCalledWith (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/integration/auth/googleLogin.test.js:434:42)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // タブ切り替え機能
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                // アクティブタブのクラスを変更
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                
+                // タブコンテンツの表示/非表示を切り替え
+                const tabId = tab.getAttribute('data-tab');
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.classList.remove('active');
+                });
+                document.getElementById(tabId).classList.add('active');
+            });
+        });
+        
+        // テストスイートの展開/折りたたみ
+        document.querySelectorAll('.suite-header').forEach(header => {
+            header.addEventListener('click', () => {
+                const suiteIndex = header.getAttribute('data-suite');
+                const testCases = document.getElementById('suite-' + suiteIndex);
+                testCases.classList.toggle('active');
+            });
+        });
+        
+        // ログのコピー機能
+        document.getElementById('copy-logs').addEventListener('click', () => {
+            const logs = document.getElementById('full-logs').innerText;
+            navigator.clipboard.writeText(logs).then(() => {
+                const copyButton = document.getElementById('copy-logs');
+                copyButton.textContent = 'コピーしました！';
+                setTimeout(() => {
+                    copyButton.textContent = 'ログをコピー';
+                }, 2000);
+            });
+        });
+        
+        // Chart.jsでグラフを描画
+        const ctx1 = document.getElementById('overviewChart').getContext('2d');
+        new Chart(ctx1, {
+            type: 'doughnut',
+            data: {
+                labels: ['合格', '不合格'],
+                datasets: [{
+                    data: [15, 3],
+                    backgroundColor: ['#4caf50', '#f44336'],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                    },
+                    title: {
+                        display: true,
+                        text: 'テスト結果概要'
+                    }
+                }
+            }
+        });
+        
+        const ctx2 = document.getElementById('testSuiteChart').getContext('2d');
+        new Chart(ctx2, {
+            type: 'bar',
+            data: {
+                labels: ['responseUtils.test.js', 'googleLogin.test.js', 'API_test.js'],
+                datasets: [
+                    {
+                        label: '合格',
+                        data: [11, 4, 0],
+                        backgroundColor: '#4caf50',
+                    },
+                    {
+                        label: '不合格',
+                        data: [1, 2, 0],
+                        backgroundColor: '#f44336',
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'テストスイート別結果'
+                    },
+                },
+                scales: {
+                    x: {
+                        stacked: true,
+                    },
+                    y: {
+                        stacked: true
+                    }
+                }
+            }
+        });
+        
+        const ctx3 = document.getElementById('errorTypeChart').getContext('2d');
+        new Chart(ctx3, {
+            type: 'pie',
+            data: {
+                labels: ['レスポンスUtils', 'テスト期待値'],
+                datasets: [{
+                    data: [1, 2],
+                    backgroundColor: [
+                        '#f44336',
+                        '#ff9800',
+                        '#03a9f4',
+                        '#9c27b0',
+                        '#607d8b'
+                    ],
+                    hoverOffset: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'エラータイプ分布'
+                    }
+                }
+            }
+        });
+        
+        const ctx4 = document.getElementById('fixStatusChart').getContext('2d');
+        new Chart(ctx4, {
+            type: 'pie',
+            data: {
+                labels: ['修正済み', '未修正'],
+                datasets: [{
+                    data: [8, -5],
+                    backgroundColor: [
+                        '#4caf50',
+                        '#f44336'
+                    ],
+                    hoverOffset: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: '修正状況'
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+    

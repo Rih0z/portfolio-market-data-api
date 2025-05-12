@@ -1,0 +1,46 @@
+
+テスト実行結果要約
+==================
+テスト実行日時: 2025-05-12T08:59:10.849Z
+所要時間: 2938ms
+
+テスト統計:
+- 合計テスト数: 18
+- 成功: 15
+- 失敗: 3
+- 保留: 0
+
+失敗したテスト:
+- responseUtils formatResponse カスタムステータスコードとヘッダーでの正常レスポンス
+- Google Login Handler 正常なGoogleログイン処理の実行
+- Google Login Handler 完全な認証フロー（ログイン→セッション確認→ログアウト）
+
+詳細なエラー:
+
+テスト: responseUtils formatResponse カスタムステータスコードとヘッダーでの正常レスポンス
+エラー:
+TypeError: Cannot read properties of undefined (reading 'statusCode')
+    at Object.statusCode (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/unit/utils/responseUtils.test.js:70:23)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+
+
+テスト: Google Login Handler 正常なGoogleログイン処理の実行
+エラー:
+Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeDefined[2m()[22m
+
+Received: [31mundefined[39m
+    at Object.toBeDefined (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/integration/auth/googleLogin.test.js:153:30)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+
+
+テスト: Google Login Handler 完全な認証フロー（ログイン→セッション確認→ログアウト）
+エラー:
+Error: [2mexpect([22m[31mjest.fn()[39m[2m).[22mtoHaveBeenCalledWith[2m([22m[32m...expected[39m[2m)[22m
+
+Expected: [32m"complete-flow-session-id"[39m
+
+Number of calls: [31m0[39m
+    at Object.toHaveBeenCalledWith (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/integration/auth/googleLogin.test.js:434:42)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+
+    

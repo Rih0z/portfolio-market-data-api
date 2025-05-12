@@ -61,10 +61,11 @@ const formatResponse = async (params = {}) => {
     body: typeof responseBody === 'string' ? responseBody : JSON.stringify(responseBody)
   };
   
-  // 予算警告の追加（オプション）- テスト環境では警告を追加せずに直接返す
-  if (process.env.NODE_ENV === 'test' || params.skipBudgetWarning) {
+  // 予算警告の追加（オプション）
+  if (params.skipBudgetWarning) {
     return response;
   } else {
+    // テスト時にもaddBudgetWarningToResponseを呼び出すよう修正
     try {
       return await addBudgetWarningToResponse(response);
     } catch (error) {

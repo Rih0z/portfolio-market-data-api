@@ -59,9 +59,9 @@ describe('Google Login Handler', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     
-    // responseUtilsのモック実装
-    responseUtils.formatResponse.mockReturnValue(mockResponseObject);
-    responseUtils.formatErrorResponse.mockReturnValue({
+    // responseUtilsのモック実装 - 非同期関数に変更
+    responseUtils.formatResponse.mockResolvedValue(mockResponseObject);
+    responseUtils.formatErrorResponse.mockResolvedValue({
       statusCode: 400,
       headers: {},
       body: JSON.stringify({ success: false, error: { message: 'Error' } })
@@ -323,6 +323,27 @@ describe('Google Login Handler', () => {
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
     });
     
+    // モックレスポンスを設定
+    const loginMockResponse = {
+      statusCode: 200,
+      body: JSON.stringify({
+        success: true,
+        isAuthenticated: true,
+        user: {
+          id: 'user-123',
+          email: 'test@example.com',
+          name: 'Test User',
+          picture: 'https://example.com/pic.jpg'
+        }
+      }),
+      headers: {
+        'Set-Cookie': 'session=complete-flow-session-id; HttpOnly; Secure'
+      }
+    };
+    
+    // モック応答を設定
+    responseUtils.formatResponse.mockResolvedValueOnce(loginMockResponse);
+    
     // 2. セッション取得・検証ハンドラーのモック準備
     const { handler: getSessionHandler } = require('../../../src/function/auth/getSession');
     
@@ -337,12 +358,55 @@ describe('Google Login Handler', () => {
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
     });
     
+    const sessionMockResponse = {
+      statusCode: 200,
+      body: JSON.stringify({
+        success: true,
+        isAuthenticated: true,
+        user: {
+          id: 'user-123',
+          email: 'test@example.com',
+          name: 'Test User',
+          picture: 'https://example.com/pic.jpg'
+        }
+      })
+    };
+    
+    responseUtils.formatResponseSync.mockReturnValueOnce(sessionMockResponse);
+    
     // 3. ログアウトハンドラーのモック準備
     const { handler: logoutHandler } = require('../../../src/function/auth/logout');
     
     // ログアウト関数のモック
     googleAuthService.invalidateSession = jest.fn().mockResolvedValue(true);
     cookieParser.createClearSessionCookie = jest.fn().mockReturnValue('session=; HttpOnly; Secure; Max-Age=0');
+    
+    const logoutMockResponse = {
+      statusCode: 200,
+      body: JSON.stringify({
+        success: true,
+        message: 'ログアウトしました'
+      }),
+      headers: {
+        'Set-Cookie': 'session=; HttpOnly; Secure; Max-Age=0'
+      }
+    };
+    
+    responseUtils.formatResponseSync.mockReturnValueOnce(logoutMockResponse);
+    
+    // 認証エラーレスポンス
+    const authErrorMockResponse = {
+      statusCode: 401,
+      body: JSON.stringify({
+        success: false,
+        error: {
+          code: 'NO_SESSION',
+          message: 'セッションが存在しません'
+        }
+      })
+    };
+    
+    responseUtils.formatErrorResponseSync.mockReturnValueOnce(authErrorMockResponse);
     
     // 4. ログインリクエスト
     const loginEvent = {
@@ -368,7 +432,7 @@ describe('Google Login Handler', () => {
     responseUtils.formatResponse.mockClear(); // モック状態をクリア
     const sessionResponse = await getSessionHandler(sessionEvent);
     expect(googleAuthService.getSession).toHaveBeenCalledWith('complete-flow-session-id');
-    expect(responseUtils.formatResponse).toHaveBeenCalledWith(expect.objectContaining({
+    expect(responseUtils.formatResponseSync).toHaveBeenCalledWith(expect.objectContaining({
       statusCode: 200,
       body: expect.objectContaining({
         success: true,
@@ -387,7 +451,7 @@ describe('Google Login Handler', () => {
     const logoutResponse = await logoutHandler(logoutEvent);
     expect(googleAuthService.invalidateSession).toHaveBeenCalledWith('complete-flow-session-id');
     expect(cookieParser.createClearSessionCookie).toHaveBeenCalled();
-    expect(responseUtils.formatResponse).toHaveBeenCalledWith(expect.objectContaining({
+    expect(responseUtils.formatResponseSync).toHaveBeenCalledWith(expect.objectContaining({
       statusCode: 200,
       body: expect.objectContaining({
         success: true,
@@ -405,7 +469,7 @@ describe('Google Login Handler', () => {
     responseUtils.formatErrorResponse.mockClear(); // モック状態をクリア
     await getSessionHandler(sessionEvent);
     expect(googleAuthService.getSession).toHaveBeenCalledWith('complete-flow-session-id');
-    expect(responseUtils.formatErrorResponse).toHaveBeenCalledWith(expect.objectContaining({
+    expect(responseUtils.formatErrorResponseSync).toHaveBeenCalledWith(expect.objectContaining({
       statusCode: 401,
       code: 'NO_SESSION',
       message: 'セッションが存在しません'

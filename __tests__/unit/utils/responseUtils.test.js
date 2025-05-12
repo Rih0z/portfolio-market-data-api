@@ -33,6 +33,9 @@ describe('responseUtils', () => {
 
   describe('formatResponse', () => {
     test('デフォルトパラメータでの正常レスポンス', async () => {
+      // addBudgetWarningToResponse が呼ばれるように設定
+      addBudgetWarningToResponse.mockImplementation(response => response);
+      
       // テスト実行
       const response = await formatResponse({
         data: { message: 'Success' }

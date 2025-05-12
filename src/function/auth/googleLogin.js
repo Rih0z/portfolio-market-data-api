@@ -13,7 +13,7 @@ const {
   verifyIdToken, 
   createUserSession 
 } = require('../../services/googleAuthService');
-const { formatResponseSync, formatErrorResponseSync } = require('../../utils/responseUtils');
+const { formatResponse, formatErrorResponse } = require('../../utils/responseUtils');
 const { createSessionCookie } = require('../../utils/cookieParser');
 
 /**
@@ -27,7 +27,7 @@ module.exports.handler = async (event) => {
     const { code, redirectUri } = requestBody;
     
     if (!code) {
-      return formatErrorResponseSync({
+      return formatErrorResponse({
         statusCode: 400,
         code: 'INVALID_PARAMS',
         message: '認証コードが不足しています'
@@ -56,7 +56,7 @@ module.exports.handler = async (event) => {
     const sessionCookie = createSessionCookie(session.sessionId, maxAge);
     
     // レスポンスを整形 - テストが期待する形式に合わせる
-    return formatResponseSync({
+    return formatResponse({
       statusCode: 200,
       body: {
         success: true,
@@ -74,7 +74,7 @@ module.exports.handler = async (event) => {
     });
   } catch (error) {
     console.error('Google認証エラー:', error);
-    return formatErrorResponseSync({
+    return formatErrorResponse({
       statusCode: 401,
       code: 'AUTH_ERROR',
       message: '認証に失敗しました',

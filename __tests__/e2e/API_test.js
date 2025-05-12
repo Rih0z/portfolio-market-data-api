@@ -12,7 +12,7 @@ const axios = require('axios');
 const { setupTestEnvironment, teardownTestEnvironment } = require('../testUtils/environment');
 
 // APIエンドポイント（テスト環境用）
-const API_BASE_URL = process.env.API_TEST_URL || 'http://localhost:3000';
+const API_BASE_URL = process.env.API_TEST_URL || 'http://localhost:3000/dev';
 
 // テストデータ
 const TEST_DATA = {
@@ -56,9 +56,9 @@ describe('Portfolio Market Data API E2Eテスト', () => {
   beforeAll(async () => {
     await setupTestEnvironment();
     
-    // APIサーバーの起動確認
+    // APIサーバーの起動確認 - 修正: 実際に存在するエンドポイントを使用
     try {
-      await axios.get(`${API_BASE_URL}/health`, { timeout: 2000 });
+      await axios.get(`${API_BASE_URL}/auth/session`, { timeout: 2000 });
       console.log(`✅ API server is running at ${API_BASE_URL}`);
       isApiServerRunning = true;
     } catch (error) {

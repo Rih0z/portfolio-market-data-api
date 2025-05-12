@@ -1,47 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="jest tests" tests="20" failures="13" errors="0" time="1.401">
-  <testsuite name="responseUtils" errors="0" failures="5" skipped="0" timestamp="2025-05-12T06:53:29" time="0.258" tests="12">
-    <testcase classname="responseUtils formatResponse デフォルトパラメータでの正常レスポンス" name="responseUtils formatResponse デフォルトパラメータでの正常レスポンス" time="0.002">
-      <failure>TypeError: Cannot read properties of undefined (reading &apos;statusCode&apos;)
-    at Object.statusCode (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/unit/utils/responseUtils.test.js:42:23)
-    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
-    </testcase>
-    <testcase classname="responseUtils formatResponse カスタムステータスコードとヘッダーでの正常レスポンス" name="responseUtils formatResponse カスタムステータスコードとヘッダーでの正常レスポンス" time="0">
-      <failure>TypeError: Cannot read properties of undefined (reading &apos;statusCode&apos;)
-    at Object.statusCode (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/unit/utils/responseUtils.test.js:67:23)
-    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
-    </testcase>
-    <testcase classname="responseUtils formatResponse 予算警告スキップオプション" name="responseUtils formatResponse 予算警告スキップオプション" time="0.001">
-    </testcase>
-    <testcase classname="responseUtils formatErrorResponse デフォルトパラメータでのエラーレスポンス" name="responseUtils formatErrorResponse デフォルトパラメータでのエラーレスポンス" time="0.011">
-      <failure>TypeError: Cannot read properties of undefined (reading &apos;statusCode&apos;)
-    at Object.statusCode (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/unit/utils/responseUtils.test.js:98:23)
-    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
-    </testcase>
-    <testcase classname="responseUtils formatErrorResponse 詳細エラー情報を含むエラーレスポンス（開発環境用）" name="responseUtils formatErrorResponse 詳細エラー情報を含むエラーレスポンス（開発環境用）" time="0.001">
-      <failure>TypeError: Cannot read properties of undefined (reading &apos;statusCode&apos;)
-    at Object.statusCode (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/unit/utils/responseUtils.test.js:120:23)
-    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
-    </testcase>
-    <testcase classname="responseUtils formatErrorResponse 使用量情報を含むエラーレスポンス" name="responseUtils formatErrorResponse 使用量情報を含むエラーレスポンス" time="0.001">
-      <failure>TypeError: Cannot read properties of undefined (reading &apos;statusCode&apos;)
-    at Object.statusCode (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/unit/utils/responseUtils.test.js:141:23)
-    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
-    </testcase>
-    <testcase classname="responseUtils formatRedirectResponse デフォルトの一時的リダイレクト" name="responseUtils formatRedirectResponse デフォルトの一時的リダイレクト" time="0">
-    </testcase>
-    <testcase classname="responseUtils formatRedirectResponse 恒久的リダイレクト" name="responseUtils formatRedirectResponse 恒久的リダイレクト" time="0">
-    </testcase>
-    <testcase classname="responseUtils formatOptionsResponse デフォルトのOPTIONSレスポンス" name="responseUtils formatOptionsResponse デフォルトのOPTIONSレスポンス" time="0">
-    </testcase>
-    <testcase classname="responseUtils formatOptionsResponse カスタムヘッダー付きのOPTIONSレスポンス" name="responseUtils formatOptionsResponse カスタムヘッダー付きのOPTIONSレスポンス" time="0">
-    </testcase>
-    <testcase classname="responseUtils handleOptions OPTIONSメソッドの処理" name="responseUtils handleOptions OPTIONSメソッドの処理" time="0">
-    </testcase>
-    <testcase classname="responseUtils handleOptions OPTIONSメソッド以外の処理" name="responseUtils handleOptions OPTIONSメソッド以外の処理" time="0">
-    </testcase>
-  </testsuite>
-  <testsuite name="Portfolio Market Data API E2Eテスト" errors="0" failures="8" skipped="0" timestamp="2025-05-12T06:53:29" time="0.819" tests="8">
+<testsuites name="jest tests" tests="26" failures="16" errors="0" time="1.868">
+  <testsuite name="Portfolio Market Data API E2Eテスト" errors="0" failures="8" skipped="0" timestamp="2025-05-12T07:17:07" time="0.706" tests="8">
     <testcase classname="Portfolio Market Data API E2Eテスト マーケットデータAPI 米国株データ取得" name="Portfolio Market Data API E2Eテスト マーケットデータAPI 米国株データ取得" time="0.001">
       <failure>Error: AWS SDK error wrapper for AggregateError
     at asSdkError (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@smithy/middleware-retry/dist-cjs/index.js:103:10)
@@ -52,7 +11,7 @@
     at setupTestEnvironment (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/testUtils/environment.js:19:3)
     at Object.&lt;anonymous&gt; (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/e2e/API_test.js:43:5)</failure>
     </testcase>
-    <testcase classname="Portfolio Market Data API E2Eテスト マーケットデータAPI 日本株データ取得" name="Portfolio Market Data API E2Eテスト マーケットデータAPI 日本株データ取得" time="0.001">
+    <testcase classname="Portfolio Market Data API E2Eテスト マーケットデータAPI 日本株データ取得" name="Portfolio Market Data API E2Eテスト マーケットデータAPI 日本株データ取得" time="0">
       <failure>Error: AWS SDK error wrapper for AggregateError
     at asSdkError (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@smithy/middleware-retry/dist-cjs/index.js:103:10)
     at /Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@smithy/middleware-retry/dist-cjs/index.js:327:21
@@ -121,6 +80,101 @@
     at createTestTable (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/testUtils/dynamodbLocal.js:116:5)
     at setupTestEnvironment (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/testUtils/environment.js:19:3)
     at Object.&lt;anonymous&gt; (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/e2e/API_test.js:43:5)</failure>
+    </testcase>
+  </testsuite>
+  <testsuite name="responseUtils" errors="0" failures="5" skipped="0" timestamp="2025-05-12T07:17:08" time="0.033" tests="12">
+    <testcase classname="responseUtils formatResponse デフォルトパラメータでの正常レスポンス" name="responseUtils formatResponse デフォルトパラメータでの正常レスポンス" time="0">
+      <failure>TypeError: Cannot read properties of undefined (reading &apos;statusCode&apos;)
+    at Object.statusCode (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/unit/utils/responseUtils.test.js:42:23)</failure>
+    </testcase>
+    <testcase classname="responseUtils formatResponse カスタムステータスコードとヘッダーでの正常レスポンス" name="responseUtils formatResponse カスタムステータスコードとヘッダーでの正常レスポンス" time="0">
+      <failure>TypeError: Cannot read properties of undefined (reading &apos;statusCode&apos;)
+    at Object.statusCode (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/unit/utils/responseUtils.test.js:67:23)</failure>
+    </testcase>
+    <testcase classname="responseUtils formatResponse 予算警告スキップオプション" name="responseUtils formatResponse 予算警告スキップオプション" time="0.001">
+    </testcase>
+    <testcase classname="responseUtils formatErrorResponse デフォルトパラメータでのエラーレスポンス" name="responseUtils formatErrorResponse デフォルトパラメータでのエラーレスポンス" time="0.003">
+      <failure>TypeError: Cannot read properties of undefined (reading &apos;statusCode&apos;)
+    at Object.statusCode (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/unit/utils/responseUtils.test.js:98:23)</failure>
+    </testcase>
+    <testcase classname="responseUtils formatErrorResponse 詳細エラー情報を含むエラーレスポンス（開発環境用）" name="responseUtils formatErrorResponse 詳細エラー情報を含むエラーレスポンス（開発環境用）" time="0">
+      <failure>TypeError: Cannot read properties of undefined (reading &apos;statusCode&apos;)
+    at Object.statusCode (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/unit/utils/responseUtils.test.js:120:23)</failure>
+    </testcase>
+    <testcase classname="responseUtils formatErrorResponse 使用量情報を含むエラーレスポンス" name="responseUtils formatErrorResponse 使用量情報を含むエラーレスポンス" time="0.001">
+      <failure>TypeError: Cannot read properties of undefined (reading &apos;statusCode&apos;)
+    at Object.statusCode (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/unit/utils/responseUtils.test.js:141:23)</failure>
+    </testcase>
+    <testcase classname="responseUtils formatRedirectResponse デフォルトの一時的リダイレクト" name="responseUtils formatRedirectResponse デフォルトの一時的リダイレクト" time="0">
+    </testcase>
+    <testcase classname="responseUtils formatRedirectResponse 恒久的リダイレクト" name="responseUtils formatRedirectResponse 恒久的リダイレクト" time="0">
+    </testcase>
+    <testcase classname="responseUtils formatOptionsResponse デフォルトのOPTIONSレスポンス" name="responseUtils formatOptionsResponse デフォルトのOPTIONSレスポンス" time="0.002">
+    </testcase>
+    <testcase classname="responseUtils formatOptionsResponse カスタムヘッダー付きのOPTIONSレスポンス" name="responseUtils formatOptionsResponse カスタムヘッダー付きのOPTIONSレスポンス" time="0">
+    </testcase>
+    <testcase classname="responseUtils handleOptions OPTIONSメソッドの処理" name="responseUtils handleOptions OPTIONSメソッドの処理" time="0">
+    </testcase>
+    <testcase classname="responseUtils handleOptions OPTIONSメソッド以外の処理" name="responseUtils handleOptions OPTIONSメソッド以外の処理" time="0.001">
+    </testcase>
+  </testsuite>
+  <testsuite name="Google Login Handler" errors="0" failures="3" skipped="0" timestamp="2025-05-12T07:17:08" time="1.104" tests="6">
+    <testcase classname="Google Login Handler 正常なGoogleログイン処理の実行" name="Google Login Handler 正常なGoogleログイン処理の実行" time="0.183">
+      <failure>Error: AWS SDK error wrapper for AggregateError
+    at asSdkError (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@smithy/middleware-retry/dist-cjs/index.js:103:10)
+    at /Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@smithy/middleware-retry/dist-cjs/index.js:327:21
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at /Users/kokiriho/Documents/Projects/pfwise-api/node_modules/@aws-sdk/middleware-logger/dist-cjs/index.js:33:22
+    at Object.getDynamoDBItem (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/testUtils/awsEmulator.js:46:26)
+    at Object.&lt;anonymous&gt; (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/integration/auth/googleLogin.test.js:145:25)</failure>
+    </testcase>
+    <testcase classname="Google Login Handler 認証コードなしでの呼び出し" name="Google Login Handler 認証コードなしでの呼び出し" time="0">
+    </testcase>
+    <testcase classname="Google Login Handler 認証コード交換エラー時の処理" name="Google Login Handler 認証コード交換エラー時の処理" time="0.002">
+      <failure>Error: expect(received).toBe(expected) // Object.is equality
+
+Expected: 1
+Received: 0
+    at Object.toBe (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/integration/auth/googleLogin.test.js:209:44)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
+    </testcase>
+    <testcase classname="Google Login Handler IDトークン検証エラー時の処理" name="Google Login Handler IDトークン検証エラー時の処理" time="0">
+    </testcase>
+    <testcase classname="Google Login Handler セッション作成エラー時の処理" name="Google Login Handler セッション作成エラー時の処理" time="0.001">
+    </testcase>
+    <testcase classname="Google Login Handler 完全な認証フロー（ログイン→セッション確認→ログアウト）" name="Google Login Handler 完全な認証フロー（ログイン→セッション確認→ログアウト）" time="0.01">
+      <failure>Error: Cannot find module &apos;../../utils/response&apos; from &apos;src/function/auth/getSession.js&apos;
+
+Require stack:
+  src/function/auth/getSession.js
+  __tests__/integration/auth/googleLogin.test.js
+
+    at Resolver._throwModNotFoundError (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/jest-resolve/build/resolver.js:427:11)
+    at Resolver.resolveModule (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/jest-resolve/build/resolver.js:358:10)
+    at Resolver._getVirtualMockPath (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/jest-resolve/build/resolver.js:619:14)
+    at Resolver._getAbsolutePath (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/jest-resolve/build/resolver.js:587:14)
+    at Resolver.getModuleID (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/jest-resolve/build/resolver.js:530:31)
+    at Runtime._shouldMockCjs (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/jest-runtime/build/index.js:1713:37)
+    at Runtime.requireModuleOrMock (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/jest-runtime/build/index.js:1045:16)
+    at Object.require (/Users/kokiriho/Documents/Projects/pfwise-api/src/function/auth/getSession.js:11:49)
+    at Runtime._execModule (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/jest-runtime/build/index.js:1439:24)
+    at Runtime._loadModule (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/jest-runtime/build/index.js:1022:12)
+    at Runtime.requireModule (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/jest-runtime/build/index.js:882:12)
+    at Runtime.requireModuleOrMock (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/jest-runtime/build/index.js:1048:21)
+    at Object.require (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/integration/auth/googleLogin.test.js:325:44)
+    at Promise.then.completed (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/jest-circus/build/utils.js:298:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/jest-circus/build/utils.js:231:10)
+    at _callCircusTest (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/jest-circus/build/run.js:316:40)
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at _runTest (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/jest-circus/build/run.js:252:3)
+    at _runTestsForDescribeBlock (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/jest-circus/build/run.js:126:9)
+    at _runTestsForDescribeBlock (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/jest-circus/build/run.js:121:9)
+    at run (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/jest-circus/build/run.js:71:3)
+    at runAndTransformResultsToJestFormat (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)
+    at jestAdapter (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)
+    at runTestInternal (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/jest-runner/build/runTest.js:367:16)
+    at runTest (/Users/kokiriho/Documents/Projects/pfwise-api/node_modules/jest-runner/build/runTest.js:444:34)</failure>
     </testcase>
   </testsuite>
 </testsuites>

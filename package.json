@@ -28,7 +28,9 @@
   "license": "ISC",
   "dependencies": {
     "axios": "^1.6.2",
-    "cheerio": "^1.0.0-rc.12"
+    "cheerio": "^1.0.0-rc.12",
+    "google-auth-library": "^9.15.1",
+    "googleapis": "^148.0.0"
   },
   "devDependencies": {
     "@aws-sdk/client-dynamodb": "^3.515.0",

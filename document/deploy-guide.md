@@ -194,6 +194,8 @@ CORS_ALLOW_ORIGIN=http://localhost:3000,https://portfolio.example.com
 ALPACA_API_KEY=
 ALPACA_API_SECRET=
 ALPHA_VANTAGE_API_KEY=
+YAHOO_FINANCE_API_KEY=
+YAHOO_FINANCE_API_HOST=yh-finance.p.rapidapi.com
 OPEN_EXCHANGE_RATES_APP_ID=
 
 # 使用量制限
@@ -206,10 +208,22 @@ CACHE_TIME_US_STOCK=3600
 CACHE_TIME_JP_STOCK=3600
 CACHE_TIME_MUTUAL_FUND=10800
 CACHE_TIME_EXCHANGE_RATE=21600
+DEFAULT_CACHE_TTL=3600
 
 # スクレイピング設定
 JP_STOCK_SCRAPING_TIMEOUT=30000
-MUTUAL_FUND_SCRAPING_TIMEOUT=30000
+US_STOCK_SCRAPING_TIMEOUT=20000
+MUTUAL_FUND_TIMEOUT=30000
+SCRAPING_RATE_LIMIT_DELAY=500
+SCRAPING_MAX_FAILURES=3
+SCRAPING_COOLDOWN_DAYS=7
+
+# ログ設定
+LOG_LEVEL=info
+
+# AWS予算確認
+BUDGET_CHECK_ENABLED=false
+FREE_TIER_LIMIT=25
 
 # デフォルト値
 DEFAULT_EXCHANGE_RATE=150.0
@@ -264,6 +278,9 @@ provider:
     SESSION_TABLE: ${env:SESSION_TABLE, '${self:service}-${self:provider.stage}-sessions'}
     CORS_ALLOW_ORIGIN: ${env:CORS_ALLOW_ORIGIN, '*'}
     DRIVE_FOLDER_NAME: ${env:DRIVE_FOLDER_NAME, 'PortfolioManagerData'}
+    LOG_LEVEL: ${env:LOG_LEVEL, 'info'}
+    BUDGET_CHECK_ENABLED: ${env:BUDGET_CHECK_ENABLED, 'false'}
+    FREE_TIER_LIMIT: ${env:FREE_TIER_LIMIT, '25'}
   
   iamRoleStatements:
     - Effect: Allow
@@ -272,13 +289,18 @@ provider:
       Resource: 
         - !GetAtt MarketDataCacheTable.Arn
         - !GetAtt SessionsTable.Arn
+        - !GetAtt ScrapingBlacklistTable.Arn
     - Effect: Allow
       Action:
         - sns:Publish
       Resource: !Ref AlertTopic
+    - Effect: Allow
+      Action:
+        - budgets:DescribeBudgetPerformanceHistory
+      Resource: '*'
 
 functions:
-  # 既存のマーケットデータ関連機能
+  # マーケットデータ関連機能
   marketData:
     handler: src/function/marketData.handler
     events:
@@ -292,6 +314,7 @@ functions:
     events:
       - schedule: rate(1 hour)
   
+  # 管理者機能
   getStatus:
     handler: src/function/admin/getStatus.handler
     events:
@@ -310,7 +333,16 @@ functions:
           cors: true
           private: true
   
-  # 新規追加: Google認証関連
+  getBudgetStatus:
+    handler: src/function/admin/getBudgetStatus.handler
+    events:
+      - http:
+          path: admin/getBudgetStatus
+          method: get
+          cors: true
+          private: true
+  
+  # Google認証関連
   googleLogin:
     handler: src/function/auth/googleLogin.handler
     events:
@@ -374,10 +406,10 @@ resources:
           - AttributeName: key
             KeyType: HASH
         TimeToLiveSpecification:
-          AttributeName: expires
+          AttributeName: ttl
           Enabled: true
     
-    # 新規追加: セッション管理用DynamoDBテーブル
+    # セッション管理用DynamoDBテーブル
     SessionsTable:
       Type: AWS::DynamoDB::Table
       Properties:
@@ -392,6 +424,19 @@ resources:
         TimeToLiveSpecification:
           AttributeName: ttl
           Enabled: true
+    
+    # スクレイピングブラックリスト用DynamoDBテーブル
+    ScrapingBlacklistTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${self:provider.stage}-scraping-blacklist
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: symbol
+            AttributeType: S
+        KeySchema:
+          - AttributeName: symbol
+            KeyType: HASH
     
     AlertTopic:
       Type: AWS::SNS::Topic
@@ -502,6 +547,56 @@ Cookie設定が正しいことを確認：
 - Secure（本番環境では必須）
 - SameSite=Strict
 
+### 8.4 スクレイピング関連のエラー
+
+#### 8.4.1 ブラックリストテーブルに関するエラー
+```
+Error: ResourceNotFoundException: Requested resource not found
+```
+
+**解決策**:
+```bash
+# ブラックリストテーブルが存在することを確認
+aws dynamodb describe-table --table-name pfwise-api-dev-scraping-blacklist
+
+# 存在しない場合は作成（本来はサーバーレスデプロイで自動作成される）
+aws dynamodb create-table \
+  --table-name pfwise-api-dev-scraping-blacklist \
+  --attribute-definitions AttributeName=symbol,AttributeType=S \
+  --key-schema AttributeName=symbol,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST
+```
+
+#### 8.4.2 スクレイピングタイムアウトエラー
+```
+Error: Scraping timeout for symbol ...
+```
+
+**解決策**:
+スクレイピングタイムアウト値を環境変数で調整：
+```
+JP_STOCK_SCRAPING_TIMEOUT=45000
+US_STOCK_SCRAPING_TIMEOUT=30000
+MUTUAL_FUND_TIMEOUT=45000
+```
+
+### 8.5 AWS予算ステータス関連のエラー
+```
+Error getting budget status: Error: Failed to get AWS account ID
+```
+
+**解決策**:
+```bash
+# AWS_ACCOUNT_IDの設定確認
+echo $AWS_ACCOUNT_ID
+
+# 設定されていない場合は.envに追加
+echo "AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query 'Account' --output text)" >> .env
+
+# 予算チェック機能を無効化する場合
+echo "BUDGET_CHECK_ENABLED=false" >> .env
+```
+
 ## 9. デプロイ手順
 
 ### 9.1 開発環境へのデプロイ
@@ -593,6 +688,13 @@ aws logs filter-log-events --log-group-name "/aws/lambda/pfwise-api-dev-googleLo
 aws logs filter-log-events --log-group-name "/aws/lambda/pfwise-api-dev-googleLogin" --filter-pattern "ERROR"
 ```
 
+### 11.3 ログレベルの設定
+- `LOG_LEVEL` 環境変数を使用してログの詳細レベルを調整
+- `debug`: 開発時の詳細なデバッグ情報
+- `info`: 運用環境の標準的な情報
+- `warn`: 重要な警告情報のみ
+- `error`: エラー情報のみ
+
 ## 12. 効率的な開発のためのTips
 
 ### 12.1 ターミナルエイリアスの設定
@@ -620,6 +722,18 @@ export FORCE_COLOR=1
 FORCE_COLOR=1 npm run deploy
 ```
 
+### 12.4 依存関係の更新確認
+```bash
+# 依存パッケージの更新確認
+npx npm-check-updates
+
+# 特定パッケージの更新（例：axios）
+npm update axios
+
+# Node.js/npmのバージョン確認
+node -v && npm -v
+```
+
 ## 13. セキュリティのベストプラクティス
 
 - `.env`ファイル内のキーは定期的に更新する
@@ -629,6 +743,7 @@ FORCE_COLOR=1 npm run deploy
 - CloudWatch Alarmsを設定して異常な使用パターンを検出する
 - セッションCookieは必ずHTTP Only, Secure, SameSiteの設定を行う
 - Google OAuth認証情報は安全に管理し、公開リポジトリにコミットしない
+- AWS予算アラートを設定し、予期しない費用の発生を未然に防ぐ
 
 ## 14. フロントエンド側の更新
 
@@ -721,6 +836,89 @@ const handleLogout = async () => {
     console.error('ログアウトエラー:', error);
   }
 };
+```
+
+### 14.4 Google Drive連携の実装
+
+```javascript
+// ファイル一覧取得
+const fetchGoogleDriveFiles = async () => {
+  try {
+    const response = await axios.get(
+      'https://xxxxxxxx.execute-api.ap-northeast-1.amazonaws.com/prod/drive/files',
+      { withCredentials: true }
+    );
+    
+    if (response.data.success) {
+      setFiles(response.data.files);
+    }
+  } catch (error) {
+    console.error('ファイル一覧取得エラー:', error);
+  }
+};
+
+// ファイル保存
+const saveToGoogleDrive = async (portfolioData) => {
+  try {
+    const response = await axios.post(
+      'https://xxxxxxxx.execute-api.ap-northeast-1.amazonaws.com/prod/drive/save',
+      { portfolioData },
+      { withCredentials: true }
+    );
+    
+    if (response.data.success) {
+      alert('ポートフォリオをGoogle Driveに保存しました');
+      return response.data.file;
+    }
+  } catch (error) {
+    console.error('ファイル保存エラー:', error);
+  }
+  return null;
+};
+
+// ファイル読み込み
+const loadFromGoogleDrive = async (fileId) => {
+  try {
+    const response = await axios.get(
+      'https://xxxxxxxx.execute-api.ap-northeast-1.amazonaws.com/prod/drive/load',
+      {
+        params: { fileId },
+        withCredentials: true
+      }
+    );
+    
+    if (response.data.success) {
+      return response.data.data;
+    }
+  } catch (error) {
+    console.error('ファイル読み込みエラー:', error);
+  }
+  return null;
+};
+```
+
+## 15. APIエンドポイント詳細
+
+最新のAPIエンドポイントの詳細については別途APIドキュメント「マーケットデータAPI利用ガイド」を参照してください。基本的なエンドポイント構成は以下の通りです：
+
+```
+# マーケットデータAPI
+GET /api/market-data - 株式データ・投資信託データ・為替データの取得
+
+# 認証API
+POST /auth/google/login - Google認証ログイン
+GET /auth/session - セッション情報取得
+POST /auth/logout - ログアウト
+
+# Google Drive連携API
+POST /drive/save - ポートフォリオデータ保存
+GET /drive/load - ポートフォリオデータ読込
+GET /drive/files - ファイル一覧取得
+
+# 管理者API (APIキー認証が必要)
+GET /admin/status - API使用状況の確認
+POST /admin/reset - 使用量カウンターリセット
+GET /admin/getBudgetStatus - AWS予算使用状況の確認
 ```
 
 ---

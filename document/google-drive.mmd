@@ -1,0 +1,65 @@
+sequenceDiagram
+    actor User
+    participant Frontend
+    participant APIGateway
+    participant Drive as Drive Lambda
+    participant Auth as Auth Lambda
+    participant GoogleDrive
+    participant DynamoDB
+    
+    %% ファイル保存フロー
+    User->>Frontend: ポートフォリオデータ保存操作
+    Frontend->>APIGateway: POST /drive/save (Cookie付き)
+    APIGateway->>Drive: リクエスト転送
+    
+    Drive->>DynamoDB: セッション確認
+    DynamoDB-->>Drive: セッション情報
+    
+    Note over Drive,DynamoDB: トークン期限切れの場合
+    Drive->>Auth: アクセストークン更新リクエスト
+    Auth->>GoogleDrive: リフレッシュトークンで更新
+    GoogleDrive-->>Auth: 新アクセストークン
+    Auth->>DynamoDB: セッション更新
+    DynamoDB-->>Auth: 更新完了
+    Auth-->>Drive: 新アクセストークン
+    
+    Drive->>GoogleDrive: 専用フォルダ確認/作成
+    GoogleDrive-->>Drive: フォルダID
+    
+    Drive->>GoogleDrive: ファイル作成リクエスト
+    GoogleDrive-->>Drive: ファイル情報
+    
+    Drive-->>APIGateway: 保存結果返却
+    APIGateway-->>Frontend: 保存成功レスポンス
+    Frontend-->>User: 保存完了通知
+    
+    %% ファイル一覧取得フロー
+    User->>Frontend: ファイル一覧表示リクエスト
+    Frontend->>APIGateway: GET /drive/files (Cookie付き)
+    APIGateway->>Drive: リクエスト転送
+    
+    Drive->>DynamoDB: セッション確認
+    DynamoDB-->>Drive: セッション情報
+    
+    Drive->>GoogleDrive: フォルダ内ファイル一覧リクエスト
+    GoogleDrive-->>Drive: ファイル一覧
+    
+    Drive-->>APIGateway: ファイル一覧返却
+    APIGateway-->>Frontend: ファイル一覧データ
+    Frontend-->>User: ファイル一覧表示
+    
+    %% ファイル読み込みフロー
+    User->>Frontend: 特定ファイル選択
+    Frontend->>APIGateway: GET /drive/load?fileId=xxx (Cookie付き)
+    APIGateway->>Drive: リクエスト転送
+    
+    Drive->>DynamoDB: セッション確認
+    DynamoDB-->>Drive: セッション情報
+    
+    Drive->>GoogleDrive: ファイル内容取得リクエスト
+    GoogleDrive-->>Drive: ファイル内容
+    
+    Drive-->>APIGateway: ファイルデータ返却
+    APIGateway-->>Frontend: ポートフォリオデータ
+    Frontend->>Frontend: データをアプリに適用
+    Frontend-->>User: ポートフォリオ表示更新

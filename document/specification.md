@@ -1,927 +1,990 @@
-# ポートフォリオマーケットデータAPI 仕様書
+# ポートフォリオマーケットデータAPI 統合ガイド
 
-## 1. システム概要
+この統合ガイドは、フロントエンド開発者向けにマーケットデータAPIの実装方法、特にGoogle認証とGoogle Drive連携機能の活用方法について説明します。
 
-### 1.1 プロジェクト名
-portfolio-market-data-api
+## 目次
 
-### 1.2 概要
-このAPIは株式や投資信託などの金融市場データをリアルタイムで取得し、フロントエンドアプリケーション向けに提供するサーバーレスバックエンドシステムです。AWS Lambdaを活用した効率的なアーキテクチャにより、スケーラブルかつコスト効率の良いサービスを実現しています。さらに、Google認証とGoogle Drive連携によるクロスデバイスのポートフォリオデータ管理機能も提供します。
+1. [API概要](#1-api概要)
+2. [認証フロー](#2-認証フロー)
+3. [マーケットデータの取得](#3-マーケットデータの取得)
+4. [Google Drive連携](#4-google-drive連携)
+5. [エラーハンドリング](#5-エラーハンドリング)
+6. [React用カスタムフック](#6-react用カスタムフック)
+7. [実装例](#7-実装例)
+8. [ベストプラクティス](#8-ベストプラクティス)
 
-### 1.3 主な機能
-- 米国株式データの取得
-- 日本株式データの取得
-- 投資信託データの取得
-- 為替レートデータの取得
-- データキャッシング
-- API使用量の監視と制限
-- 管理者機能（ステータス確認、使用量リセット）
-- Google認証とセッション管理（新機能）
-- Google Driveデータ同期機能（新機能）
+## 1. API概要
 
-### 1.4 技術スタック
-- **バックエンド**: Node.js
-- **デプロイメント**: AWS Lambda + API Gateway
-- **データベース**: DynamoDB
-- **キャッシュ**: DynamoDB/Redis
-- **フレームワーク**: Serverless Framework
-- **認証サービス**: Google OAuth 2.0
-- **ストレージサービス**: Google Drive API
-- **データソース**: 
-  - Yahoo Finance API
-  - 為替レートサービス
-  - Webスクレイピング
+ポートフォリオマーケットデータAPIは、以下の機能を提供します：
 
-## 2. システムアーキテクチャ
+- 米国株、日本株、投資信託、為替レートのリアルタイムデータ取得
+- Google OAuth 2.0認証と安全なセッション管理
+- ポートフォリオデータのGoogle Drive保存・読込・一覧機能
+- データキャッシング機能と使用量制限
 
-### 2.1 全体アーキテクチャ
-```
-User Request → API Gateway → Lambda Functions → Data Sources/Google API
-                                  ↓      ↑
-                              DynamoDB (Cache & Sessions)
-```
+### 1.1 API構成
 
-### 2.2 主要コンポーネント
-1. **API Gateway**: リクエストのルーティングとAPI認証を担当
-2. **Lambda Functions**: ビジネスロジックを実行
-3. **DynamoDB**: データキャッシュ、セッション管理、使用量統計の保存
-4. **外部データソース**: 株価・投資信託・為替データの取得
-5. **Google API**: 認証とGoogle Driveデータ同期
-
-### 2.3 データフロー
-1. クライアントからのリクエスト受信
-2. 認証確認（必要な場合）
-3. キャッシュチェック（該当データが存在する場合はキャッシュから返却）
-4. 外部データソースからデータ取得またはGoogle APIとの連携
-5. 取得データのキャッシング
-6. レスポンス整形・返却
-7. 使用量カウンターの更新
-
-## 3. ファイル構造
+API構成は以下のモジュールから成り立っています：
 
 ```
-portfolio-market-data-api/
-├── serverless.yml                  # Serverless Framework設定ファイル
-├── package.json                    # プロジェクト依存関係
-├── src/
-│   ├── function/                   # Lambda関数
-│   │   ├── marketData.js           # メイン API エントリポイント
-│   │   ├── preWarmCache.js         # キャッシュ予熱関数
-│   │   ├── admin/                  # 管理者機能
-│   │   │   ├── getStatus.js        # ステータス取得
-│   │   │   └── resetUsage.js       # 使用量リセット
-│   │   ├── auth/                   # 認証機能（新規追加）
-│   │   │   ├── googleLogin.js      # Google認証処理
-│   │   │   ├── getSession.js       # セッション情報取得
-│   │   │   └── logout.js           # ログアウト処理
-│   │   ├── drive/                  # Google Drive連携（新規追加）
-│   │   │   ├── saveFile.js         # ファイル保存
-│   │   │   ├── loadFile.js         # ファイル読み込み
-│   │   │   └── listFiles.js        # ファイル一覧取得
-│   ├── services/                   # ビジネスロジック
-│   │   ├── cache.js                # キャッシュ管理
-│   │   ├── usage.js                # 使用量管理
-│   │   ├── alerts.js               # アラート通知
-│   │   ├── googleAuthService.js    # Google認証サービス（新規追加）
-│   │   ├── sources/                # データソース
-│   │   │   ├── yahooFinance.js     # Yahoo Finance API
-│   │   │   ├── exchangeRate.js     # 為替レートサービス
-│   │   │   └── scraping.js         # Webスクレイピング
-│   ├── utils/                      # ユーティリティ
-│   │   ├── responseFormatter.js    # レスポンスフォーマッタ
-│   │   ├── cookieParser.js         # Cookie操作ユーティリティ（新規追加）
-│   │   ├── dynamoDbService.js      # DynamoDB操作ユーティリティ（新規追加）
-│   │   └── logger.js               # ロギングユーティリティ
-│   ├── config/                     # 設定情報
-│   │   ├── constants.js            # 定数定義
-│   │   └── env.js                  # 環境変数
-│   └── models/                     # データモデル
-│       ├── stockData.js            # 株式データモデル
-│       ├── usageStats.js           # 使用統計モデル
-│       └── sessionData.js          # セッションデータモデル（新規追加）
-├── tests/                          # テストコード
-│   ├── unit/                       # ユニットテスト
-│   └── integration/                # 統合テスト
-└── docs/                           # ドキュメント
-    ├── deploy-guide.md             # デプロイガイド
-    ├── how-to-call-api.md          # API使用ガイド
-    └── specification.md            # API仕様書
+フロントエンド → API Gateway → Lambda関数 → 外部データソース/Google API
+                                   ↓    ↑
+                              DynamoDB (キャッシュとセッション)
 ```
 
-## 4. API エンドポイント
+### 1.2 主要なエンドポイント
 
-### 4.1 マーケットデータ取得
+```
+# マーケットデータ取得
+/api/market-data
 
-#### 4.1.1 マーケットデータ取得
-- **URL**: `/api/market-data`
-- **メソッド**: GET
-- **パラメータ**:
-  - `type`: データタイプ（必須）- 'us-stock', 'jp-stock', 'mutual-fund', 'exchange-rate'
-  - `symbols`: 銘柄コード（必須）- カンマ区切りで複数指定可能
-  - `base`: 為替レートのベース通貨（オプション、デフォルト: 'USD'）
-  - `target`: 為替レートの対象通貨（オプション、デフォルト: 'JPY'）
-  - `refresh`: キャッシュを無視して最新データを取得（オプション、デフォルト: false）
-- **レスポンス例**:
-```json
-{
-  "success": true,
-  "data": {
-    "AAPL": {
-      "ticker": "AAPL",
-      "price": 174.79,
-      "name": "Apple Inc.",
-      "currency": "USD",
-      "lastUpdated": "2025-05-11T12:34:56.789Z",
-      "source": "AlpacaAPI",
-      "isStock": true,
-      "isMutualFund": false
-    }
-  },
-  "source": "AWS Lambda & DynamoDB",
-  "lastUpdated": "2025-05-11T12:34:56.789Z",
-  "processingTime": "210ms",
-  "usage": {
-    "daily": 31,
-    "monthly": 512,
-    "dailyLimit": 5000,
-    "monthlyLimit": 100000
-  }
-}
+# Google認証
+/auth/google/login  # ログイン処理
+/auth/session       # セッション情報取得
+/auth/logout        # ログアウト処理
+
+# Google Drive連携
+/drive/save         # ポートフォリオデータ保存
+/drive/load         # ポートフォリオデータ読込
+/drive/files        # ファイル一覧取得
 ```
 
-### 4.2 認証エンドポイント（新機能）
+## 2. 認証フロー
 
-#### 4.2.1 Google認証ログイン
-- **URL**: `/auth/google/login`
-- **メソッド**: POST
-- **リクエストボディ**:
-```json
-{
-  "code": "4/P7q7W91a-oMsCeLvIaQm6bTrgtp7",
-  "redirectUri": "https://portfolio.example.com/auth/callback"
-}
-```
-- **レスポンス例**:
-```json
-{
-  "success": true,
-  "isAuthenticated": true,
-  "user": {
-    "id": "109476395873295845628",
-    "email": "user@example.com",
-    "name": "サンプルユーザー",
-    "picture": "https://lh3.googleusercontent.com/a/..."
-  },
-  "session": {
-    "expiresAt": "2025-05-18T12:34:56.789Z"
-  }
-}
-```
-- **レスポンスヘッダー**:
-```
-Set-Cookie: session=f8e7d6c5b4a3; HttpOnly; Secure; SameSite=Strict; Max-Age=604800; Path=/
-```
+### 2.1 認証フローの概要
 
-#### 4.2.2 セッション情報取得
-- **URL**: `/auth/session`
-- **メソッド**: GET
-- **リクエストヘッダー**:
-```
-Cookie: session=f8e7d6c5b4a3
-```
-- **レスポンス例**:
-```json
-{
-  "success": true,
-  "isAuthenticated": true,
-  "user": {
-    "id": "109476395873295845628",
-    "email": "user@example.com",
-    "name": "サンプルユーザー",
-    "picture": "https://lh3.googleusercontent.com/a/..."
-  },
-  "session": {
-    "expiresAt": "2025-05-18T12:34:56.789Z"
-  }
-}
-```
+1. フロントエンドでGoogleログインボタンを表示
+2. ユーザーがボタンをクリックすると、Googleの認証画面が表示される
+3. 認証後、GoogleからAuthorizationコードが返される
+4. そのコードをバックエンドに送信
+5. バックエンドでコードを使ってアクセストークンを取得
+6. セッションを作成し、セキュアなCookieに保存
+7. ユーザー情報をフロントエンドに返す
 
-#### 4.2.3 ログアウト処理
-- **URL**: `/auth/logout`
-- **メソッド**: POST
-- **リクエストヘッダー**:
-```
-Cookie: session=f8e7d6c5b4a3
-```
-- **レスポンス例**:
-```json
-{
-  "success": true,
-  "message": "ログアウトしました"
-}
-```
-- **レスポンスヘッダー**:
-```
-Set-Cookie: session=; HttpOnly; Secure; SameSite=Strict; Max-Age=0; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT
-```
+### 2.2 Google OAuth設定
 
-### 4.3 Google Drive連携エンドポイント（新機能）
+1. Google Cloud Consoleで認証情報を設定
+2. 必要スコープ: `email`, `profile`, `https://www.googleapis.com/auth/drive.file`
+3. リダイレクトURIを設定（例: `https://yourdomain.com/auth/callback` または `http://localhost:3000/auth/callback`）
 
-#### 4.3.1 ファイル保存
-- **URL**: `/drive/save`
-- **メソッド**: POST
-- **リクエストヘッダー**:
-```
-Cookie: session=f8e7d6c5b4a3
-```
-- **リクエストボディ**:
-```json
-{
-  "portfolioData": {
-    "name": "マイポートフォリオ",
-    "holdings": [
-      {
-        "ticker": "AAPL",
-        "shares": 10,
-        "costBasis": 150.25
-      },
-      {
-        "ticker": "7203.T",
-        "shares": 100,
-        "costBasis": 2100
-      }
-    ],
-    "createdAt": "2025-05-11T12:34:56.789Z"
-  }
-}
-```
-- **レスポンス例**:
-```json
-{
-  "success": true,
-  "message": "ポートフォリオデータをGoogle Driveに保存しました",
-  "file": {
-    "id": "1Zt8jKX7H3gFzN9v2X5yM6fGhJkLpQr7s",
-    "name": "portfolio-data-2025-05-11T12-34-56-789Z.json",
-    "url": "https://drive.google.com/file/d/1Zt8jKX7H3gFzN9v2X5yM6fGhJkLpQr7s/view",
-    "createdAt": "2025-05-11T12:34:56.789Z"
-  }
-}
-```
+### 2.3 ログイン実装
 
-#### 4.3.2 ファイル読み込み
-- **URL**: `/drive/load`
-- **メソッド**: GET
-- **リクエストヘッダー**:
-```
-Cookie: session=f8e7d6c5b4a3
-```
-- **パラメータ**:
-  - `fileId`: Google DriveファイルID（必須）
-- **レスポンス例**:
-```json
-{
-  "success": true,
-  "message": "ポートフォリオデータをGoogle Driveから読み込みました",
-  "file": {
-    "name": "portfolio-data-2025-05-10T15-22-33-456Z.json",
-    "createdAt": "2025-05-10T15:22:33.456Z",
-    "modifiedAt": "2025-05-10T15:22:33.456Z"
-  },
-  "data": {
-    "name": "マイポートフォリオ",
-    "holdings": [
-      {
-        "ticker": "AAPL",
-        "shares": 10,
-        "costBasis": 150.25
-      },
-      {
-        "ticker": "7203.T",
-        "shares": 100,
-        "costBasis": 2100
-      }
-    ],
-    "createdAt": "2025-05-10T15:22:33.456Z"
-  }
-}
-```
-
-#### 4.3.3 ファイル一覧取得
-- **URL**: `/drive/files`
-- **メソッド**: GET
-- **リクエストヘッダー**:
-```
-Cookie: session=f8e7d6c5b4a3
-```
-- **レスポンス例**:
-```json
-{
-  "success": true,
-  "files": [
-    {
-      "id": "1Zt8jKX7H3gFzN9v2X5yM6fGhJkLpQr7s",
-      "name": "portfolio-data-2025-05-11T12-34-56-789Z.json",
-      "size": 1024,
-      "mimeType": "application/json",
-      "createdAt": "2025-05-11T12:34:56.789Z",
-      "modifiedAt": "2025-05-11T12:34:56.789Z",
-      "webViewLink": "https://drive.google.com/file/d/1Zt8jKX7H3gFzN9v2X5yM6fGhJkLpQr7s/view"
-    },
-    {
-      "id": "2Ab9cDe3F4gHi5J6kLmN7oP8qRsT9uVw",
-      "name": "portfolio-data-2025-05-10T15-22-33-456Z.json",
-      "size": 980,
-      "mimeType": "application/json",
-      "createdAt": "2025-05-10T15:22:33.456Z",
-      "modifiedAt": "2025-05-10T15:22:33.456Z",
-      "webViewLink": "https://drive.google.com/file/d/2Ab9cDe3F4gHi5J6kLmN7oP8qRsT9uVw/view"
-    }
-  ],
-  "count": 2
-}
-```
-
-### 4.4 管理者エンドポイント
-
-#### 4.4.1 ステータス取得
-- **URL**: `/admin/status`
-- **メソッド**: GET
-- **ヘッダー**: `x-api-key`: 管理者APIキー（必須）
-- **レスポンス例**:
-```json
-{
-  "success": true,
-  "timestamp": "2025-05-11T12:34:56.789Z",
-  "usage": {
-    "daily": 31,
-    "monthly": 512,
-    "dailyLimit": 5000,
-    "monthlyLimit": 100000
-  },
-  "history": [
-    { "date": "2025-05-10", "count": 423 },
-    { "date": "2025-05-09", "count": 385 }
-  ],
-  "cache": {
-    "items": 243,
-    "sizeInBytes": 1458745,
-    "hitRate": 0.87
-  },
-  "sessions": {
-    "active": 15,
-    "total": 45
-  },
-  "config": {
-    "disableOnLimit": true,
-    "cacheTimes": {
-      "US_STOCK": 3600,
-      "JP_STOCK": 3600,
-      "MUTUAL_FUND": 7200,
-      "EXCHANGE_RATE": 900
-    },
-    "adminEmail": "adm...@example.com"
-  }
-}
-```
-
-#### 4.4.2 使用量リセット
-- **URL**: `/admin/reset`
-- **メソッド**: POST
-- **ヘッダー**: `x-api-key`: 管理者APIキー（必須）
-- **リクエストボディ**:
-```json
-{
-  "resetType": "daily" // "daily", "monthly", "all"のいずれか
-}
-```
-- **レスポンス例**:
-```json
-{
-  "success": true,
-  "resetType": "daily",
-  "timestamp": "2025-05-11T12:34:56.789Z",
-  "previousCount": 31,
-  "currentCount": 0
-}
-```
-
-### 4.5 内部エンドポイント
-
-#### 4.5.1 キャッシュ予熱
-- **URL**: `/internal/prewarm-cache`
-- **メソッド**: GET
-- **ヘッダー**: `x-cron-secret`: スケジューラシークレット（オプション）
-- **レスポンス例**:
-```json
-{
-  "success": true,
-  "message": "Cache pre-warm completed successfully",
-  "summary": {
-    "usStock": {
-      "success": 5,
-      "fail": 0,
-      "total": 5
-    },
-    "jpStock": {
-      "success": 3,
-      "fail": 1,
-      "total": 4
-    },
-    "mutualFund": {
-      "success": 2,
-      "fail": 0,
-      "total": 2
-    },
-    "exchangeRate": {
-      "success": 1,
-      "fail": 0,
-      "total": 1
-    },
-    "cleanup": {
-      "removed": 12
-    },
-    "processingTime": "4562ms",
-    "timestamp": "2025-05-11T12:34:56.789Z"
-  }
-}
-```
-
-## 5. コアモジュール
-
-### 5.1 Lambda関数
-
-#### 5.1.1 メインハンドラー（marketData.js）
-API Gatewayからのリクエストを受け取り、パラメータの検証、キャッシュチェック、データ取得、レスポンス生成を担当します。
-
-#### 5.1.2 認証ハンドラー（新規追加）
-- **googleLogin.js**: Google認証コードを受け取り、トークン交換、ユーザー情報取得、セッション作成を行います。
-- **getSession.js**: 現在のセッション情報を取得します。
-- **logout.js**: セッションを無効化し、クッキーをクリアします。
-
-#### 5.1.3 Google Drive連携ハンドラー（新規追加）
-- **saveFile.js**: ポートフォリオデータをGoogle Driveに保存します。
-- **loadFile.js**: Google Driveからポートフォリオデータを読み込みます。
-- **listFiles.js**: Google Drive内のポートフォリオデータファイル一覧を取得します。
-
-#### 5.1.4 その他ハンドラー
-- **preWarmCache.js**: 人気銘柄のデータを事前に取得してキャッシュに保存します。
-- **getStatus.js**: API使用状況とキャッシュ情報を取得します。管理者のみアクセス可能です。
-- **resetUsage.js**: API使用量カウンターをリセットします。管理者のみアクセス可能です。
-
-### 5.2 サービス層
-
-#### 5.2.1 Google認証サービス（新規追加、googleAuthService.js）
-Google OAuth認証と連携機能を提供します。主な関数：
-- `exchangeCodeForTokens(code, redirectUri)`: 認証コードをトークンと交換
-- `verifyIdToken(idToken)`: IDトークンの検証とユーザー情報取得
-- `createUserSession(userData)`: ユーザーセッションの作成
-- `getSession(sessionId)`: セッション情報の取得
-- `invalidateSession(sessionId)`: セッションの無効化
-- `refreshAccessToken(refreshToken)`: アクセストークンの更新
-- `savePortfolioToDrive(accessToken, portfolioData)`: データ保存
-- `loadPortfolioFromDrive(accessToken, fileId)`: データ読み込み
-- `listPortfolioFiles(accessToken)`: ファイル一覧取得
-
-#### 5.2.2 キャッシュサービス（cache.js）
-DynamoDB/Redisを使用したデータキャッシュ機能を提供します。主な関数：
-- `get(key)`: キャッシュからデータを取得
-- `set(key, value, ttl)`: データをキャッシュに保存
-- `getStats()`: キャッシュの統計情報を取得
-- `cleanup()`: 期限切れのキャッシュを削除
-
-#### 5.2.3 使用量サービス（usage.js）
-APIの使用量を管理します。主な関数：
-- `incrementUsage()`: 使用量カウンターをインクリメント
-- `getUsageStats()`: 使用量統計を取得
-- `resetUsage(type)`: 使用量カウンターをリセット
-- `checkUsageLimits()`: 使用量が制限を超えていないか確認
-
-#### 5.2.4 アラートサービス（alerts.js）
-エラーや重要なイベントを通知します。主な関数：
-- `sendAlert(options)`: アラートメッセージを送信
-
-#### 5.2.5 データソースサービス
-金融データを取得するための外部サービスとの連携を担当します。
-
-- **Yahoo Finance（yahooFinance.js）**
-  - `getStockData(symbol)`: 米国株式データを取得
-
-- **為替レート（exchangeRate.js）**
-  - `getExchangeRate(base, target)`: 為替レートを取得
-
-- **スクレイピング（scraping.js）**
-  - `scrapeJpStock(symbol)`: 日本株式データをスクレイプ
-  - `scrapeMutualFund(code)`: 投資信託データをスクレイプ
-
-### 5.3 ユーティリティ
-
-#### 5.3.1 レスポンスフォーマッター（responseFormatter.js）
-APIレスポンスを標準形式に整形します。主な関数：
-- `formatResponse(options)`: 成功レスポンスを整形
-- `formatErrorResponse(options)`: エラーレスポンスを整形
-- `formatRedirectResponse(location, statusCode)`: リダイレクトレスポンスを整形
-
-#### 5.3.2 クッキーパーサー（cookieParser.js、新規追加）
-HTTPクッキーの操作を担当します。主な関数：
-- `parseCookies(cookieString)`: クッキー文字列をパース
-- `createSessionCookie(sessionId, maxAge, secure, sameSite)`: セッションクッキーを生成
-- `createClearSessionCookie(secure)`: セッションクッキーを削除するためのクッキーを生成
-
-#### 5.3.3 DynamoDBサービス（dynamoDbService.js、新規追加）
-DynamoDBとのデータやり取りを担当します。主な関数：
-- `getItem(tableName, key)`: アイテムを取得
-- `addItem(tableName, item)`: アイテムを追加
-- `updateItem(tableName, key, updates)`: アイテムを更新
-- `deleteItem(tableName, key)`: アイテムを削除
-- `queryItems(tableName, keyCondition, options)`: アイテムをクエリ
-- `scanItems(tableName, options)`: テーブルをスキャン
-
-#### 5.3.4 ロガー（logger.js）
-システムログを管理します。
-
-### 5.4 設定
-
-#### 5.4.1 定数（constants.js）
-システム全体で使用される定数を定義します：
 ```javascript
-// データタイプ
-const DATA_TYPES = {
-  US_STOCK: 'us-stock',
-  JP_STOCK: 'jp-stock',
-  MUTUAL_FUND: 'mutual-fund',
-  EXCHANGE_RATE: 'exchange-rate'
-};
+// Google認証ボタンの実装（React + @react-oauth/google）
+import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 
-// キャッシュ時間（秒）
-const CACHE_TIMES = {
-  US_STOCK: 3600,        // 1時間
-  JP_STOCK: 3600,        // 1時間
-  MUTUAL_FUND: 7200,     // 2時間
-  EXCHANGE_RATE: 900     // 15分
-};
-
-// 予熱対象シンボル
-const PREWARM_SYMBOLS = {
-  US_STOCK: ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META'],
-  JP_STOCK: ['7203', '9984', '6758', '6861'],
-  MUTUAL_FUND: ['2931113C', '0131103C']
-};
-
-// Google認証設定（新規追加）
-const GOOGLE_AUTH = {
-  CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
-  CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
-  SCOPES: [
-    'email', 
-    'profile', 
-    'https://www.googleapis.com/auth/drive.file'
-  ],
-  SESSION_EXPIRES_DAYS: 7
-};
-
-// 管理者設定
-const ADMIN = {
-  API_KEY: process.env.ADMIN_API_KEY,
-  EMAIL: process.env.ADMIN_EMAIL
-};
-```
-
-## 6. データモデル
-
-### 6.1 株式データモデル
-```javascript
-{
-  ticker: String,         // 銘柄コード
-  price: Number,          // 現在価格
-  change: Number,         // 価格変動
-  changePercent: Number,  // 変動率（%）
-  name: String,           // 企業名/ファンド名
-  currency: String,       // 通貨（USD/JPY）
-  lastUpdated: String,    // 最終更新日時（ISO形式）
-  source: String,         // データソース
-  isStock: Boolean,       // 株式フラグ
-  isMutualFund: Boolean,  // 投資信託フラグ
+const LoginPage = () => {
+  const handleGoogleLoginSuccess = async (credentialResponse) => {
+    try {
+      const response = await axios.post(
+        'https://[api-id].execute-api.region.amazonaws.com/[stage]/auth/google/login',
+        {
+          code: credentialResponse.code,
+          redirectUri: window.location.origin + '/auth/callback'
+        },
+        { withCredentials: true } // Cookieを送受信するために必要
+      );
+      
+      if (response.data.success) {
+        // ユーザー情報をステートに保存
+        setUser(response.data.user);
+        setIsAuthenticated(true);
+        // ダッシュボードなどにリダイレクト
+        navigate('/dashboard');
+      }
+    } catch (error) {
+      console.error('認証エラー:', error);
+    }
+  };
   
-  // 追加情報（データタイプによって異なる）
-  marketCap: Number,      // 時価総額（株式のみ）
-  volume: Number,         // 出来高（株式のみ）
-  assetSize: Number,      // 純資産（投資信託のみ）
-  expenseRatio: Number    // 経費率（投資信託のみ）
-}
+  return (
+    <div className="login-container">
+      <h1>ポートフォリオマネージャー</h1>
+      <GoogleOAuthProvider clientId="YOUR_GOOGLE_CLIENT_ID">
+        <GoogleLogin
+          flow="auth-code" // 重要: コードフローを指定
+          onSuccess={handleGoogleLoginSuccess}
+          onError={() => console.error('ログイン失敗')}
+          useOneTap
+          shape="pill"
+          text="continue_with"
+        />
+      </GoogleOAuthProvider>
+    </div>
+  );
+};
 ```
 
-### 6.2 為替レートモデル
+### 2.4 セッション確認
+
 ```javascript
-{
-  pair: String,           // 通貨ペア（例: "USDJPY"）
-  base: String,           // ベース通貨（例: "USD"）
-  target: String,         // 対象通貨（例: "JPY"）
-  rate: Number,           // 為替レート
-  change: Number,         // 変動額
-  changePercent: Number,  // 変動率
-  lastUpdated: String,    // 最終更新日時
-  source: String          // データソース
-}
-```
-
-### 6.3 セッションモデル（新規追加）
-```javascript
-{
-  sessionId: String,      // セッションID（プライマリキー）
-  googleId: String,       // GoogleユーザーID
-  email: String,          // メールアドレス
-  name: String,           // ユーザー名
-  picture: String,        // プロフィール画像URL
-  accessToken: String,    // Googleアクセストークン
-  refreshToken: String,   // Googleリフレッシュトークン
-  tokenExpiry: String,    // トークン有効期限
-  createdAt: String,      // 作成日時
-  updatedAt: String,      // 更新日時
-  expiresAt: String,      // セッション有効期限
-  ttl: Number             // TTL属性（DynamoDBの自動削除用）
-}
-```
-
-### 6.4 キャッシュエントリモデル（DynamoDB）
-```javascript
-{
-  key: String,            // キャッシュキー（プライマリキー）
-  data: Object,           // キャッシュデータ（JSON）
-  ttl: Number,            // 有効期限（Unix timestamp）
-  createdAt: String,      // 作成日時
-  dataType: String,       // データタイプ
-  size: Number            // データサイズ（バイト）
-}
-```
-
-### 6.5 使用量統計モデル（DynamoDB）
-```javascript
-{
-  id: String,             // 識別子（プライマリキー）
-  date: String,           // 日付（YYYY-MM-DD形式）
-  count: Number,          // API呼び出し回数
-  uniqueUsers: Number,    // ユニークユーザー数
-  dataTypes: {            // データタイプ別呼び出し回数
-    usStock: Number,
-    jpStock: Number,
-    mutualFund: Number,
-    exchangeRate: Number
-  },
-  timestamps: [Number]    // 呼び出しタイムスタンプリスト
-}
-```
-
-## 7. エラーハンドリング
-
-### 7.1 エラーコード
-- `INVALID_PARAMS`: パラメータ不正
-- `LIMIT_EXCEEDED`: 使用量制限超過
-- `SOURCE_ERROR`: データソースからの取得エラー
-- `NOT_FOUND`: 指定された銘柄が見つからない
-- `SERVER_ERROR`: サーバー内部エラー
-- `AUTH_ERROR`: 認証エラー
-- `NO_SESSION`: セッションが存在しない
-- `INVALID_SESSION`: セッションが無効
-- `TOKEN_REFRESH_ERROR`: トークン更新エラー
-- `DRIVE_SAVE_ERROR`: Google Driveへの保存エラー
-- `DRIVE_LOAD_ERROR`: Google Driveからの読み込みエラー
-- `DRIVE_LIST_ERROR`: Google Driveのファイル一覧取得エラー
-
-### 7.2 共通エラーレスポンス形式
-```json
-{
-  "success": false,
-  "error": {
-    "message": "エラーメッセージ",
-    "code": "エラーコード",
-    "details": "エラー詳細（開発環境のみ）"
+// ページロード時やルート変更時にセッションを確認
+const checkSession = async () => {
+  try {
+    const response = await axios.get(
+      'https://[api-id].execute-api.region.amazonaws.com/[stage]/auth/session',
+      { withCredentials: true } // Cookieを送信するために必要
+    );
+    
+    if (response.data.success && response.data.isAuthenticated) {
+      setUser(response.data.user);
+      setIsAuthenticated(true);
+      return true;
+    } else {
+      setUser(null);
+      setIsAuthenticated(false);
+      return false;
+    }
+  } catch (error) {
+    console.error('セッション確認エラー:', error);
+    setUser(null);
+    setIsAuthenticated(false);
+    return false;
   }
-}
+};
 ```
 
-## 8. 認証フロー（新機能）
+### 2.5 ログアウト
 
-### 8.1 Google OAuth認証フロー
-1. フロントエンドでGoogle認証ボタンを表示（@react-oauth/googleライブラリなど）
-2. ユーザーがGoogle認証ボタンをクリック
-3. Googleの認証画面が表示され、ユーザーがアカウントでログイン
-4. 認証コードをフロントエンドが受け取る
-5. フロントエンドが認証コードをバックエンドに送信（`/auth/google/login`エンドポイント）
-6. バックエンドでGoogle OAuth APIを呼び出し、認証コードをトークンと交換
-7. IDトークンを検証してユーザー情報を取得
-8. セッションを作成してCookieに保存（HttpOnly, Secure, SameSite設定付き）
-9. フロントエンドにユーザー情報とセッション情報を返却
-10. フロントエンドでユーザー状態を更新
-
-### 8.2 セッション管理
-- セッションIDはランダムUUIDで生成
-- セッション情報はDynamoDBに保存（TTL機能で自動削除）
-- セッションCookieはHttpOnly, Secure, SameSite=Strictで設定
-- セッション有効期限はデフォルト7日間（環境変数で設定可能）
-- アクセストークンの期限が切れた場合は自動的に更新
-
-### 8.3 ログアウト処理
-1. フロントエンドがログアウトリクエストを送信（`/auth/logout`エンドポイント）
-2. バックエンドでセッションをDynamoDBから削除
-3. セッションCookieを無効化（有効期限を過去に設定）
-4. フロントエンドでユーザー状態をクリア
-
-## 9. Google Drive連携（新機能）
-
-### 9.1 データ保存フロー
-1. フロントエンドからポートフォリオデータを送信（`/drive/save`エンドポイント）
-2. バックエンドでセッション確認と権限チェック
-3. アクセストークンが有効期限切れの場合は更新
-4. Google Drive APIを使用してポートフォリオ用フォルダを検索または作成
-5. JSONファイルを作成してアップロード
-6. ファイル情報をフロントエンドに返却
-
-### 9.2 データ読み込みフロー
-1. フロントエンドからファイルIDを送信（`/drive/load`エンドポイント）
-2. バックエンドでセッション確認と権限チェック
-3. アクセストークンが有効期限切れの場合は更新
-4. Google Drive APIを使用してファイル内容とメタデータを取得
-5. ポートフォリオデータをフロントエンドに返却
-
-### 9.3 ファイル一覧取得フロー
-1. フロントエンドがファイル一覧リクエストを送信（`/drive/files`エンドポイント）
-2. バックエンドでセッション確認と権限チェック
-3. アクセストークンが有効期限切れの場合は更新
-4. Google Drive APIを使用してポートフォリオフォルダ内のファイル一覧を取得
-5. ファイル一覧情報をフロントエンドに返却
-
-### 9.4 Google Driveフォルダ構造
-- トップレベルフォルダ: `PortfolioManagerData`（環境変数で設定可能）
-- ファイル命名規則: `portfolio-data-[timestamp].json`
-- ファイルは作成日時の降順でソートされる
-
-## 10. パフォーマンス最適化
-
-### 10.1 キャッシュ戦略
-- 頻繁にアクセスされる銘柄のデータは自動的に予熱
-- データタイプごとに適切なキャッシュ時間を設定
-- キャッシュヒット率の監視と最適化
-
-### 10.2 バッチ処理
-- 複数銘柄のデータを1つのリクエストで取得可能
-- データソースからのバッチ取得機能
-
-### 10.3 使用量制限
-- 日次・月次の使用量制限を設定
-- 制限に達した場合は警告またはAPIを無効化
-- 使用量をユーザーに通知
-
-### 10.4 セッション最適化（新規追加）
-- DynamoDBのTTL機能によるセッション自動クリーンアップ
-- アクセストークンの必要時のみ更新
-- セッションデータの最小化（必要な情報のみ保存）
-
-## 11. セキュリティ
-
-### 11.1 API認証
-- プライベートAPIは管理者APIキーで保護
-- パブリックAPIはAPIキーによるアクセス制限（オプション）
-- 認証が必要なAPIはセッションCookieで保護
-
-### 11.2 セッションセキュリティ（新規追加）
-- セッションIDは強力なランダムUUID（v4）
-- セッションCookieはHTTP Only, Secure, SameSite=Strictで設定
-- セッション有効期限の設定と自動削除
-- セッションデータの暗号化（オプション）
-
-### 11.3 CORS設定
-- 許可されたオリジンからのアクセスのみ許可
-- プリフライトリクエストのサポート
-- Cookieを含むクロスオリジンリクエストの適切な設定
-
-### 11.4 入力バリデーション
-- すべてのリクエストパラメータを検証
-- SQLインジェクションなどの攻撃を防止
-
-### 11.5 トークンセキュリティ（新規追加）
-- Google APIトークンはセッションに保存し、フロントエンドには返却しない
-- リフレッシュトークンはバックエンドのみで使用
-- トークンの自動更新メカニズム
-
-## 12. デプロイメント
-
-### 12.1 環境
-- 開発環境（dev）
-- ステージング環境（staging）
-- 本番環境（prod）
-
-### 12.2 デプロイメントプロセス
-1. Gitリポジトリへのプッシュ
-2. CI/CDパイプラインによる自動テスト
-3. Serverless Frameworkによるデプロイ
-4. 動作確認
-5. Slackへのデプロイメント通知
-
-### 12.3 環境変数
-```
-# 共通
-NODE_ENV=production
-REGION=ap-northeast-1
-DYNAMODB_TABLE_PREFIX=portfolio-market-data-
-
-# Google認証（新規追加）
-GOOGLE_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=xxxxxxxxxxxxxxxxxxxxxxxx
-SESSION_TABLE=portfolio-market-data-prod-sessions
-SESSION_EXPIRES_DAYS=7
-DRIVE_FOLDER_NAME=PortfolioManagerData
-
-# CORS設定
-CORS_ALLOW_ORIGIN=https://portfolio.example.com
-
-# キャッシュ設定
-CACHE_ENABLED=true
-REDIS_ENABLED=false
-
-# API制限
-DAILY_LIMIT=5000
-MONTHLY_LIMIT=100000
-DISABLE_ON_LIMIT=true
-
-# 管理者設定
-ADMIN_API_KEY=xxxxxxxxxxxxxxxxxxxxx
-ADMIN_EMAIL=admin@example.com
-
-# アラート設定
-ALERT_SNS_TOPIC=arn:aws:sns:ap-northeast-1:123456789012:portfolio-market-data-alerts
-ALERT_EMAIL=alert@example.com
-
-# データソース
-YAHOO_FINANCE_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-EXCHANGE_RATE_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```javascript
+const handleLogout = async () => {
+  try {
+    await axios.post(
+      'https://[api-id].execute-api.region.amazonaws.com/[stage]/auth/logout',
+      {},
+      { withCredentials: true } // Cookieを送信するために必要
+    );
+    
+    setUser(null);
+    setIsAuthenticated(false);
+    navigate('/login');
+  } catch (error) {
+    console.error('ログアウトエラー:', error);
+  }
+};
 ```
 
-## 13. モニタリング
+## 3. マーケットデータの取得
 
-### 13.1 メトリクス
-- API呼び出し回数
-- エラーレート
-- レスポンス時間
-- キャッシュヒット率
-- Lambda実行回数と実行時間
-- アクティブセッション数（新規追加）
-- 認証成功率（新規追加）
-- Google Drive操作成功率（新規追加）
+### 3.1 基本的なデータ取得
 
-### 13.2 ロギング
-- CloudWatchにログを保存
-- エラーとワーニングはSNSトピックへ通知
-- 重大エラーはメール通知
-- 認証とセッション関連のエラーを分離（新規追加）
+```javascript
+const fetchMarketData = async (type, symbols) => {
+  try {
+    const response = await axios.get(
+      'https://[api-id].execute-api.region.amazonaws.com/[stage]/api/market-data',
+      {
+        params: {
+          type, // 'us-stock', 'jp-stock', 'mutual-fund', 'exchange-rate'
+          symbols: Array.isArray(symbols) ? symbols.join(',') : symbols
+        }
+      }
+    );
+    
+    if (response.data.success) {
+      return response.data.data;
+    } else {
+      console.error('APIエラー:', response.data.error);
+      return null;
+    }
+  } catch (error) {
+    console.error('API呼び出しエラー:', error);
+    return null;
+  }
+};
 
-### 13.3 ダッシュボード
-- CloudWatch Dashboardで主要メトリクスを可視化
-- 管理者パネルで使用量とキャッシュ統計を表示
-- セッション管理とユーザーアクティビティの可視化（新規追加）
+// 使用例
+const getAppleStock = async () => {
+  const data = await fetchMarketData('us-stock', 'AAPL');
+  console.log(data);
+};
 
-## 14. 拡張計画
+const getMultipleStocks = async () => {
+  const data = await fetchMarketData('us-stock', ['AAPL', 'MSFT', 'GOOGL']);
+  console.log(data);
+};
 
-### 14.1 短期的拡張（3ヶ月以内）
-- ETFデータの追加
-- 複数通貨ペアのサポート強化
-- ヒストリカルデータAPIの追加
-- Google認証と連携のテスト強化（新規追加）
-- サーバーサイドセッション管理の最適化（新規追加）
+const getExchangeRate = async () => {
+  const data = await fetchMarketData('exchange-rate', 'USD-JPY');
+  console.log(data);
+};
+```
 
-### 14.2 中期的拡張（6ヶ月以内）
-- リアルタイムデータのWebSocketサポート
-- より詳細な企業財務データの提供
-- ポートフォリオ分析APIの追加
-- 複数ユーザー間のポートフォリオ共有機能（新規追加）
-- カスタムデータ同期スケジュール機能（新規追加）
+### 3.2 リアルタイム更新
 
-### 14.3 長期的拡張（12ヶ月以内）
-- AIによる株価予測機能
-- カスタムアラート通知システム
-- マーケットニュースAPIの統合
-- ソーシャルフィーチャー統合（新規追加）
-- 複数アカウント間のデータマージ（新規追加）
+```javascript
+const subscribeToMarketData = (type, symbols, callback, intervalMs = 60000) => {
+  let intervalId = null;
+  
+  const fetchAndUpdate = async () => {
+    const data = await fetchMarketData(type, symbols);
+    if (data) {
+      callback(data);
+    }
+  };
+  
+  // 初回実行
+  fetchAndUpdate();
+  
+  // 定期的に更新
+  intervalId = setInterval(fetchAndUpdate, intervalMs);
+  
+  // クリーンアップ関数を返す
+  return () => {
+    if (intervalId) {
+      clearInterval(intervalId);
+    }
+  };
+};
 
-## 15. 付録
+// React Hooksでの使用例
+useEffect(() => {
+  const cleanup = subscribeToMarketData(
+    'us-stock',
+    ['AAPL', 'MSFT', 'GOOGL'],
+    (data) => setStockData(data),
+    30000 // 30秒ごとに更新
+  );
+  
+  // クリーンアップ関数を返す
+  return cleanup;
+}, []);
+```
 
-### 15.1 用語集
-- **銘柄コード**: 証券取引所で使用される銘柄識別子
-- **TTL**: Time To Live（キャッシュの有効期限）
-- **API制限**: サービスの過剰使用を防ぐための呼び出し回数制限
-- **キャッシュ予熱**: 事前にデータをキャッシュに保存すること
-- **OAuth2.0**: 認可の標準プロトコル（新規追加）
-- **IDトークン**: ユーザー情報を含む署名付きJWTトークン（新規追加）
-- **リフレッシュトークン**: アクセストークンを更新するための長期トークン（新規追加）
-- **セッションID**: ユーザーセッションを識別するための一意の識別子（新規追加）
+## 4. Google Drive連携
 
-### 15.2 リファレンス
-- [Serverless Framework ドキュメント](https://www.serverless.com/framework/docs/)
-- [AWS Lambda ドキュメント](https://docs.aws.amazon.com/lambda/latest/dg/welcome.html)
-- [DynamoDB ドキュメント](https://docs.aws.amazon.com/dynamodb/latest/developerguide/Introduction.html)
-- [Google OAuth 2.0 ドキュメント](https://developers.google.com/identity/protocols/oauth2)（新規追加）
-- [Google Drive API ドキュメント](https://developers.google.com/drive/api/v3/about-sdk)（新規追加）
+### 4.1 ポートフォリオデータの保存
 
-### 15.3 APIリファレンス
-詳細なAPIリファレンスドキュメントは `docs/how-to-call-api.md` を参照してください。
+```javascript
+const savePortfolioToGoogleDrive = async (portfolioData) => {
+  try {
+    const response = await axios.post(
+      'https://[api-id].execute-api.region.amazonaws.com/[stage]/drive/save',
+      { portfolioData },
+      { withCredentials: true } // Cookieを送信するために必要
+    );
+    
+    if (response.data.success) {
+      console.log('保存成功:', response.data.file);
+      return response.data.file;
+    } else {
+      console.error('保存エラー:', response.data.error);
+      return null;
+    }
+  } catch (error) {
+    console.error('Drive保存エラー:', error);
+    
+    // 認証エラーの場合はログイン画面にリダイレクト
+    if (error.response && error.response.status === 401) {
+      redirectToLogin();
+    }
+    
+    return null;
+  }
+};
+```
 
+### 4.2 ポートフォリオデータの読み込み
+
+```javascript
+const loadPortfolioFromGoogleDrive = async (fileId) => {
+  try {
+    const response = await axios.get(
+      'https://[api-id].execute-api.region.amazonaws.com/[stage]/drive/load',
+      {
+        params: { fileId },
+        withCredentials: true // Cookieを送信するために必要
+      }
+    );
+    
+    if (response.data.success) {
+      console.log('読み込み成功:', response.data.file);
+      return response.data.data; // ポートフォリオデータ
+    } else {
+      console.error('読み込みエラー:', response.data.error);
+      return null;
+    }
+  } catch (error) {
+    console.error('Drive読み込みエラー:', error);
+    
+    // 認証エラーの場合はログイン画面にリダイレクト
+    if (error.response && error.response.status === 401) {
+      redirectToLogin();
+    }
+    
+    return null;
+  }
+};
+```
+
+### 4.3 ファイル一覧の取得
+
+```javascript
+const listGoogleDriveFiles = async () => {
+  try {
+    const response = await axios.get(
+      'https://[api-id].execute-api.region.amazonaws.com/[stage]/drive/files',
+      { withCredentials: true } // Cookieを送信するために必要
+    );
+    
+    if (response.data.success) {
+      console.log('ファイル一覧取得成功:', response.data.files);
+      return response.data.files;
+    } else {
+      console.error('ファイル一覧取得エラー:', response.data.error);
+      return [];
+    }
+  } catch (error) {
+    console.error('Driveファイル一覧取得エラー:', error);
+    
+    // 認証エラーの場合はログイン画面にリダイレクト
+    if (error.response && error.response.status === 401) {
+      redirectToLogin();
+    }
+    
+    return [];
+  }
+};
+```
+
+## 5. エラーハンドリング
+
+### 5.1 共通エラーコード
+
+| エラーコード | 説明 | HTTP ステータス |
+|-------------|------|---------------|
+| `INVALID_PARAMS` | パラメータが無効 | 400 |
+| `LIMIT_EXCEEDED` | 使用量制限超過 | 429 |
+| `SOURCE_ERROR` | データソースエラー | 502 |
+| `NOT_FOUND` | リソースが見つからない | 404 |
+| `SERVER_ERROR` | サーバー内部エラー | 500 |
+| `AUTH_ERROR` | 認証エラー | 401 |
+| `NO_SESSION` | セッションなし | 401 |
+| `INVALID_SESSION` | 無効なセッション | 401 |
+| `TOKEN_REFRESH_ERROR` | トークン更新エラー | 401 |
+| `DRIVE_ERROR` | Google Driveエラー | 500 |
+
+### 5.2 包括的なエラーハンドリング
+
+```javascript
+const apiRequest = async (url, method = 'get', data = null, params = null) => {
+  try {
+    const config = {
+      withCredentials: true,
+      params
+    };
+    
+    let response;
+    if (method.toLowerCase() === 'get') {
+      response = await axios.get(url, config);
+    } else if (method.toLowerCase() === 'post') {
+      response = await axios.post(url, data, config);
+    } else if (method.toLowerCase() === 'put') {
+      response = await axios.put(url, data, config);
+    } else if (method.toLowerCase() === 'delete') {
+      response = await axios.delete(url, config);
+    }
+    
+    return response.data;
+  } catch (error) {
+    // 認証エラー
+    if (error.response && error.response.status === 401) {
+      console.error('認証エラー - ログインが必要です');
+      redirectToLogin();
+      return { success: false, error: 'ログインが必要です' };
+    }
+    
+    // レート制限エラー
+    if (error.response && error.response.status === 429) {
+      console.warn('API使用量制限に達しました');
+      
+      // フォールバック処理
+      return { 
+        success: false, 
+        error: 'API使用量制限に達しました',
+        isRateLimited: true
+      };
+    }
+    
+    // その他のエラー
+    console.error('APIエラー:', error);
+    return { 
+      success: false, 
+      error: error.response?.data?.error?.message || error.message,
+      status: error.response?.status
+    };
+  }
+};
+```
+
+## 6. React用カスタムフック
+
+### 6.1 認証フック
+
+```javascript
+import { useState, useEffect, createContext, useContext } from 'react';
+import axios from 'axios';
+
+// 認証コンテキストの作成
+const AuthContext = createContext();
+
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loading, setLoading] = useState(true);
+  
+  // セッション確認
+  const checkSession = async () => {
+    try {
+      setLoading(true);
+      const response = await axios.get(
+        'https://[api-id].execute-api.region.amazonaws.com/[stage]/auth/session',
+        { withCredentials: true }
+      );
+      
+      if (response.data.success && response.data.isAuthenticated) {
+        setUser(response.data.user);
+        setIsAuthenticated(true);
+      } else {
+        setUser(null);
+        setIsAuthenticated(false);
+      }
+    } catch (error) {
+      console.error('セッション確認エラー:', error);
+      setUser(null);
+      setIsAuthenticated(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // ログイン処理
+  const login = async (credentialResponse) => {
+    try {
+      setLoading(true);
+      const response = await axios.post(
+        'https://[api-id].execute-api.region.amazonaws.com/[stage]/auth/google/login',
+        {
+          code: credentialResponse.code,
+          redirectUri: window.location.origin + '/auth/callback'
+        },
+        { withCredentials: true }
+      );
+      
+      if (response.data.success) {
+        setUser(response.data.user);
+        setIsAuthenticated(true);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('ログインエラー:', error);
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // ログアウト処理
+  const logout = async () => {
+    try {
+      setLoading(true);
+      await axios.post(
+        'https://[api-id].execute-api.region.amazonaws.com/[stage]/auth/logout',
+        {},
+        { withCredentials: true }
+      );
+      
+      setUser(null);
+      setIsAuthenticated(false);
+    } catch (error) {
+      console.error('ログアウトエラー:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // 初回マウント時にセッション確認
+  useEffect(() => {
+    checkSession();
+  }, []);
+  
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        isAuthenticated,
+        loading,
+        login,
+        logout,
+        checkSession
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+// カスタムフック
+export const useAuth = () => useContext(AuthContext);
+```
+
+### 6.2 マーケットデータフック
+
+```javascript
+import { useState, useEffect } from 'react';
+import axios from 'axios';
+
+export const useMarketData = (type, symbols, refreshInterval = 0) => {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  
+  const fetchData = async () => {
+    if (!symbols) return;
+    
+    try {
+      setLoading(true);
+      
+      const apiUrl = process.env.REACT_APP_API_URL || 'https://[api-id].execute-api.region.amazonaws.com/[stage]';
+      
+      const response = await axios.get(`${apiUrl}/api/market-data`, {
+        params: {
+          type,
+          symbols: Array.isArray(symbols) ? symbols.join(',') : symbols
+        }
+      });
+      
+      if (response.data.success) {
+        setData(response.data.data);
+        setError(null);
+      } else {
+        setError(response.data.error || '不明なエラー');
+      }
+    } catch (err) {
+      setError(err.message || 'データ取得エラー');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  useEffect(() => {
+    let intervalId = null;
+    
+    fetchData();
+    
+    if (refreshInterval > 0) {
+      intervalId = setInterval(fetchData, refreshInterval);
+    }
+    
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [type, symbols, refreshInterval]);
+  
+  return {
+    data,
+    loading,
+    error,
+    refetch: fetchData
+  };
+};
+```
+
+### 6.3 Google Drive連携フック
+
+```javascript
+import { useState } from 'react';
+import axios from 'axios';
+import { useAuth } from './useAuth';
+
+export const useGoogleDrive = () => {
+  const { isAuthenticated } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  
+  const apiUrl = process.env.REACT_APP_API_URL || 'https://[api-id].execute-api.region.amazonaws.com/[stage]';
+  
+  // ファイル一覧取得
+  const listFiles = async () => {
+    if (!isAuthenticated) {
+      setError('認証が必要です');
+      return null;
+    }
+    
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const response = await axios.get(
+        `${apiUrl}/drive/files`,
+        { withCredentials: true }
+      );
+      
+      if (response.data.success) {
+        return response.data.files;
+      } else {
+        setError(response.data.error?.message || '不明なエラー');
+        return null;
+      }
+    } catch (error) {
+      setError(error.message || 'ファイル一覧取得エラー');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // ファイル保存
+  const saveFile = async (portfolioData) => {
+    if (!isAuthenticated) {
+      setError('認証が必要です');
+      return null;
+    }
+    
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const response = await axios.post(
+        `${apiUrl}/drive/save`,
+        { portfolioData },
+        { withCredentials: true }
+      );
+      
+      if (response.data.success) {
+        return response.data.file;
+      } else {
+        setError(response.data.error?.message || '不明なエラー');
+        return null;
+      }
+    } catch (error) {
+      setError(error.message || 'ファイル保存エラー');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // ファイル読み込み
+  const loadFile = async (fileId) => {
+    if (!isAuthenticated) {
+      setError('認証が必要です');
+      return null;
+    }
+    
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const response = await axios.get(
+        `${apiUrl}/drive/load`,
+        {
+          params: { fileId },
+          withCredentials: true
+        }
+      );
+      
+      if (response.data.success) {
+        return response.data.data;
+      } else {
+        setError(response.data.error?.message || '不明なエラー');
+        return null;
+      }
+    } catch (error) {
+      setError(error.message || 'ファイル読み込みエラー');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  return {
+    listFiles,
+    saveFile,
+    loadFile,
+    loading,
+    error
+  };
+};
+```
+
+## 7. 実装例
+
+### 7.1 Google認証ボタンのコンポーネント
+
+```jsx
+import React from 'react';
+import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
+import { useAuth } from '../hooks/useAuth';
+import { useNavigate } from 'react-router-dom';
+
+const LoginButton = () => {
+  const { login } = useAuth();
+  const navigate = useNavigate();
+  
+  const handleGoogleLoginSuccess = async (credentialResponse) => {
+    const success = await login(credentialResponse);
+    if (success) {
+      navigate('/dashboard');
+    }
+  };
+  
+  return (
+    <GoogleOAuthProvider clientId={process.env.REACT_APP_GOOGLE_CLIENT_ID}>
+      <GoogleLogin
+        flow="auth-code"
+        onSuccess={handleGoogleLoginSuccess}
+        onError={() => console.error('ログイン失敗')}
+        useOneTap
+        shape="pill"
+        text="signin_with"
+      />
+    </GoogleOAuthProvider>
+  );
+};
+
+export default LoginButton;
+```
+
+### 7.2 ポートフォリオ保存コンポーネント
+
+```jsx
+import React, { useState } from 'react';
+import { useGoogleDrive } from '../hooks/useGoogleDrive';
+import { useAuth } from '../hooks/useAuth';
+
+const SavePortfolioButton = ({ portfolioData }) => {
+  const { isAuthenticated, user } = useAuth();
+  const { saveFile, loading, error } = useGoogleDrive();
+  const [saveStatus, setSaveStatus] = useState(null);
+  
+  const handleSave = async () => {
+    if (!isAuthenticated) {
+      setSaveStatus({
+        success: false,
+        message: 'Google Driveに保存するにはログインしてください'
+      });
+      return;
+    }
+    
+    if (!portfolioData) {
+      setSaveStatus({
+        success: false,
+        message: '保存するデータがありません'
+      });
+      return;
+    }
+    
+    // タイムスタンプとユーザー情報を追加
+    const dataToSave = {
+      ...portfolioData,
+      lastSaved: new Date().toISOString(),
+      savedBy: user ? {
+        email: user.email,
+        name: user.name
+      } : 'unknown'
+    };
+    
+    const result = await saveFile(dataToSave);
+    
+    if (result) {
+      setSaveStatus({
+        success: true,
+        message: 'ポートフォリオデータをGoogle Driveに保存しました',
+        file: result
+      });
+    } else {
+      setSaveStatus({
+        success: false,
+        message: error || 'Google Driveへの保存に失敗しました'
+      });
+    }
+  };
+  
+  return (
+    <div className="save-portfolio">
+      <button
+        onClick={handleSave}
+        disabled={loading || !isAuthenticated}
+        className={`btn ${isAuthenticated ? 'btn-primary' : 'btn-secondary'}`}
+      >
+        {loading ? '保存中...' : 'Google Driveに保存'}
+      </button>
+      
+      {saveStatus && (
+        <div className={`save-status ${saveStatus.success ? 'success' : 'error'}`}>
+          <p>{saveStatus.message}</p>
+          {saveStatus.success && saveStatus.file && (
+            <a
+              href={saveStatus.file.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="view-file"
+            >
+              保存したファイルを表示
+            </a>
+          )}
+        </div>
+      )}
+      
+      {!isAuthenticated && (
+        <p className="login-prompt">
+          Google Driveに保存するには、ログインしてください。
+        </p>
+      )}
+    </div>
+  );
+};
+
+export default SavePortfolioButton;
+```
+
+### 7.3 Google Driveファイル一覧コンポーネント
+
+```jsx
+import React, { useEffect, useState } from 'react';
+import { useGoogleDrive } from '../hooks/useGoogleDrive';
+import { useAuth } from '../hooks/useAuth';
+
+const GoogleDriveFiles = ({ onFileSelect }) => {
+  const { isAuthenticated } = useAuth();
+  const { listFiles, loadFile, loading, error } = useGoogleDrive();
+  const [files, setFiles] = useState([]);
+  
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchFiles();
+    }
+  }, [isAuthenticated]);
+  
+  const fetchFiles = async () => {
+    const filesList = await listFiles();
+    if (filesList) {
+      setFiles(filesList);
+    }
+  };
+  
+  const handleFileSelect = async (fileId) => {
+    const data = await loadFile(fileId);
+    if (data && onFileSelect) {
+      onFileSelect(data);
+    }
+  };
+  
+  if (!isAuthenticated) {
+    return <p>ファイル一覧を表示するにはログインしてください</p>;
+  }
+  
+  if (loading) {
+    return <p>ファイル一覧を読み込み中...</p>;
+  }
+  
+  if (error) {
+    return <p>エラー: {error}</p>;
+  }
+  
+  return (
+    <div className="drive-files">
+      <h2>Google Driveのポートフォリオデータ</h2>
+      {files.length === 0 ? (
+        <p>保存されたファイルがありません</p>
+      ) : (
+        <ul className="file-list">
+          {files.map(file => (
+            <li key={file.id} className="file-item">
+              <div className="file-info">
+                <span className="file-name">{file.name}</span>
+                <span className="file-date">
+                  {new Date(file.createdAt).toLocaleString()}
+                </span>
+              </div>
+              <div className="file-actions">
+                <button
+                  onClick={() => handleFileSelect(file.id)}
+                  className="btn btn-primary"
+                >
+                  読み込む
+                </button>
+                <a
+                  href={file.webViewLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-secondary"
+                >
+                  表示
+                </a>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      <button onClick={fetchFiles} className="btn btn-refresh">
+        更新
+      </button>
+    </div>
+  );
+};
+
+export default GoogleDriveFiles;
+```
+
+## 8. ベストプラクティス
+
+### 8.1 セキュリティのベストプラクティス
+
+1. **CORS設定の適切な管理**
+   - `withCredentials: true` は常に設定する
+   - フロントエンドのオリジンをバックエンドで許可する
+
+2. **トークン・クレデンシャル管理**
+   - APIキーやGoogle Clientシークレットは絶対にフロントエンドに保存しない
+   - Google Client IDだけはフロントエンドに必要
+
+3. **エラーハンドリング**
+   - ユーザーに表示するエラーメッセージは適切に抽象化する
+   - デバッグ情報は開発環境でのみ表示する
+
+### 8.2 パフォーマンスのベストプラクティス
+
+1. **バッチ処理**
+   - 複数銘柄のデータは一度のリクエストで取得する
+   - 例: `symbols: 'AAPL,MSFT,GOOGL'`
+
+2. **キャッシュの活用**
+   - 頻繁に変化しないデータはローカルストレージに保存
+   - `refresh` パラメータは必要な場合のみ `true` に設定
+
+3. **ポーリング間隔の最適化**
+   - マーケットデータの更新頻度に応じて適切な間隔を設定
+   - 米国株・日本株: 1分〜5分
+   - 為替レート: 30秒〜1分
+   - 投資信託: 1時間〜1日
+
+### 8.3 UXのベストプラクティス
+
+1. **ローディング状態の表示**
+   - データ取得中はスケルトンUIやローディングインジケーターを表示
+
+2. **エラー状態の処理**
+   - エラー発生時は適切なフォールバックUIを表示
+   - 再試行ボタンを提供
+
+3. **認証状態の管理**
+   - ログイン状態を明確に表示
+   - 認証が必要な機能は事前に説明
+
+### 8.4 開発フローのベストプラクティス
+
+1. **環境変数の管理**
+   - `.env.development` と `.env.production` を使い分ける
+   - API URLやGoogle Client IDは環境変数で管理
+
+2. **エラーロギング**
+   - 本番環境ではSentry.ioなどのエラー追跡サービスを導入
+
+3. **バージョン管理**
+   - API URLにはバージョン番号を含める
+   - APIの破壊的変更を追跡する
+
+以上がポートフォリオマーケットデータAPI統合ガイドです。このガイドを参考に、フロントエンド側での効率的な実装を行ってください。不明点がある場合は、APIドキュメントや管理者にお問い合わせください。

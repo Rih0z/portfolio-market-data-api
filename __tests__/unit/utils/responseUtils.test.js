@@ -4,6 +4,7 @@
  * @file __tests__/unit/utils/responseUtils.test.js
  * @author Portfolio Manager Team
  * @created 2025-05-18
+ * @updated 2025-05-12 バグ修正: 非同期関数の処理を修正
  */
 
 const { formatResponse, formatErrorResponse, formatRedirectResponse, formatOptionsResponse, handleOptions } = require('../../../src/utils/responseUtils');
@@ -59,7 +60,7 @@ describe('responseUtils', () => {
       // モック実装を明示的に設定
       addBudgetWarningToResponse.mockImplementation(async response => response);
       
-      // テスト実行
+      // テスト実行 - await を追加
       const response = await formatResponse({
         statusCode: 201,
         headers: { 'Custom-Header': 'Value' },

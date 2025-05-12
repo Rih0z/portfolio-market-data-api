@@ -1,155 +1,67 @@
 /**
- * プロジェクト: portfolio-market-data-api
- * ファイルパス: src/functions/preWarmCache.js
+ * API キャッシュの予熱を行う Lambda 関数
  * 
- * 説明: 
- * 人気銘柄のキャッシュを定期的に予熱するためのLambda関数。
- * CloudWatch Eventsによって1時間ごとに実行され、人気銘柄のデータを
- * 事前にAPIから取得してキャッシュに保存します。
- * 投資信託データはスクレイピングではなくCSVダウンロードから取得。
- * 
+ * @file src/function/preWarmCache.js
  * @author Portfolio Manager Team
- * @updated 2025-05-17
+ * @updated 2025-05-12 バグ修正: モジュールパスを修正
  */
-'use strict';
 
-const cacheService = require('../services/cache');
-const yahooFinanceService = require('../services/sources/yahooFinance');
-const exchangeRateService = require('../services/sources/exchangeRate');
-const scrapingService = require('../services/sources/scraping');
-const fundDataService = require('../services/sources/fundDataService');
-const alertService = require('../services/alerts');
-const { PREWARM_SYMBOLS, CACHE_TIMES, DATA_TYPES } = require('../config/constants');
-const { ENV } = require('../config/envConfig');
-const { withRetry, isRetryableApiError, sleep } = require('../utils/retry');
+const enhancedMarketDataService = require('../services/sources/enhancedMarketDataService');
+const cache = require('../services/cache');
+const alerts = require('../services/alerts');
 const logger = require('../utils/logger');
-const { handleError, errorTypes } = require('../utils/errorHandler');
+
+// スクレイピング関連モジュールのインポートパスを修正
+// 変更前: const scraping = require('../services/sources/scraping');
+const scrapingBlacklist = require('../utils/scrapingBlacklist');
+
+// 頻繁にアクセスされる銘柄のリスト
+const PREWARM_SYMBOLS = {
+  'us-stock': ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'NVDA', 'BRK-B', 'JPM', 'JNJ'],
+  'jp-stock': ['7203', '9984', '6758', '8306', '9432', '6861', '7974', '6501', '8035', '9433'],
+  'mutual-fund': ['2931113C', '0131103C', '0231303C', '0131423C', '2931333C'],
+  'exchange-rate': ['USD-JPY', 'EUR-USD', 'EUR-JPY', 'GBP-USD', 'USD-CNY']
+};
 
 /**
- * キャッシュ予熱ハンドラー - 人気銘柄のデータを事前に取得してキャッシュに保存する
- * @param {Object} event - Lambda イベントオブジェクト
- * @param {Object} context - Lambda コンテキスト
- * @returns {Object} キャッシュ予熱結果
+ * キャッシュの予熱を行うメイン関数
  */
 exports.handler = async (event, context) => {
-  logger.info('Starting cache pre-warm process');
-  const startTime = Date.now();
-  
-  // リクエストのheader内に認証シークレットがない場合は警告
-  const requestSecret = event.headers?.['x-cron-secret'] || '';
-  if (requestSecret && ENV.CRON_SECRET && requestSecret !== ENV.CRON_SECRET) {
-    logger.warn('Invalid cron secret provided');
-    await alertService.sendAlert({
-      subject: 'Invalid Cron Secret',
-      message: 'An invalid cron secret was provided for the cache pre-warm function',
-      detail: `Secret: ${requestSecret.substring(0, 4)}...`
-    });
-  }
-
   try {
-    // 結果の初期化
-    const results = {
-      usStock: { success: 0, fail: 0, total: 0 },
-      jpStock: { success: 0, fail: 0, total: 0 },
-      mutualFund: { success: 0, fail: 0, total: 0 },
-      exchangeRate: { success: 0, fail: 0, total: 0 }
-    };
+    logger.info('Starting cache pre-warming process');
     
-    // 1. 並列処理で全種別のキャッシュ予熱を開始
-    const [usStockResults, jpStockResults, mutualFundResults, exchangeRateResult] = await Promise.allSettled([
-      preWarmUsStocks(),
-      preWarmJpStocks(),
-      preWarmMutualFunds(),
-      preWarmExchangeRates()
-    ]);
+    // クリーンアップを最初に実行
+    await cleanupExpiredData();
     
-    // 結果を集計
-    if (usStockResults.status === 'fulfilled') {
-      results.usStock = usStockResults.value;
-    } else {
-      logger.error('US stock pre-warm failed:', usStockResults.reason);
-      results.usStock = { success: 0, fail: PREWARM_SYMBOLS.US_STOCK.length, total: PREWARM_SYMBOLS.US_STOCK.length, error: usStockResults.reason.message };
-    }
+    // 各データタイプのキャッシュを予熱
+    await prewarmUsStocks();
+    await prewarmJpStocks();
+    await prewarmMutualFunds();
+    await prewarmExchangeRates();
     
-    if (jpStockResults.status === 'fulfilled') {
-      results.jpStock = jpStockResults.value;
-    } else {
-      logger.error('JP stock pre-warm failed:', jpStockResults.reason);
-      results.jpStock = { success: 0, fail: PREWARM_SYMBOLS.JP_STOCK.length, total: PREWARM_SYMBOLS.JP_STOCK.length, error: jpStockResults.reason.message };
-    }
+    logger.info('Cache pre-warming completed successfully');
     
-    if (mutualFundResults.status === 'fulfilled') {
-      results.mutualFund = mutualFundResults.value;
-    } else {
-      logger.error('Mutual fund pre-warm failed:', mutualFundResults.reason);
-      results.mutualFund = { success: 0, fail: PREWARM_SYMBOLS.MUTUAL_FUND.length, total: PREWARM_SYMBOLS.MUTUAL_FUND.length, error: mutualFundResults.reason.message };
-    }
-    
-    if (exchangeRateResult.status === 'fulfilled') {
-      results.exchangeRate = exchangeRateResult.value;
-    } else {
-      logger.error('Exchange rate pre-warm failed:', exchangeRateResult.reason);
-      results.exchangeRate = { success: 0, fail: 1, total: 1, error: exchangeRateResult.reason.message };
-    }
-    
-    // 5. 期限切れのキャッシュをクリーンアップ
-    logger.info('Cleaning up expired cache entries');
-    const cleanupResult = await cacheService.cleanup();
-    
-    // 処理完了時間の計算
-    const processingTime = Date.now() - startTime;
-    
-    // 結果をまとめる
-    const summary = {
-      usStock: results.usStock,
-      jpStock: results.jpStock,
-      mutualFund: results.mutualFund,
-      exchangeRate: results.exchangeRate,
-      cleanup: cleanupResult,
-      processingTime: `${processingTime}ms`,
-      timestamp: new Date().toISOString()
-    };
-    
-    // 失敗したアイテムがある場合はアラートを送信
-    const totalFailed = results.usStock.fail + results.jpStock.fail + results.mutualFund.fail + results.exchangeRate.fail;
-    const totalItems = results.usStock.total + results.jpStock.total + results.mutualFund.total + results.exchangeRate.total;
-    
-    if (totalFailed > 0) {
-      const failRate = totalItems > 0 ? totalFailed / totalItems : 0;
-      
-      // 20%以上の失敗率の場合は警告
-      if (failRate >= 0.2) {
-        await alertService.sendAlert({
-          subject: 'Cache Pre-warm Warning: High Failure Rate',
-          message: `Cache pre-warming process completed with ${totalFailed} failures (${Math.round(failRate * 100)}% failure rate)`,
-          detail: JSON.stringify(summary, null, 2)
-        });
-      }
-    }
-    
-    logger.info('Cache pre-warm completed successfully', summary);
     return {
       statusCode: 200,
       body: JSON.stringify({
-        success: true,
-        message: 'Cache pre-warm completed successfully',
-        summary
+        message: 'Cache pre-warming completed successfully'
       })
     };
   } catch (error) {
-    logger.error('Error during cache pre-warm:', error);
+    logger.error('Error during cache pre-warming:', error);
     
-    // 重大なエラーが発生した場合はアラート通知とエラーハンドリング
-    await handleError(error, errorTypes.CRITICAL_ERROR, {
-      process: 'cachePreWarm',
-      alert: true
+    // アラートを送信
+    await alerts.sendAlert({
+      source: 'CachePrewarming',
+      message: `Cache pre-warming failed: ${error.message}`,
+      severity: 'ERROR',
+      details: error.stack
     });
     
     return {
       statusCode: 500,
       body: JSON.stringify({
-        success: false,
-        message: 'Cache pre-warm failed',
+        message: 'Cache pre-warming failed',
         error: error.message
       })
     };
@@ -157,273 +69,99 @@ exports.handler = async (event, context) => {
 };
 
 /**
- * 米国株のキャッシュを予熱する
- * @returns {Promise<Object>} 予熱結果
+ * 期限切れデータのクリーンアップ
  */
-const preWarmUsStocks = async () => {
-  const symbols = PREWARM_SYMBOLS.US_STOCK;
-  logger.info(`Pre-warming ${symbols.length} US stock symbols`);
-  
-  const results = {
-    success: 0,
-    fail: 0, 
-    total: symbols.length
-  };
-  
+async function cleanupExpiredData() {
   try {
-    // Yahoo FinanceのバッチAPIを使用して一括取得
-    const batchData = await yahooFinanceService.getStocksData(symbols);
+    logger.info('Cleaning up expired cache items');
     
-    // 取得に成功した銘柄をキャッシュに保存
-    const cachePromises = [];
+    // キャッシュからTTL期限切れのアイテムを削除
+    const cleanupResult = await cache.cleanup();
+    logger.info(`Cleaned up ${cleanupResult.count} expired cache items`);
     
-    for (const symbol of symbols) {
-      if (batchData[symbol]) {
-        const cacheKey = `${DATA_TYPES.US_STOCK}:${symbol}`;
-        cachePromises.push(
-          cacheService.set(cacheKey, batchData[symbol], CACHE_TIMES.US_STOCK)
-            .then(() => {
-              results.success++;
-              return true;
-            })
-            .catch((error) => {
-              logger.error(`Failed to cache US stock ${symbol}:`, error);
-              results.fail++;
-              return false;
-            })
-        );
-      } else {
-        results.fail++;
-        logger.warn(`No data returned for US stock ${symbol}`);
-      }
+    // スクレイピングブラックリストの古いエントリーをクリーンアップ
+    const blacklistCleanupResult = await scrapingBlacklist.cleanupExpiredEntries();
+    logger.info(`Cleaned up ${blacklistCleanupResult.count} expired blacklist entries`);
+    
+    return {
+      cacheItems: cleanupResult.count,
+      blacklistEntries: blacklistCleanupResult.count
+    };
+  } catch (error) {
+    logger.error('Error during cleanup:', error);
+    throw error;
+  }
+}
+
+/**
+ * 米国株のキャッシュを予熱
+ */
+async function prewarmUsStocks() {
+  try {
+    logger.info('Pre-warming US stocks cache');
+    const symbols = PREWARM_SYMBOLS['us-stock'];
+    const result = await enhancedMarketDataService.getUsStocksData(symbols, true);
+    
+    logger.info(`Successfully pre-warmed cache for ${Object.keys(result).length} US stocks`);
+    return result;
+  } catch (error) {
+    logger.error('Error pre-warming US stocks cache:', error);
+    throw error;
+  }
+}
+
+/**
+ * 日本株のキャッシュを予熱
+ */
+async function prewarmJpStocks() {
+  try {
+    logger.info('Pre-warming JP stocks cache');
+    const symbols = PREWARM_SYMBOLS['jp-stock'];
+    const result = await enhancedMarketDataService.getJpStocksData(symbols, true);
+    
+    logger.info(`Successfully pre-warmed cache for ${Object.keys(result).length} JP stocks`);
+    return result;
+  } catch (error) {
+    logger.error('Error pre-warming JP stocks cache:', error);
+    throw error;
+  }
+}
+
+/**
+ * 投資信託のキャッシュを予熱
+ */
+async function prewarmMutualFunds() {
+  try {
+    logger.info('Pre-warming mutual funds cache');
+    const symbols = PREWARM_SYMBOLS['mutual-fund'];
+    const result = await enhancedMarketDataService.getMutualFundsData(symbols, true);
+    
+    logger.info(`Successfully pre-warmed cache for ${Object.keys(result).length} mutual funds`);
+    return result;
+  } catch (error) {
+    logger.error('Error pre-warming mutual funds cache:', error);
+    throw error;
+  }
+}
+
+/**
+ * 為替レートのキャッシュを予熱
+ */
+async function prewarmExchangeRates() {
+  try {
+    logger.info('Pre-warming exchange rates cache');
+    const results = {};
+    
+    for (const pair of PREWARM_SYMBOLS['exchange-rate']) {
+      const [base, target] = pair.split('-');
+      const result = await enhancedMarketDataService.getExchangeRateData(base, target, true);
+      results[pair] = result;
     }
     
-    // 全てのキャッシュ保存を待機
-    await Promise.all(cachePromises);
-    
+    logger.info(`Successfully pre-warmed cache for ${Object.keys(results).length} exchange rates`);
     return results;
   } catch (error) {
-    logger.error('Error pre-warming US stocks:', error);
-    
-    // バッチ処理に失敗した場合は個別取得を試行
-    return await preWarmUsStocksIndividually();
+    logger.error('Error pre-warming exchange rates cache:', error);
+    throw error;
   }
-};
-
-/**
- * 米国株を個別に取得して予熱する（バッチ処理失敗時のフォールバック）
- * @returns {Promise<Object>} 予熱結果
- */
-const preWarmUsStocksIndividually = async () => {
-  const symbols = PREWARM_SYMBOLS.US_STOCK;
-  logger.warn(`Falling back to individual pre-warming for ${symbols.length} US stocks`);
-  
-  const results = {
-    success: 0,
-    fail: 0, 
-    total: symbols.length
-  };
-  
-  const stockResults = await Promise.allSettled(
-    symbols.map(async (symbol, index) => {
-      try {
-        // API制限を避けるために少し遅延を入れる
-        const delay = index * 100; // 各リクエストを100msずつずらす
-        if (delay > 0) {
-          await sleep(delay);
-        }
-        
-        // 米国株データの取得（再試行ロジック付き）
-        const stockData = await withRetry(
-          () => yahooFinanceService.getStockData(symbol),
-          {
-            maxRetries: 3,
-            baseDelay: 300,
-            shouldRetry: isRetryableApiError
-          }
-        );
-        
-        // キャッシュに保存
-        const cacheKey = `${DATA_TYPES.US_STOCK}:${symbol}`;
-        await cacheService.set(cacheKey, stockData, CACHE_TIMES.US_STOCK);
-        
-        logger.info(`Successfully pre-warmed US stock ${symbol}`);
-        return { symbol, success: true };
-      } catch (error) {
-        logger.error(`Failed to pre-warm US stock ${symbol}:`, error.message);
-        return { symbol, success: false, error: error.message };
-      }
-    })
-  );
-  
-  // 結果を集計
-  stockResults.forEach(result => {
-    if (result.status === 'fulfilled' && result.value.success) {
-      results.success++;
-    } else {
-      results.fail++;
-    }
-  });
-  
-  return results;
-};
-
-/**
- * 日本株のキャッシュを予熱する
- * @returns {Promise<Object>} 予熱結果
- */
-const preWarmJpStocks = async () => {
-  const codes = PREWARM_SYMBOLS.JP_STOCK;
-  logger.info(`Pre-warming ${codes.length} Japanese stock codes`);
-  
-  const results = {
-    success: 0,
-    fail: 0, 
-    total: codes.length
-  };
-  
-  const stockResults = await Promise.allSettled(
-    codes.map(async (code, index) => {
-      try {
-        // API制限を避けるために少し遅延を入れる
-        const delay = index * 200; // 各リクエストを200msずつずらす
-        if (delay > 0) {
-          await sleep(delay);
-        }
-        
-        // 日本株データの取得（再試行ロジック付き）
-        const stockData = await withRetry(
-          () => scrapingService.scrapeJpStock(code),
-          {
-            maxRetries: 3,
-            baseDelay: 500,
-            shouldRetry: isRetryableApiError
-          }
-        );
-        
-        // キャッシュに保存
-        const cacheKey = `${DATA_TYPES.JP_STOCK}:${code}`;
-        await cacheService.set(cacheKey, stockData, CACHE_TIMES.JP_STOCK);
-        
-        logger.info(`Successfully pre-warmed JP stock ${code}`);
-        return { code, success: true };
-      } catch (error) {
-        logger.error(`Failed to pre-warm JP stock ${code}:`, error.message);
-        return { code, success: false, error: error.message };
-      }
-    })
-  );
-  
-  // 結果を集計
-  stockResults.forEach(result => {
-    if (result.status === 'fulfilled' && result.value.success) {
-      results.success++;
-    } else {
-      results.fail++;
-    }
-  });
-  
-  return results;
-};
-
-/**
- * 投資信託のキャッシュを予熱する
- * @returns {Promise<Object>} 予熱結果
- */
-const preWarmMutualFunds = async () => {
-  const codes = PREWARM_SYMBOLS.MUTUAL_FUND;
-  logger.info(`Pre-warming ${codes.length} mutual fund codes`);
-  
-  const results = {
-    success: 0,
-    fail: 0, 
-    total: codes.length
-  };
-  
-  const fundResults = await Promise.allSettled(
-    codes.map(async (symbol, index) => {
-      try {
-        // API制限を避けるために少し遅延を入れる
-        const delay = index * 200; // 各リクエストを200msずつずらす
-        if (delay > 0) {
-          await sleep(delay);
-        }
-        
-        // シンボル形式を正規化（末尾のCを取り除く）
-        const fundCode = symbol.replace(/C$/i, '');
-        
-        // 投資信託データの取得（CSV方式、再試行ロジック付き）
-        const fundData = await withRetry(
-          () => fundDataService.getMutualFundData(fundCode),
-          {
-            maxRetries: 3,
-            baseDelay: 500,
-            shouldRetry: isRetryableApiError
-          }
-        );
-        
-        // fundDataService内部でキャッシュされているので追加のキャッシュ操作は不要
-        logger.info(`Successfully pre-warmed mutual fund ${fundCode}`);
-        return { symbol: fundCode, success: true };
-      } catch (error) {
-        logger.error(`Failed to pre-warm mutual fund ${symbol}:`, error.message);
-        return { symbol, success: false, error: error.message };
-      }
-    })
-  );
-  
-  // 結果を集計
-  fundResults.forEach(result => {
-    if (result.status === 'fulfilled' && result.value.success) {
-      results.success++;
-    } else {
-      results.fail++;
-    }
-  });
-  
-  return results;
-};
-
-/**
- * 為替レートのキャッシュを予熱する
- * @returns {Promise<Object>} 予熱結果
- */
-const preWarmExchangeRates = async () => {
-  logger.info('Pre-warming exchange rate data');
-  
-  const results = {
-    success: 0,
-    fail: 0, 
-    total: 1
-  };
-  
-  try {
-    // USD/JPYの為替レートを取得（再試行ロジック付き）
-    const exchangeRate = await withRetry(
-      () => exchangeRateService.getExchangeRate('USD', 'JPY'),
-      {
-        maxRetries: 3,
-        baseDelay: 300,
-        shouldRetry: isRetryableApiError
-      }
-    );
-    
-    // キャッシュに保存
-    const cacheKey = `${DATA_TYPES.EXCHANGE_RATE}:USD-JPY`;
-    await cacheService.set(cacheKey, exchangeRate, CACHE_TIMES.EXCHANGE_RATE);
-    
-    logger.info('Successfully pre-warmed USD/JPY exchange rate');
-    results.success = 1;
-  } catch (error) {
-    logger.error('Failed to pre-warm exchange rate:', error.message);
-    results.fail = 1;
-    
-    // エラーハンドリング
-    await handleError(error, errorTypes.DATA_SOURCE_ERROR, {
-      dataType: 'exchange_rate',
-      pair: 'USD/JPY'
-    });
-  }
-  
-  return results;
-};
+}

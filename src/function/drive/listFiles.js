@@ -23,7 +23,7 @@ const { parseCookies } = require('../../utils/cookieParser');
  */
 module.exports.handler = async (event) => {
   try {
-    // Cookieからセッションを取得
+    // Cookieからセッションを取得 - 正しい実装例
     const cookies = parseCookies(event.headers.Cookie || event.headers.cookie || '');
     const sessionId = cookies.session;
     
@@ -100,4 +100,3 @@ module.exports.handler = async (event) => {
     });
   }
 };
-

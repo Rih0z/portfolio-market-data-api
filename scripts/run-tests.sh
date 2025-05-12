@@ -1,0 +1,213 @@
+#!/bin/bash
+# 
+# ファイルパス: scripts/run-tests.sh
+# 
+# Portfolio Market Data APIテスト実行スクリプト
+# 
+# @author Koki Riho
+# @created 2025-05-12
+# @updated 2025-05-12
+#
+
+# 色の設定
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# 関数定義
+print_header() {
+  echo -e "\n${BLUE}===========================================${NC}"
+  echo -e "${BLUE}$1${NC}"
+  echo -e "${BLUE}===========================================${NC}\n"
+}
+
+print_success() {
+  echo -e "${GREEN}✓ $1${NC}"
+}
+
+print_warning() {
+  echo -e "${YELLOW}⚠ $1${NC}"
+}
+
+print_error() {
+  echo -e "${RED}✗ $1${NC}"
+}
+
+print_info() {
+  echo -e "${BLUE}ℹ $1${NC}"
+}
+
+show_help() {
+  print_header "Portfolio Market Data API テスト実行ヘルプ"
+  echo "使用方法: $0 [オプション] <テスト種別>"
+  echo ""
+  echo "オプション:"
+  echo "  -h, --help          このヘルプメッセージを表示"
+  echo "  -c, --clean         テスト実行前にテスト環境をクリーンアップ"
+  echo "  -v, --visual        テスト結果をビジュアルレポートで表示"
+  echo "  -a, --auto          APIサーバーを自動起動（E2Eテスト用）"
+  echo "  -m, --mock          APIモックを使用（E2Eテスト用）"
+  echo "  -w, --watch         監視モードでテストを実行（コード変更時に自動再実行）"
+  echo ""
+  echo "テスト種別:"
+  echo "  unit                単体テストのみ実行"
+  echo "  integration         統合テストのみ実行"
+  echo "  e2e                 エンドツーエンドテストのみ実行"
+  echo "  all                 すべてのテストを実行"
+  echo "  quick               単体テストと統合テストのみ高速実行（モック使用）"
+  echo ""
+  echo "使用例:"
+  echo "  $0 unit             単体テストのみ実行"
+  echo "  $0 -c all           環境クリーンアップ後、すべてのテストを実行"
+  echo "  $0 -a -v e2e        APIサーバー自動起動でE2Eテストを実行し、結果をビジュアル表示"
+  echo "  $0 -m -w unit       モックを使用し、監視モードで単体テストを実行"
+  echo "  $0 quick            単体テストと統合テストを高速実行（モック使用）"
+  echo ""
+}
+
+# 変数の初期化
+CLEAN=0
+VISUAL=0
+AUTO=0
+MOCK=0
+WATCH=0
+TEST_TYPE=""
+
+# オプション解析
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    -c|--clean)
+      CLEAN=1
+      shift
+      ;;
+    -v|--visual)
+      VISUAL=1
+      shift
+      ;;
+    -a|--auto)
+      AUTO=1
+      shift
+      ;;
+    -m|--mock)
+      MOCK=1
+      shift
+      ;;
+    -w|--watch)
+      WATCH=1
+      shift
+      ;;
+    unit|integration|e2e|all|quick)
+      TEST_TYPE=$1
+      shift
+      ;;
+    *)
+      print_error "不明なオプション: $1"
+      show_help
+      exit 1
+      ;;
+  esac
+done
+
+# テスト種別が指定されていない場合はエラー
+if [ -z "$TEST_TYPE" ]; then
+  print_error "テスト種別を指定してください"
+  show_help
+  exit 1
+fi
+
+# クリーンアップが指定された場合は実行
+if [ $CLEAN -eq 1 ]; then
+  print_info "テスト環境をクリーンアップしています..."
+  npm run test:clean
+  print_success "クリーンアップ完了"
+fi
+
+# テスト環境のセットアップ
+print_info "テスト環境をセットアップしています..."
+npm run test:setup
+print_success "セットアップ完了"
+
+# 環境変数の設定
+ENV_VARS=""
+if [ $AUTO -eq 1 ]; then
+  ENV_VARS="$ENV_VARS RUN_E2E_TESTS=true"
+  print_info "APIサーバー自動起動モードが有効です"
+fi
+
+if [ $MOCK -eq 1 ]; then
+  ENV_VARS="$ENV_VARS USE_API_MOCKS=true"
+  print_info "APIモック使用モードが有効です"
+fi
+
+# テストコマンドの構築
+TEST_CMD=""
+case $TEST_TYPE in
+  unit)
+    print_header "単体テストを実行中..."
+    TEST_CMD="test:unit"
+    ;;
+  integration)
+    print_header "統合テストを実行中..."
+    TEST_CMD="test:integration"
+    ;;
+  e2e)
+    print_header "エンドツーエンドテストを実行中..."
+    if [ $AUTO -eq 1 ]; then
+      TEST_CMD="test:e2e:auto"
+    elif [ $MOCK -eq 1 ]; then
+      TEST_CMD="test:e2e:mock"
+    else
+      TEST_CMD="test:e2e"
+    fi
+    ;;
+  all)
+    print_header "すべてのテストを実行中..."
+    TEST_CMD="test:all"
+    ;;
+  quick)
+    print_header "クイックテスト（単体+統合）を実行中..."
+    TEST_CMD="test:quick"
+    ;;
+esac
+
+# 監視モードが指定された場合
+if [ $WATCH -eq 1 ]; then
+  print_info "監視モードが有効です"
+  if [ -n "$ENV_VARS" ]; then
+    eval "cross-env $ENV_VARS npm run test:watch"
+  else
+    npm run test:watch
+  fi
+else
+  # 通常実行
+  if [ -n "$ENV_VARS" ] && [ "$TEST_TYPE" != "e2e" ]; then
+    # e2eは専用コマンドがあるため除外
+    eval "cross-env $ENV_VARS npm run $TEST_CMD"
+  else
+    npm run $TEST_CMD
+  fi
+fi
+
+# テスト結果
+TEST_RESULT=$?
+
+# 視覚的レポートが指定された場合
+if [ $VISUAL -eq 1 ]; then
+  print_info "テスト結果をビジュアルレポートで表示します..."
+  open ./test-results/visual-report.html || print_warning "ビジュアルレポートのオープンに失敗しました"
+fi
+
+# 結果の表示
+if [ $TEST_RESULT -eq 0 ]; then
+  print_header "テスト実行が成功しました! 🎉"
+else
+  print_header "テスト実行が失敗しました... 😢"
+fi
+
+exit $TEST_RESULT

@@ -1,0 +1,81 @@
+flowchart TB
+    subgraph Client
+        Frontend[Frontend Application]
+    end
+    
+    subgraph AWS["AWS Cloud"]
+        APIGateway[API Gateway]
+        
+        subgraph Lambda["Lambda Functions"]
+            MarketData[Market Data API]
+            Auth[Authentication]
+            Drive[Google Drive Integration]
+            Admin[Admin Functions]
+            Prewarm[Cache Prewarm]
+        end
+        
+        DynamoDB[(DynamoDB)]
+        SNS[SNS Alerts]
+    end
+    
+    subgraph DataSources["Data Sources"]
+        subgraph ProviderModule["Market Data Providers Module"]
+            YahooAPI["Yahoo Finance API"]
+            CSV["Morningstar CSV"]
+            ExchangeRate["Exchange Rate API"]
+        end
+        
+        subgraph ExternalData["External 3rd Party Services"]
+            Yahoo[Yahoo Finance]
+            Morningstar[Morningstar]
+            ExchangeHostAPI[Exchange Rate API]
+        end
+        
+        subgraph Google["Google Cloud"]
+            GoogleAuth[Google Auth]
+            GoogleDrive[Google Drive]
+        end
+    end
+    
+    subgraph Utilities["Utility Modules"]
+        EnvConfig["Environment Config"]
+        DataUtils["Data Fetch Utils"]
+        ResponseUtils["Response Utils"]
+        Constants["Constants"]
+        AWS_Utils["AWS Utils"]
+    end
+    
+    Frontend <--> APIGateway
+    APIGateway <--> Lambda
+    
+    MarketData <-- "Get/Cache Data" --> DynamoDB
+    Auth <-- "Store Sessions" --> DynamoDB
+    
+    MarketData -- "Uses" --> ProviderModule
+    MarketData -- "Uses" --> Utilities
+    Auth -- "Uses" --> Utilities
+    Drive -- "Uses" --> Utilities
+    Admin -- "Uses" --> Utilities
+    Prewarm -- "Uses" --> ProviderModule
+    Prewarm -- "Uses" --> Utilities
+    
+    ProviderModule <-- "Fetch Data" --> ExternalData
+    Auth <-- "Authenticate" --> GoogleAuth
+    Drive <-- "Store/Load Data" --> GoogleDrive
+    
+    MarketData -- "Send Alerts" --> SNS
+    Prewarm -- "Send Alerts" --> SNS
+    
+    classDef aws fill:#FF9900,stroke:#232F3E,color:white;
+    classDef lambda fill:#009ACD,stroke:#232F3E,color:white;
+    classDef utils fill:#3B48CC,stroke:#232F3E,color:white;
+    classDef providers fill:#107E3E,stroke:#232F3E,color:white;
+    classDef external fill:#7B3E19,stroke:#232F3E,color:white;
+    classDef google fill:#4285F4,stroke:#232F3E,color:white;
+    
+    class APIGateway,DynamoDB,SNS aws;
+    class MarketData,Auth,Drive,Admin,Prewarm lambda;
+    class EnvConfig,DataUtils,ResponseUtils,Constants,AWS_Utils utils;
+    class ProviderModule,YahooAPI,CSV,ExchangeRate providers;
+    class Yahoo,Morningstar,ExchangeHostAPI external;
+    class GoogleAuth,GoogleDrive google;

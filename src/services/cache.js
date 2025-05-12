@@ -1,399 +1,212 @@
 /**
  * プロジェクト: portfolio-market-data-api
- * ファイルパス: src/services/sources/fundDataService.js
+ * ファイルパス: src/services/cache.js
  * 
  * 説明: 
- * モーニングスターのCSVダウンロード機能を用いて投資信託のデータを取得するサービス。
- * 既存のキャッシュシステムと統合され、効率的にデータを管理します。
+ * キャッシュ機能を提供するサービス。
+ * DynamoDBまたはRedisを使用してデータをキャッシュします。
  * 
  * @author Portfolio Manager Team
  * @updated 2025-05-14
  */
 'use strict';
 
-const axios = require('axios');
-const { parse } = require('csv-parse/sync');
-const { withRetry, isRetryableApiError, sleep } = require('../../utils/retry');
-const alertService = require('../services/alerts');
-const blacklist = require('../../utils/scrapingBlacklist');
-const cacheService = require('../services/cache');
+const { getDynamoDb } = require('../utils/awsConfig');
 
-// 環境変数からタイムアウト設定を取得
-const MUTUAL_FUND_TIMEOUT = parseInt(process.env.MUTUAL_FUND_TIMEOUT || '30000', 10);
-const RATE_LIMIT_DELAY = parseInt(process.env.DATA_RATE_LIMIT_DELAY || '500', 10);
-const CACHE_TTL = parseInt(process.env.FUND_DATA_CACHE_TTL || '3600', 10); // 1時間キャッシュ
+// 環境変数からの設定
+const CACHE_TABLE = process.env.CACHE_TABLE || `${process.env.DYNAMODB_TABLE_PREFIX || 'portfolio-market-data-'}-cache`;
+const DEFAULT_TTL = parseInt(process.env.DEFAULT_CACHE_TTL || '3600', 10); // デフォルト1時間
 
 /**
- * ランダムなユーザーエージェントを取得する
- * @returns {string} ユーザーエージェント
+ * キャッシュからデータを取得する
+ * @param {string} key - キャッシュキー
+ * @returns {Promise<Object|null>} キャッシュデータと残りのTTL、存在しない場合はnull
  */
-const getRandomUserAgent = () => {
-  const userAgents = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.4 Safari/605.1.15',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Mobile/15E148 Safari/604.1'
-  ];
-  
-  return userAgents[Math.floor(Math.random() * userAgents.length)];
-};
-
-/**
- * 投資信託のデータを取得する（モーニングスターCSVデータ）
- * @param {string} code - ファンドコード（7-8桁）
- * @returns {Promise<Object>} 投資信託データ
- */
-const getMutualFundData = async (code) => {
-  // 投資信託コードの正規化（末尾のCとTを取り除く）
-  let fundCode = code.replace(/\.T$/i, '').replace(/C$/i, '');
-  console.log(`Preparing to get mutual fund data for ${fundCode}`);
-
-  // キャッシュキー構築（既存のキャッシュパーティションに合わせる）
-  const cacheKey = `mutual-fund:${fundCode}`;
-  
-  // キャッシュをチェック
-  const cachedData = await cacheService.get(cacheKey);
-  
-  if (cachedData) {
-    console.log(`Using cached data for ${fundCode}`);
-    return cachedData;
-  }
-
-  // ブラックリストをチェック
-  const isInBlacklist = await blacklist.isBlacklisted(fundCode, 'fund');
-  if (isInBlacklist) {
-    console.log(`Fund ${fundCode} is blacklisted. Skipping data retrieval.`);
+const get = async (key) => {
+  try {
+    const dynamoDb = getDynamoDb();
     
-    // ブラックリスト中の銘柄にはデフォルト値を返す
-    const defaultData = {
-      ticker: `${fundCode}C`,
-      price: 10000, // フォールバック基準価額
-      change: 0,
-      changePercent: 0,
-      name: `投資信託 ${fundCode}C`,
-      currency: 'JPY',
-      lastUpdated: new Date().toISOString(),
-      source: 'Blacklisted Fallback',
-      isStock: false,
-      isMutualFund: true,
-      priceLabel: '基準価額',
-      isBlacklisted: true
+    const params = {
+      TableName: CACHE_TABLE,
+      Key: { key }
     };
     
-    // 短いTTLでキャッシュに保存（ブラックリスト状態が変わる可能性があるため）
-    await cacheService.set(cacheKey, defaultData, 600); // 10分
+    const result = await dynamoDb.get(params).promise();
     
-    return defaultData;
-  }
-
-  try {
-    // モーニングスターからCSVデータを取得
-    const data = await getMorningstarCsvData(fundCode);
-    
-    if (data && data.price) {
-      console.log(`Successfully fetched fund data from Morningstar for ${fundCode}: ${data.price}`);
-      
-      // 成功を記録
-      await blacklist.recordSuccess(fundCode);
-      
-      // 完全なデータオブジェクトを構築
-      const resultData = {
-        ticker: `${fundCode}C`,
-        ...data,
-        source: 'Morningstar CSV',
-        isStock: false,
-        isMutualFund: true
-      };
-      
-      // データをキャッシュに保存（既存のキャッシュサービスを使用）
-      await cacheService.set(cacheKey, resultData, CACHE_TTL);
-      
-      return resultData;
-    }
-
-    // データ取得に失敗した場合
-    console.log(`Failed to get data for mutual fund ${fundCode}, using fallback data`);
-    
-    // 失敗を記録
-    await blacklist.recordFailure(fundCode, 'fund', 'Morningstar CSV retrieval failed');
-    
-    // アラート通知（あまりに多いとスパムになるので条件付き）
-    const randomThreshold = 0.1; // 10%の確率でのみ通知
-    if (Math.random() < randomThreshold) {
-      await alertService.notifyError(
-        'Mutual Fund Data Retrieval Failed', 
-        new Error(`Failed to get data for mutual fund ${fundCode}`),
-        { fundCode }
-      );
+    if (!result.Item) {
+      return null;
     }
     
-    const fallbackData = {
-      ticker: `${fundCode}C`,
-      price: 10000, // フォールバック基準価額
-      change: 0,
-      changePercent: 0,
-      name: `投資信託 ${fundCode}C`,
-      currency: 'JPY',
-      lastUpdated: new Date().toISOString(),
-      source: 'Fallback',
-      isStock: false,
-      isMutualFund: true,
-      priceLabel: '基準価額'
-    };
+    // TTLチェック
+    const now = Math.floor(Date.now() / 1000);
+    const ttl = result.Item.ttl || 0;
     
-    // 短いTTLでキャッシュに保存（次回すぐに再試行できるように）
-    await cacheService.set(cacheKey, fallbackData, 300); // 5分
-    
-    return fallbackData;
-  } catch (error) {
-    console.error(`Mutual fund data retrieval error for ${fundCode}:`, error);
-    
-    // 失敗を記録
-    await blacklist.recordFailure(fundCode, 'fund', `Error: ${error.message}`);
-    
-    throw new Error(`Mutual fund data retrieval failed for ${fundCode}: ${error.message}`);
-  }
-};
-
-/**
- * モーニングスターからCSVデータを取得して解析する
- * @param {string} fundCode - ファンドコード
- * @returns {Promise<Object>} 整形済みの投資信託データ
- */
-const getMorningstarCsvData = async (fundCode) => {
-  console.log(`Getting CSV data from Morningstar for ${fundCode}`);
-  
-  try {
-    // モーニングスター用のURLを構築
-    const url = `https://www.morningstar.co.jp/FundData/DownloadStandardPriceData.do?fnc=${fundCode}`;
-    
-    // ランダムなユーザーエージェントを使用
-    const userAgent = getRandomUserAgent();
-    
-    // 再試行ロジックを使用してCSVデータ取得
-    const response = await withRetry(
-      () => axios.get(url, {
-        headers: {
-          'User-Agent': userAgent,
-          'Accept': 'text/csv,application/csv',
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8'
-        },
-        timeout: MUTUAL_FUND_TIMEOUT,
-        responseType: 'text'
-      }),
-      {
-        maxRetries: 3,
-        baseDelay: 500,
-        shouldRetry: isRetryableApiError
-      }
-    );
-    
-    // CSV解析
-    const records = parse(response.data, {
-      columns: true,
-      skip_empty_lines: true,
-      encoding: 'shift_jis'
-    });
-    
-    if (!records || records.length === 0) {
-      throw new Error('No data found in CSV');
+    if (ttl < now) {
+      // TTL切れの場合は削除して、nullを返す
+      await remove(key);
+      return null;
     }
     
-    // 最新の価格データを取得（通常は配列の最後の要素）
-    const latestData = records[records.length - 1];
-    
-    // 前日のデータを取得（存在する場合）
-    const previousData = records.length > 1 ? records[records.length - 2] : null;
-    
-    // 基準価額を取得
-    const price = parseFloat(latestData['基準価額'] || latestData['NAV'] || '0');
-    
-    if (isNaN(price) || price === 0) {
-      throw new Error('Invalid price data in CSV');
-    }
-    
-    // 前日比を計算
-    let change = 0;
-    let changePercent = 0;
-    
-    if (previousData) {
-      const previousPrice = parseFloat(previousData['基準価額'] || previousData['NAV'] || '0');
-      
-      if (!isNaN(previousPrice) && previousPrice > 0) {
-        change = price - previousPrice;
-        changePercent = (change / previousPrice) * 100;
-      }
-    }
-    
-    // ファンド名の取得（ヘッダー情報から）
-    const name = fundCode; // CSVからファンド名が取得できない場合はコードを使用
-    
-    // 日付の取得
-    const dateStr = latestData['日付'] || latestData['Date'] || new Date().toISOString().split('T')[0];
-    const dateParts = dateStr.split('/');
-    
-    // 日本時間正午の日付を作成
-    const dateObj = new Date();
-    if (dateParts.length === 3) {
-      dateObj.setFullYear(parseInt(dateParts[0], 10));
-      dateObj.setMonth(parseInt(dateParts[1], 10) - 1);
-      dateObj.setDate(parseInt(dateParts[2], 10));
-    }
-    dateObj.setHours(12, 0, 0, 0);
+    // 残りのTTLを計算
+    const remainingTtl = ttl - now;
     
     return {
-      price,
-      change,
-      changePercent,
-      name: name || `投資信託 ${fundCode}`,
-      currency: 'JPY',
-      lastUpdated: dateObj.toISOString(),
-      priceLabel: '基準価額',
-      dataDate: dateStr,
-      csvRecords: records.length
+      data: result.Item.data,
+      ttl: remainingTtl,
+      createdAt: result.Item.createdAt
     };
   } catch (error) {
-    console.error(`Error getting Morningstar CSV data for ${fundCode}:`, error.message);
-    throw new Error(`Morningstar CSV retrieval failed: ${error.message}`);
+    console.error(`Error retrieving cache for key ${key}:`, error);
+    return null;
   }
 };
 
 /**
- * 複数の投資信託のデータを並列で取得する（キャッシュとブラックリスト対応版）
- * @param {Array<string>} codes - ファンドコードの配列
- * @returns {Promise<Object>} - ファンドコードをキーとするデータのオブジェクト
+ * データをキャッシュに保存する
+ * @param {string} key - キャッシュキー
+ * @param {Object} data - 保存するデータ
+ * @param {number} ttl - TTL（秒）、デフォルトは1時間
+ * @returns {Promise<boolean>} 成功ならtrue
  */
-const getMutualFundsParallel = async (codes) => {
-  if (!codes || !Array.isArray(codes) || codes.length === 0) {
-    throw new Error('Invalid fund codes array');
+const set = async (key, data, ttl = DEFAULT_TTL) => {
+  try {
+    const dynamoDb = getDynamoDb();
+    
+    const now = Date.now();
+    const ttlTimestamp = Math.floor(now / 1000) + ttl;
+    
+    const params = {
+      TableName: CACHE_TABLE,
+      Item: {
+        key,
+        data,
+        ttl: ttlTimestamp,
+        createdAt: new Date(now).toISOString(),
+        size: JSON.stringify(data).length
+      }
+    };
+    
+    await dynamoDb.put(params).promise();
+    
+    return true;
+  } catch (error) {
+    console.error(`Error setting cache for key ${key}:`, error);
+    return false;
   }
-  
-  console.log(`Preparing to get data for ${codes.length} mutual funds in parallel`);
-  
-  // ブラックリスト確認と非ブラックリスト銘柄の抽出
-  const checkedCodes = await Promise.all(
-    codes.map(async (code) => {
-      const isInBlacklist = await blacklist.isBlacklisted(code, 'fund');
-      return { code, isBlacklisted: isInBlacklist };
-    })
-  );
-  
-  // ブラックリスト銘柄を分離
-  const blacklistedCodes = checkedCodes.filter(item => item.isBlacklisted).map(item => item.code);
-  const processingCodes = checkedCodes.filter(item => !item.isBlacklisted).map(item => item.code);
-  
-  console.log(`${blacklistedCodes.length} codes are blacklisted and will use fallback data.`);
-  console.log(`Proceeding with data retrieval for ${processingCodes.length} codes.`);
-  
-  // 結果オブジェクト初期化
-  const results = {};
-  
-  // ブラックリスト銘柄にはデフォルト値を設定
-  for (const code of blacklistedCodes) {
-    results[code] = {
-      ticker: `${code}C`,
-      price: 10000, // フォールバック基準価額
-      change: 0,
-      changePercent: 0,
-      name: `投資信託 ${code}C`,
-      currency: 'JPY',
-      lastUpdated: new Date().toISOString(),
-      source: 'Blacklisted Fallback',
-      isStock: false,
-      isMutualFund: true,
-      priceLabel: '基準価額',
-      isBlacklisted: true
+};
+
+/**
+ * キャッシュからデータを削除する
+ * @param {string} key - キャッシュキー
+ * @returns {Promise<boolean>} 成功ならtrue
+ */
+const remove = async (key) => {
+  try {
+    const dynamoDb = getDynamoDb();
+    
+    const params = {
+      TableName: CACHE_TABLE,
+      Key: { key }
+    };
+    
+    await dynamoDb.delete(params).promise();
+    
+    return true;
+  } catch (error) {
+    console.error(`Error removing cache for key ${key}:`, error);
+    return false;
+  }
+};
+
+/**
+ * 期限切れのキャッシュを削除する
+ * @returns {Promise<Object>} クリーンアップ結果
+ */
+const cleanup = async () => {
+  try {
+    const dynamoDb = getDynamoDb();
+    
+    // 現在の時刻（UNIX時間）
+    const now = Math.floor(Date.now() / 1000);
+    
+    // 期限切れのアイテムを検索
+    const scanParams = {
+      TableName: CACHE_TABLE,
+      FilterExpression: 'ttl < :now',
+      ExpressionAttributeValues: {
+        ':now': now
+      }
+    };
+    
+    const result = await dynamoDb.scan(scanParams).promise();
+    const expiredItems = result.Items || [];
+    
+    // TTLによる自動削除が実装されている場合でも確実に削除
+    const deletePromises = expiredItems.map(item => {
+      const deleteParams = {
+        TableName: CACHE_TABLE,
+        Key: { key: item.key }
+      };
+      
+      return dynamoDb.delete(deleteParams).promise();
+    });
+    
+    await Promise.all(deletePromises);
+    
+    return {
+      success: true,
+      cleanedItems: expiredItems.length
+    };
+  } catch (error) {
+    console.error('Error cleaning up cache:', error);
+    return {
+      success: false,
+      error: error.message
     };
   }
-  
-  // 取得対象がない場合は早期リターン
-  if (processingCodes.length === 0) {
-    return results;
+};
+
+/**
+ * キャッシュの統計情報を取得する
+ * @returns {Promise<Object>} 統計情報
+ */
+const getStats = async () => {
+  try {
+    const dynamoDb = getDynamoDb();
+    
+    const scanParams = {
+      TableName: CACHE_TABLE
+    };
+    
+    const result = await dynamoDb.scan(scanParams).promise();
+    const items = result.Items || [];
+    
+    // 現在時刻
+    const now = Math.floor(Date.now() / 1000);
+    
+    // 有効なアイテム数とサイズを計算
+    const validItems = items.filter(item => (item.ttl || 0) > now);
+    const totalSize = validItems.reduce((sum, item) => sum + (item.size || 0), 0);
+    
+    return {
+      total: items.length,
+      valid: validItems.length,
+      expired: items.length - validItems.length,
+      totalSizeBytes: totalSize,
+      totalSizeMB: Math.round(totalSize / (1024 * 1024) * 100) / 100
+    };
+  } catch (error) {
+    console.error('Error getting cache stats:', error);
+    return {
+      error: error.message
+    };
   }
-  
-  // キャッシュチェック - 既存のキャッシュシステムを使用
-  const codeWithCacheStatus = await Promise.all(
-    processingCodes.map(async (code) => {
-      const cacheKey = `mutual-fund:${code}`;
-      const cachedData = await cacheService.get(cacheKey);
-      return { 
-        code, 
-        hasCachedData: !!cachedData,
-        cachedData: cachedData
-      };
-    })
-  );
-  
-  // キャッシュがある銘柄を処理
-  for (const item of codeWithCacheStatus) {
-    if (item.hasCachedData) {
-      results[item.code] = item.cachedData;
-      console.log(`Using cached data for ${item.code}`);
-    }
-  }
-  
-  // キャッシュがない銘柄を抽出
-  const codesToRetrieve = codeWithCacheStatus
-    .filter(item => !item.hasCachedData)
-    .map(item => item.code);
-  
-  console.log(`Retrieving fresh data for ${codesToRetrieve.length} funds`);
-  
-  let errorCount = 0;
-  
-  // 各コードにインデックスを割り当て、遅延を計算
-  const indexedCodes = codesToRetrieve.map((code, index) => ({ code, index }));
-  
-  // 並列処理（制御付き）
-  await Promise.allSettled(
-    indexedCodes.map(async ({ code, index }) => {
-      try {
-        // APIレート制限を回避するために各リクエストを少し遅延させる
-        const delay = index * RATE_LIMIT_DELAY;
-        if (delay > 0) {
-          await sleep(delay);
-        }
-        
-        // データを取得
-        const fundData = await getMutualFundData(code);
-        results[code] = fundData;
-      } catch (error) {
-        console.error(`Error getting data for fund ${code}:`, error.message);
-        errorCount++;
-        
-        // エラーでも最低限の情報を返す
-        results[code] = {
-          ticker: `${code}C`,
-          price: null,
-          change: null,
-          changePercent: null,
-          name: `投資信託 ${code}C`,
-          currency: 'JPY',
-          lastUpdated: new Date().toISOString(),
-          source: 'Error',
-          isStock: false,
-          isMutualFund: true,
-          error: error.message
-        };
-      }
-    })
-  );
-  
-  // エラー率が高すぎる場合はアラート
-  if (errorCount > codesToRetrieve.length / 3) { // 1/3以上失敗
-    await alertService.notifyError(
-      'High Error Rate in Mutual Fund Data Retrieval',
-      new Error(`${errorCount} out of ${codesToRetrieve.length} funds failed to retrieve data`),
-      { errorRate: errorCount / codesToRetrieve.length }
-    );
-  }
-  
-  return results;
 };
 
 module.exports = {
-  getMutualFundData,
-  getMutualFundsParallel
+  get,
+  set,
+  remove,
+  cleanup,
+  getStats
 };

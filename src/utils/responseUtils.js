@@ -9,11 +9,13 @@
  * 
  * @author Portfolio Manager Team
  * @created 2025-05-15
+ * @updated 2025-05-16
  */
 'use strict';
 
 const { ENV } = require('../config/envConfig');
 const { ERROR_CODES, RESPONSE_FORMATS } = require('../config/constants');
+const { addBudgetWarningToResponse } = require('./budgetCheck');
 
 /**
  * 成功レスポンスを整形する
@@ -25,9 +27,10 @@ const { ERROR_CODES, RESPONSE_FORMATS } = require('../config/constants');
  * @param {string} [options.lastUpdated] - 最終更新日時
  * @param {string} [options.processingTime=''] - 処理時間
  * @param {Object} [options.usage=null] - 使用量情報
- * @returns {Object} 整形されたレスポンス
+ * @param {boolean} [options.skipBudgetWarning=false] - 予算警告をスキップするかどうか
+ * @returns {Promise<Object>} 整形されたレスポンス
  */
-const formatResponse = (options = {}) => {
+const formatResponse = async (options = {}) => {
   const {
     statusCode = 200,
     data = {},
@@ -35,7 +38,8 @@ const formatResponse = (options = {}) => {
     source = 'AWS Lambda',
     lastUpdated = new Date().toISOString(),
     processingTime = '',
-    usage = null
+    usage = null,
+    skipBudgetWarning = false
   } = options;
 
   // デフォルトのCORSヘッダーを設定
@@ -62,11 +66,18 @@ const formatResponse = (options = {}) => {
     responseBody.usage = usage;
   }
 
-  return {
+  const response = {
     statusCode,
     headers: { ...defaultHeaders, ...headers },
     body: JSON.stringify(responseBody)
   };
+
+  // 予算警告をスキップしない場合は追加
+  if (!skipBudgetWarning) {
+    return await addBudgetWarningToResponse(response);
+  }
+
+  return response;
 };
 
 /**
@@ -78,16 +89,18 @@ const formatResponse = (options = {}) => {
  * @param {string} [options.details=null] - 詳細情報（開発環境のみ）
  * @param {Object} [options.headers={}] - レスポンスヘッダー
  * @param {Object} [options.usage=null] - 使用量情報
- * @returns {Object} 整形されたエラーレスポンス
+ * @param {boolean} [options.skipBudgetWarning=false] - 予算警告をスキップするかどうか
+ * @returns {Promise<Object>} 整形されたエラーレスポンス
  */
-const formatErrorResponse = (options = {}) => {
+const formatErrorResponse = async (options = {}) => {
   const {
     statusCode = 500,
     code = ERROR_CODES.SERVER_ERROR,
     message = 'サーバー内部エラーが発生しました',
     details = null,
     headers = {},
-    usage = null
+    usage = null,
+    skipBudgetWarning = false
   } = options;
 
   // デフォルトのCORSヘッダー
@@ -116,11 +129,18 @@ const formatErrorResponse = (options = {}) => {
     errorBody.usage = usage;
   }
 
-  return {
+  const response = {
     statusCode,
     headers: { ...defaultHeaders, ...headers },
     body: JSON.stringify(errorBody)
   };
+
+  // 予算警告をスキップしない場合は追加
+  if (!skipBudgetWarning) {
+    return await addBudgetWarningToResponse(response);
+  }
+
+  return response;
 };
 
 /**

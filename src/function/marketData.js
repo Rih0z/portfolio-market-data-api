@@ -9,7 +9,7 @@
  * キャッシュ機能と使用量制限も管理します。
  * 
  * @author Portfolio Manager Team
- * @updated 2025-05-14
+ * @updated 2025-05-16
  */
 'use strict';
 
@@ -20,6 +20,8 @@ const cacheService = require('../services/cache');
 const usageService = require('../services/usage');
 const alertService = require('../services/alerts');
 const { DATA_TYPES, CACHE_TIMES, ERROR_CODES, RESPONSE_FORMATS } = require('../config/constants');
+const { isBudgetCritical, getBudgetWarningMessage } = require('../utils/budgetCheck');
+const { formatResponse, formatErrorResponse } = require('../utils/responseUtils');
 
 /**
  * リクエストパラメータを検証する
@@ -72,48 +74,6 @@ const validateParams = (params) => {
 };
 
 /**
- * レスポンス形式を整形する
- * @param {Object} data - レスポンスデータ
- * @param {Object} options - オプション
- * @returns {Object} 整形されたレスポンス
- */
-const formatResponse = (data, options = {}) => {
-  const { processingTime, usage, source = 'API', lastUpdated = new Date().toISOString() } = options;
-
-  return {
-    success: true,
-    data,
-    source,
-    lastUpdated,
-    processingTime,
-    usage
-  };
-};
-
-/**
- * エラーレスポンス形式を整形する
- * @param {string} message - エラーメッセージ
- * @param {string} code - エラーコード
- * @param {Object} details - 詳細情報（オプション）
- * @returns {Object} 整形されたエラーレスポンス
- */
-const formatErrorResponse = (message, code = ERROR_CODES.SERVER_ERROR, details = null) => {
-  const response = {
-    ...RESPONSE_FORMATS.ERROR,
-    error: {
-      code,
-      message
-    }
-  };
-
-  if (details && process.env.NODE_ENV !== 'production') {
-    response.error.details = details;
-  }
-
-  return response;
-};
-
-/**
  * マーケットデータAPIのLambdaハンドラー関数
  * @param {Object} event - Lambda イベントオブジェクト
  * @param {Object} context - Lambda コンテキスト
@@ -144,13 +104,26 @@ exports.handler = async (event, context) => {
     // パラメータの検証
     const validation = validateParams(params);
     if (!validation.isValid) {
-      return {
+      return await formatErrorResponse({
         statusCode: 400,
-        body: JSON.stringify(formatErrorResponse(
-          `Invalid request parameters: ${validation.errors.join(', ')}`,
-          ERROR_CODES.INVALID_PARAMS
-        ))
-      };
+        code: ERROR_CODES.INVALID_PARAMS,
+        message: `Invalid request parameters: ${validation.errors.join(', ')}`
+      });
+    }
+    
+    // 予算使用状況をチェック
+    const budgetCritical = await isBudgetCritical();
+
+    // 予算が臨界値に達していて、リフレッシュのリクエストの場合は拒否
+    if (budgetCritical && refresh) {
+      const warningMessage = await getBudgetWarningMessage();
+      return await formatErrorResponse({
+        statusCode: 403,
+        code: ERROR_CODES.LIMIT_EXCEEDED,
+        message: warningMessage || 'Free Tier budget usage is at critical level. Cache refresh is temporarily disabled to prevent additional charges.',
+        headers: { 'X-Budget-Warning': 'CRITICAL' },
+        details: { budgetCritical: true }
+      });
     }
     
     // 使用量制限のチェック
@@ -162,14 +135,12 @@ exports.handler = async (event, context) => {
     });
     
     if (!usageCheck.allowed) {
-      return {
+      return await formatErrorResponse({
         statusCode: 429,
-        body: JSON.stringify(formatErrorResponse(
-          `API usage limit exceeded. Daily limit: ${usageCheck.usage.daily.limit}, Monthly limit: ${usageCheck.usage.monthly.limit}`,
-          ERROR_CODES.LIMIT_EXCEEDED,
-          usageCheck.usage
-        ))
-      };
+        code: ERROR_CODES.LIMIT_EXCEEDED,
+        message: `API usage limit exceeded. Daily limit: ${usageCheck.usage.daily.limit}, Monthly limit: ${usageCheck.usage.monthly.limit}`,
+        usage: usageCheck.usage
+      });
     }
 
     // データ取得処理
@@ -204,25 +175,16 @@ exports.handler = async (event, context) => {
     // レスポンスの構築
     const processingTime = `${Date.now() - startTime}ms`;
     
-    const response = formatResponse(data, {
+    return await formatResponse({
+      data,
+      source: dataSource,
+      lastUpdated,
       processingTime,
       usage: {
         daily: usageCheck.usage.daily,
         monthly: usageCheck.usage.monthly
-      },
-      source: dataSource,
-      lastUpdated
+      }
     });
-    
-    return {
-      statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
-        'Access-Control-Allow-Credentials': true
-      },
-      body: JSON.stringify(response)
-    };
   } catch (error) {
     console.error('Error processing market data request:', error);
 
@@ -238,20 +200,95 @@ exports.handler = async (event, context) => {
       }
     );
 
-    return {
+    return await formatErrorResponse({
       statusCode: 500,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
-        'Access-Control-Allow-Credentials': true
-      },
-      body: JSON.stringify(formatErrorResponse(
-        'An error occurred while processing your request',
-        ERROR_CODES.SERVER_ERROR,
-        error.message
-      ))
-    };
+      code: ERROR_CODES.SERVER_ERROR,
+      message: 'An error occurred while processing your request',
+      details: error.message
+    });
   }
+};
+
+/**
+ * 複数銘柄のデータを取得する共通関数
+ * @param {Array<string>} symbols - ティッカーシンボルの配列
+ * @param {boolean} refresh - キャッシュを無視するかどうか
+ * @param {Object} options - オプション 
+ * @returns {Promise<Object>} データオブジェクト
+ */
+const getMarketData = async (symbols, refresh, options) => {
+  const { 
+    dataType, 
+    cacheTime, 
+    fetchFunction, 
+    defaultValue = {} 
+  } = options;
+
+  const result = {};
+  
+  // キャッシュチェックを並列で実行
+  const cacheChecks = await Promise.all(
+    symbols.map(async (symbol) => {
+      const cacheKey = `${dataType}:${symbol}`;
+      if (!refresh) {
+        const cachedData = await cacheService.get(cacheKey);
+        return { symbol, cachedData, cacheKey };
+      }
+      return { symbol, cachedData: null, cacheKey };
+    })
+  );
+  
+  // キャッシュヒットとミスを分類
+  const cacheMisses = [];
+  cacheChecks.forEach(({ symbol, cachedData, cacheKey }) => {
+    if (cachedData) {
+      result[symbol] = cachedData;
+    } else {
+      cacheMisses.push({ symbol, cacheKey });
+    }
+  });
+  
+  // キャッシュにないデータを取得
+  if (cacheMisses.length > 0) {
+    console.log(`Fetching ${dataType} data for ${cacheMisses.length} symbols`);
+    
+    try {
+      // バッチ取得または個別取得は実装によって異なる
+      const fetchedData = await fetchFunction(cacheMisses.map(item => item.symbol));
+      
+      // 結果を処理
+      for (const { symbol, cacheKey } of cacheMisses) {
+        if (fetchedData[symbol]) {
+          await cacheService.set(cacheKey, fetchedData[symbol], cacheTime);
+          result[symbol] = fetchedData[symbol];
+        } else {
+          // デフォルト値を適用
+          result[symbol] = {
+            ...defaultValue,
+            ticker: symbol,
+            lastUpdated: new Date().toISOString(),
+            source: 'API Error',
+            error: 'Data not available'
+          };
+        }
+      }
+    } catch (error) {
+      console.error(`Error fetching ${dataType} data:`, error);
+      
+      // エラー時は全てのミスにデフォルト値を設定
+      for (const { symbol } of cacheMisses) {
+        result[symbol] = {
+          ...defaultValue,
+          ticker: symbol,
+          lastUpdated: new Date().toISOString(),
+          source: 'API Error',
+          error: error.message
+        };
+      }
+    }
+  }
+  
+  return result;
 };
 
 /**
@@ -261,79 +298,40 @@ exports.handler = async (event, context) => {
  * @returns {Promise<Object>} 株価データ
  */
 const getUsStockData = async (symbols, refresh = false) => {
-  const result = {};
-  const cacheMisses = [];
-  
-  // シンボルごとにキャッシュをチェック
-  for (const symbol of symbols) {
-    const cacheKey = `${DATA_TYPES.US_STOCK}:${symbol}`;
-    
-    if (!refresh) {
-      const cachedData = await cacheService.get(cacheKey);
-      
-      if (cachedData) {
-        result[symbol] = cachedData;
-        continue;
-      }
-    }
-    
-    cacheMisses.push(symbol);
-  }
-  
-  // キャッシュにないデータを取得
-  if (cacheMisses.length > 0) {
-    console.log(`Fetching US stock data for ${cacheMisses.length} symbols:`, cacheMisses);
-    
-    // APIから一括取得（可能なら）
-    try {
-      const batchData = await yahooFinanceService.getStocksData(cacheMisses);
-      
-      // 結果を個別にキャッシュに保存し、結果に追加
-      for (const symbol in batchData) {
-        const stockData = batchData[symbol];
+  return await getMarketData(symbols, refresh, {
+    dataType: DATA_TYPES.US_STOCK,
+    cacheTime: CACHE_TIMES.US_STOCK,
+    fetchFunction: async (symbolsList) => {
+      try {
+        // まずバッチ取得を試みる
+        return await yahooFinanceService.getStocksData(symbolsList);
+      } catch (error) {
+        console.error('Error in batch fetch, falling back to individual fetch:', error);
         
-        if (stockData) {
-          const cacheKey = `${DATA_TYPES.US_STOCK}:${symbol}`;
-          await cacheService.set(cacheKey, stockData, CACHE_TIMES.US_STOCK);
-          result[symbol] = stockData;
-        }
+        // バッチ取得失敗時は個別取得
+        const result = {};
+        await Promise.allSettled(
+          symbolsList.map(async (symbol) => {
+            try {
+              const data = await yahooFinanceService.getStockData(symbol);
+              if (data) result[symbol] = data;
+            } catch (err) {
+              console.error(`Individual fetch failed for ${symbol}:`, err);
+            }
+          })
+        );
+        return result;
       }
-    } catch (error) {
-      console.error('Error fetching batch US stock data:', error);
-      
-      // バッチ取得に失敗した場合は個別に取得を試みる
-      for (const symbol of cacheMisses) {
-        try {
-          const stockData = await yahooFinanceService.getStockData(symbol);
-          
-          if (stockData) {
-            const cacheKey = `${DATA_TYPES.US_STOCK}:${symbol}`;
-            await cacheService.set(cacheKey, stockData, CACHE_TIMES.US_STOCK);
-            result[symbol] = stockData;
-          }
-        } catch (symbolError) {
-          console.error(`Error fetching US stock data for ${symbol}:`, symbolError);
-          
-          // エラーでも何か返せるようにフォールバック値を設定
-          result[symbol] = {
-            ticker: symbol,
-            price: null,
-            change: null,
-            changePercent: null,
-            name: symbol,
-            currency: 'USD',
-            lastUpdated: new Date().toISOString(),
-            source: 'API Error',
-            isStock: true,
-            isMutualFund: false,
-            error: symbolError.message
-          };
-        }
-      }
+    },
+    defaultValue: {
+      price: null,
+      change: null,
+      changePercent: null,
+      currency: 'USD',
+      isStock: true,
+      isMutualFund: false
     }
-  }
-  
-  return result;
+  });
 };
 
 /**
@@ -343,158 +341,66 @@ const getUsStockData = async (symbols, refresh = false) => {
  * @returns {Promise<Object>} 株価データ
  */
 const getJpStockData = async (codes, refresh = false) => {
-  const result = {};
-  const cacheMisses = [];
-  
-  // コードごとにキャッシュをチェック
-  for (const code of codes) {
-    const cacheKey = `${DATA_TYPES.JP_STOCK}:${code}`;
-    
-    if (!refresh) {
-      const cachedData = await cacheService.get(cacheKey);
-      
-      if (cachedData) {
-        result[code] = cachedData;
-        continue;
-      }
-    }
-    
-    cacheMisses.push(code);
-  }
-  
-  // キャッシュにないデータを取得
-  if (cacheMisses.length > 0) {
-    console.log(`Fetching JP stock data for ${cacheMisses.length} codes:`, cacheMisses);
-    
-    // スクレイピングで一括取得
-    try {
-      const batchData = await scrapingService.scrapeJpStocksParallel(cacheMisses);
-      
-      // 結果を個別にキャッシュに保存し、結果に追加
-      for (const code in batchData) {
-        const stockData = batchData[code];
+  return await getMarketData(codes, refresh, {
+    dataType: DATA_TYPES.JP_STOCK,
+    cacheTime: CACHE_TIMES.JP_STOCK,
+    fetchFunction: async (codesList) => {
+      try {
+        return await scrapingService.scrapeJpStocksParallel(codesList);
+      } catch (error) {
+        console.error('Error in batch scraping, falling back to individual fetch:', error);
         
-        if (stockData) {
-          const cacheKey = `${DATA_TYPES.JP_STOCK}:${code}`;
-          await cacheService.set(cacheKey, stockData, CACHE_TIMES.JP_STOCK);
-          result[code] = stockData;
-        }
+        // バッチ取得失敗時は個別取得
+        const result = {};
+        await Promise.allSettled(
+          codesList.map(async (code) => {
+            try {
+              const data = await scrapingService.scrapeJpStock(code);
+              if (data) result[code] = data;
+            } catch (err) {
+              console.error(`Individual scrape failed for ${code}:`, err);
+            }
+          })
+        );
+        return result;
       }
-    } catch (error) {
-      console.error('Error scraping batch JP stock data:', error);
-      
-      // バッチ取得に失敗した場合は個別に取得を試みる
-      for (const code of cacheMisses) {
-        try {
-          const stockData = await scrapingService.scrapeJpStock(code);
-          
-          if (stockData) {
-            const cacheKey = `${DATA_TYPES.JP_STOCK}:${code}`;
-            await cacheService.set(cacheKey, stockData, CACHE_TIMES.JP_STOCK);
-            result[code] = stockData;
-          }
-        } catch (codeError) {
-          console.error(`Error scraping JP stock data for ${code}:`, codeError);
-          
-          // エラーでも何か返せるようにフォールバック値を設定
-          result[code] = {
-            ticker: code,
-            price: null,
-            change: null,
-            changePercent: null,
-            name: `日本株 ${code}`,
-            currency: 'JPY',
-            lastUpdated: new Date().toISOString(),
-            source: 'API Error',
-            isStock: true,
-            isMutualFund: false,
-            error: codeError.message
-          };
-        }
-      }
+    },
+    defaultValue: {
+      price: null,
+      change: null,
+      changePercent: null,
+      name: (code) => `日本株 ${code}`,
+      currency: 'JPY',
+      isStock: true,
+      isMutualFund: false
     }
-  }
-  
-  return result;
+  });
 };
 
 /**
- * 投資信託データを取得する（CSVダウンロード方式に変更）
+ * 投資信託データを取得する
  * @param {Array<string>} codes - ファンドコードの配列
  * @param {boolean} refresh - キャッシュを無視するかどうか
  * @returns {Promise<Object>} 投資信託データ
  */
 const getMutualFundData = async (codes, refresh = false) => {
-  const result = {};
-  const cacheMisses = [];
-  
-  // コードごとにキャッシュをチェック
-  for (const code of codes) {
-    const cacheKey = `${DATA_TYPES.MUTUAL_FUND}:${code}`;
-    
-    if (!refresh) {
-      const cachedData = await cacheService.get(cacheKey);
-      
-      if (cachedData) {
-        result[code] = cachedData;
-        continue;
-      }
+  return await getMarketData(codes, refresh, {
+    dataType: DATA_TYPES.MUTUAL_FUND,
+    cacheTime: CACHE_TIMES.MUTUAL_FUND,
+    fetchFunction: async (codesList) => {
+      return await scrapingService.scrapeMutualFundsParallel(codesList);
+    },
+    defaultValue: {
+      price: null,
+      change: null,
+      changePercent: null,
+      name: (code) => `投資信託 ${code}C`,
+      currency: 'JPY',
+      isStock: false,
+      isMutualFund: true,
+      priceLabel: '基準価額'
     }
-    
-    cacheMisses.push(code);
-  }
-  
-  // キャッシュにないデータを取得
-  if (cacheMisses.length > 0) {
-    console.log(`Fetching mutual fund data for ${cacheMisses.length} codes:`, cacheMisses);
-    
-    // スクレイピングで一括取得（CSVダウンロード方式を使用）
-    try {
-      const batchData = await scrapingService.scrapeMutualFundsParallel(cacheMisses);
-      
-      // 結果をそのまま追加（キャッシュはscrapeMutualFundsParallel内部で行われる）
-      for (const code in batchData) {
-        const fundData = batchData[code];
-        
-        if (fundData) {
-          result[code] = fundData;
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching batch mutual fund data:', error);
-      
-      // バッチ取得に失敗した場合は個別に取得を試みる
-      for (const code of cacheMisses) {
-        try {
-          const fundData = await scrapingService.scrapeMutualFund(code);
-          
-          if (fundData) {
-            result[code] = fundData;
-          }
-        } catch (codeError) {
-          console.error(`Error fetching mutual fund data for ${code}:`, codeError);
-          
-          // エラーでも何か返せるようにフォールバック値を設定
-          result[code] = {
-            ticker: `${code}C`,
-            price: null,
-            change: null,
-            changePercent: null,
-            name: `投資信託 ${code}C`,
-            currency: 'JPY',
-            lastUpdated: new Date().toISOString(),
-            source: 'API Error',
-            isStock: false,
-            isMutualFund: true,
-            priceLabel: '基準価額',
-            error: codeError.message
-          };
-        }
-      }
-    }
-  }
-  
-  return result;
+  });
 };
 
 /**

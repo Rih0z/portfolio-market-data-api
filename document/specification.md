@@ -924,3 +924,4 @@ EXCHANGE_RATE_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
 ### 15.3 APIリファレンス
 詳細なAPIリファレンスドキュメントは `docs/how-to-call-api.md` を参照してください。
+

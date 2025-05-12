@@ -215,6 +215,26 @@ ${err.error.join('\n')}
       { name: '未修正', value: summary.numFailedTests - 8 }
     ];
     
+    // 合格率と失敗率の計算（新規追加）
+    const passRate = summary.numTotalTests > 0 
+      ? (summary.numPassedTests / summary.numTotalTests * 100).toFixed(1) 
+      : 0;
+    const failRate = summary.numTotalTests > 0 
+      ? (summary.numFailedTests / summary.numTotalTests * 100).toFixed(1) 
+      : 0;
+
+    // テストスイートのパフォーマンスメトリクス（新規追加）
+    const bestPerformingSuite = [...testSuiteData].sort((a, b) => b.passRate - a.passRate)[0];
+    const worstPerformingSuite = [...testSuiteData].sort((a, b) => a.passRate - b.passRate)[0];
+
+    // 最も頻発するエラータイプ（新規追加）
+    const mostCommonError = [...errorTypeData].sort((a, b) => b.value - a.value)[0];
+
+    // 修正進捗率（新規追加）
+    const fixRate = summary.numFailedTests > 0 
+      ? (8 / summary.numFailedTests * 100).toFixed(1) 
+      : 100;
+
     // HTMLテンプレート
     const htmlContent = `<!DOCTYPE html>
 <html lang="ja">
@@ -484,6 +504,36 @@ ${err.error.join('\n')}
             background-color: #3651d4;
         }
         
+        /* 新規追加: サマリーボックスのスタイル */
+        .chart-summary {
+            background-color: #f8f9fa;
+            border-left: 4px solid var(--primary);
+            padding: 1rem;
+            margin-top: 1rem;
+            border-radius: 4px;
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+        
+        .highlight {
+            font-weight: 600;
+            color: var(--primary);
+        }
+        
+        .animation-info {
+            font-size: 0.85rem;
+            color: #666;
+            font-style: italic;
+            margin-top: 0.5rem;
+            text-align: center;
+        }
+        
+        /* グラフのホバー効果を強化 */
+        .chart-container:hover {
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            transition: box-shadow 0.3s ease;
+        }
+        
         @media (max-width: 768px) {
             .charts-row {
                 flex-direction: column;
@@ -513,12 +563,12 @@ ${err.error.join('\n')}
             <div class="stat-box passed-box">
                 <h3>合格</h3>
                 <div class="number">${summary.numPassedTests}</div>
-                <div class="description">${(summary.numPassedTests/summary.numTotalTests*100).toFixed(1)}% の成功率</div>
+                <div class="description">${passRate}% の成功率</div>
             </div>
             <div class="stat-box failed-box">
                 <h3>不合格</h3>
                 <div class="number">${summary.numFailedTests}</div>
-                <div class="description">${(summary.numFailedTests/summary.numTotalTests*100).toFixed(1)}% の失敗率</div>
+                <div class="description">${failRate}% の失敗率</div>
             </div>
         </div>
         
@@ -531,12 +581,20 @@ ${err.error.join('\n')}
         <div id="overview" class="tab-content active">
             <div class="card">
                 <div class="card-header">テスト結果概要</div>
+                <div class="animation-info">グラフはデータを可視化するためにアニメーションします。グラフ部分にマウスを乗せると詳細が表示されます。</div>
                 <div class="charts-row">
                     <div class="chart-container">
                         <canvas id="overviewChart"></canvas>
+                        <div class="chart-summary">
+                            <p>全体の <span class="highlight">${passRate}%</span> のテストが成功しています。合格テスト数: <span class="highlight">${summary.numPassedTests}</span>、不合格テスト数: <span class="highlight">${summary.numFailedTests}</span>。</p>
+                        </div>
                     </div>
                     <div class="chart-container">
                         <canvas id="testSuiteChart"></canvas>
+                        <div class="chart-summary">
+                            <p>最も成功率が高いテストスイート: <span class="highlight">${bestPerformingSuite.name}</span> (${bestPerformingSuite.passRate}%)</p>
+                            <p>最も成功率が低いテストスイート: <span class="highlight">${worstPerformingSuite.name}</span> (${worstPerformingSuite.passRate}%)</p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -545,6 +603,10 @@ ${err.error.join('\n')}
                 <div class="card-header">エラータイプ分析</div>
                 <div class="chart-container">
                     <canvas id="errorTypeChart"></canvas>
+                    <div class="chart-summary">
+                        <p>最も多いエラータイプは <span class="highlight">${mostCommonError ? mostCommonError.name : 'なし'}</span> で、${mostCommonError ? mostCommonError.value : 0}件発生しています。</p>
+                        <p>エラータイプごとの分布を把握することで、優先的に修正すべき問題を特定できます。</p>
+                    </div>
                 </div>
             </div>
             
@@ -552,6 +614,10 @@ ${err.error.join('\n')}
                 <div class="card-header">修正状況</div>
                 <div class="chart-container">
                     <canvas id="fixStatusChart"></canvas>
+                    <div class="chart-summary">
+                        <p>発生しているエラーのうち <span class="highlight">${fixRate}%</span> が修正済みです。</p>
+                        <p>修正済み: <span class="highlight">8件</span>、未修正: <span class="highlight">${summary.numFailedTests - 8}件</span></p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -654,7 +720,7 @@ ${err.error.join('\n')}
             });
         });
         
-        // Chart.jsでグラフを描画
+        // Chart.jsでグラフを描画 - アニメーションと表示の強化
         const ctx1 = document.getElementById('overviewChart').getContext('2d');
         new Chart(ctx1, {
             type: 'doughnut',
@@ -663,7 +729,8 @@ ${err.error.join('\n')}
                 datasets: [{
                     data: [${summary.numPassedTests}, ${summary.numFailedTests}],
                     backgroundColor: ['#4caf50', '#f44336'],
-                    borderWidth: 1
+                    borderWidth: 1,
+                    hoverOffset: 15 // ホバー時の強調を強化
                 }]
             },
             options: {
@@ -671,11 +738,65 @@ ${err.error.join('\n')}
                 plugins: {
                     legend: {
                         position: 'right',
+                        labels: {
+                            font: {
+                                size: 14
+                            },
+                            generateLabels: function(chart) {
+                                // 凡例にパーセンテージを追加
+                                const data = chart.data;
+                                if (data.labels.length && data.datasets.length) {
+                                    const dataset = data.datasets[0];
+                                    const total = dataset.data.reduce((acc, val) => acc + val, 0);
+                                    return data.labels.map((label, i) => {
+                                        const value = dataset.data[i];
+                                        const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+                                        return {
+                                            text: \`\${label} (\${percentage}%)\`,
+                                            fillStyle: dataset.backgroundColor[i],
+                                            hidden: false,
+                                            index: i
+                                        };
+                                    });
+                                }
+                                return [];
+                            }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.label || '';
+                                const value = context.raw || 0;
+                                const total = context.dataset.data.reduce((acc, val) => acc + val, 0);
+                                const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+                                return \`\${label}: \${value}件 (\${percentage}%)\`;
+                            }
+                        }
                     },
                     title: {
                         display: true,
-                        text: 'テスト結果概要'
+                        text: 'テスト結果概要',
+                        font: {
+                            size: 16
+                        }
+                    },
+                    datalabels: {
+                        color: '#fff',
+                        font: {
+                            weight: 'bold'
+                        },
+                        formatter: (value, ctx) => {
+                            const total = ctx.dataset.data.reduce((acc, val) => acc + val, 0);
+                            const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+                            return percentage > 5 ? \`\${percentage}%\` : '';
+                        }
                     }
+                },
+                animation: {
+                    animateScale: true,  // スケールのアニメーション
+                    animateRotate: true, // 回転のアニメーション
+                    duration: 2000       // アニメーション時間を長めに
                 }
             }
         });
@@ -703,16 +824,39 @@ ${err.error.join('\n')}
                 plugins: {
                     title: {
                         display: true,
-                        text: 'テストスイート別結果'
+                        text: 'テストスイート別結果',
+                        font: {
+                            size: 16
+                        }
                     },
+                    tooltip: {
+                        callbacks: {
+                            afterBody: function(context) {
+                                const index = context[0].dataIndex;
+                                const suite = ${JSON.stringify(testSuiteData)}[index];
+                                return \`成功率: \${suite.passRate}%\`;
+                            }
+                        }
+                    }
                 },
                 scales: {
                     x: {
                         stacked: true,
                     },
                     y: {
-                        stacked: true
+                        stacked: true,
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'テスト数'
+                        }
                     }
+                },
+                animation: {
+                    delay: function(context) {
+                        return context.dataIndex * 100;  // データポイントごとに遅延
+                    },
+                    duration: 1500
                 }
             }
         });
@@ -731,7 +875,7 @@ ${err.error.join('\n')}
                         '#9c27b0',
                         '#607d8b'
                     ],
-                    hoverOffset: 4
+                    hoverOffset: 15
                 }]
             },
             options: {
@@ -739,8 +883,51 @@ ${err.error.join('\n')}
                 plugins: {
                     title: {
                         display: true,
-                        text: 'エラータイプ分布'
+                        text: 'エラータイプ分布',
+                        font: {
+                            size: 16
+                        }
+                    },
+                    legend: {
+                        position: 'right',
+                        labels: {
+                            generateLabels: function(chart) {
+                                // 凡例に発生件数を追加
+                                const data = chart.data;
+                                if (data.labels.length && data.datasets.length) {
+                                    const dataset = data.datasets[0];
+                                    return data.labels.map((label, i) => {
+                                        return {
+                                            text: \`\${label} (\${dataset.data[i]}件)\`,
+                                            fillStyle: dataset.backgroundColor[i],
+                                            hidden: false,
+                                            index: i
+                                        };
+                                    });
+                                }
+                                return [];
+                            }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.label || '';
+                                const value = context.raw || 0;
+                                const total = context.dataset.data.reduce((acc, val) => acc + val, 0);
+                                const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+                                return \`\${label}: \${value}件 (\${percentage}%)\`;
+                            }
+                        }
                     }
+                },
+                animation: {
+                    animateScale: true,
+                    animateRotate: true,
+                    delay: function(context) {
+                        return context.dataIndex * 200;  // データポイントごとに遅延
+                    },
+                    duration: 2000
                 }
             }
         });
@@ -756,7 +943,7 @@ ${err.error.join('\n')}
                         '#4caf50',
                         '#f44336'
                     ],
-                    hoverOffset: 4
+                    hoverOffset: 15
                 }]
             },
             options: {
@@ -764,8 +951,51 @@ ${err.error.join('\n')}
                 plugins: {
                     title: {
                         display: true,
-                        text: '修正状況'
+                        text: '修正状況',
+                        font: {
+                            size: 16
+                        }
+                    },
+                    legend: {
+                        position: 'right',
+                        labels: {
+                            generateLabels: function(chart) {
+                                // 凡例に詳細を追加
+                                const data = chart.data;
+                                if (data.labels.length && data.datasets.length) {
+                                    const dataset = data.datasets[0];
+                                    const total = dataset.data.reduce((acc, val) => acc + val, 0);
+                                    return data.labels.map((label, i) => {
+                                        const value = dataset.data[i];
+                                        const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+                                        return {
+                                            text: \`\${label} (\${value}件, \${percentage}%)\`,
+                                            fillStyle: dataset.backgroundColor[i],
+                                            hidden: false,
+                                            index: i
+                                        };
+                                    });
+                                }
+                                return [];
+                            }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.label || '';
+                                const value = context.raw || 0;
+                                const total = context.dataset.data.reduce((acc, val) => acc + val, 0);
+                                const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+                                return \`\${label}: \${value}件 (\${percentage}%)\`;
+                            }
+                        }
                     }
+                },
+                animation: {
+                    animateScale: true,
+                    animateRotate: true,
+                    duration: 1800
                 }
             }
         });

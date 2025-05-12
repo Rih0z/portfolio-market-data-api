@@ -5,17 +5,17 @@
  * 説明: 
  * API レスポンスを標準化する共通ユーティリティ。
  * 成功レスポンス、エラーレスポンス、リダイレクトレスポンスを
- * 一貫したフォーマットで提供します。
+ * 一貫したフォーマットで提供します。予算警告も統合されています。
  * 
  * @author Portfolio Manager Team
- * @created 2025-05-15
- * @updated 2025-05-16
+ * @updated 2025-05-17
  */
 'use strict';
 
 const { ENV } = require('../config/envConfig');
 const { ERROR_CODES, RESPONSE_FORMATS } = require('../config/constants');
 const { addBudgetWarningToResponse } = require('./budgetCheck');
+const logger = require('./logger');
 
 /**
  * 成功レスポンスを整形する
@@ -23,7 +23,7 @@ const { addBudgetWarningToResponse } = require('./budgetCheck');
  * @param {number} [options.statusCode=200] - HTTPステータスコード
  * @param {Object} [options.data={}] - レスポンスデータ
  * @param {Object} [options.headers={}] - レスポンスヘッダー
- * @param {string} [options.source='AWS Lambda'] - データソース情報
+ * @param {string} [options.source='API'] - データソース情報
  * @param {string} [options.lastUpdated] - 最終更新日時
  * @param {string} [options.processingTime=''] - 処理時間
  * @param {Object} [options.usage=null] - 使用量情報
@@ -35,7 +35,7 @@ const formatResponse = async (options = {}) => {
     statusCode = 200,
     data = {},
     headers = {},
-    source = 'AWS Lambda',
+    source = 'API',
     lastUpdated = new Date().toISOString(),
     processingTime = '',
     usage = null,
@@ -46,7 +46,8 @@ const formatResponse = async (options = {}) => {
   const defaultHeaders = {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': ENV.CORS_ALLOW_ORIGIN,
-    'Access-Control-Allow-Credentials': 'true'
+    'Access-Control-Allow-Credentials': 'true',
+    'Cache-Control': 'no-cache, no-store, must-revalidate' // キャッシュ無効化
   };
 
   // レスポンスボディを構築
@@ -86,7 +87,7 @@ const formatResponse = async (options = {}) => {
  * @param {number} [options.statusCode=500] - HTTPステータスコード
  * @param {string} [options.code] - エラーコード
  * @param {string} [options.message='サーバー内部エラーが発生しました'] - エラーメッセージ
- * @param {string} [options.details=null] - 詳細情報（開発環境のみ）
+ * @param {string|Object} [options.details=null] - 詳細情報（開発環境のみ）
  * @param {Object} [options.headers={}] - レスポンスヘッダー
  * @param {Object} [options.usage=null] - 使用量情報
  * @param {boolean} [options.skipBudgetWarning=false] - 予算警告をスキップするかどうか
@@ -103,11 +104,19 @@ const formatErrorResponse = async (options = {}) => {
     skipBudgetWarning = false
   } = options;
 
+  // エラーのログ記録（重大なエラーのみ）
+  if (statusCode >= 500) {
+    logger.error(`API Error Response (${statusCode}):`, { code, message, details });
+  } else if (statusCode >= 400) {
+    logger.warn(`API Error Response (${statusCode}):`, { code, message });
+  }
+
   // デフォルトのCORSヘッダー
   const defaultHeaders = {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': ENV.CORS_ALLOW_ORIGIN,
-    'Access-Control-Allow-Credentials': 'true'
+    'Access-Control-Allow-Credentials': 'true',
+    'Cache-Control': 'no-cache, no-store, must-revalidate' // キャッシュ無効化
   };
 
   // エラーボディを構築

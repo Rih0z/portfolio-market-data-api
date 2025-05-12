@@ -5,19 +5,23 @@
  * 説明: 
  * AWS SDKの初期化と各種クライアントの取得を一元管理するユーティリティモジュール。
  * 開発環境と本番環境での設定を統一的に処理します。
+ * クライアント初期化の重複を防ぎ、エンドポイント設定を一元化します。
  *
  * @author Portfolio Manager Team
- * @created 2025-05-13
+ * @updated 2025-05-17
  */
 'use strict';
 
 const AWS = require('aws-sdk');
+const { ENV, isDevelopment } = require('../config/envConfig');
+const logger = require('./logger');
 
-// 環境変数からリージョンを取得
-const region = process.env.AWS_REGION || 'ap-northeast-1';
-
-// 開発モードかどうかを判定
-const isDevelopment = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
+// AWS SDKクライアントのキャッシュ
+const clients = {
+  dynamoDb: null,
+  sns: null,
+  sts: null
+};
 
 /**
  * AWS SDKの基本設定を行い、設定済みのAWSオブジェクトを返す
@@ -25,14 +29,23 @@ const isDevelopment = process.env.NODE_ENV === 'development' || process.env.NODE
  */
 const configureAWS = () => {
   // リージョンを設定
-  AWS.config.update({ region });
+  AWS.config.update({ region: ENV.REGION });
   
   // ローカル開発モードの場合の設定
-  if (isDevelopment && process.env.AWS_ENDPOINT) {
+  if (isDevelopment && ENV.AWS_ENDPOINT) {
     AWS.config.update({
-      endpoint: process.env.AWS_ENDPOINT
+      endpoint: ENV.AWS_ENDPOINT
     });
   }
+  
+  // エラー処理とロギングを強化
+  AWS.config.logger = {
+    log: (message) => {
+      if (ENV.LOG_LEVEL === 'debug') {
+        logger.debug(`AWS SDK: ${message}`);
+      }
+    }
+  };
   
   return AWS;
 };
@@ -42,16 +55,22 @@ const configureAWS = () => {
  * @returns {AWS.DynamoDB.DocumentClient} DynamoDBクライアント
  */
 const getDynamoDb = () => {
+  if (clients.dynamoDb) {
+    return clients.dynamoDb;
+  }
+  
   const AWS = configureAWS();
   
   // ローカル開発モードの場合の設定
-  if (isDevelopment && process.env.DYNAMODB_ENDPOINT) {
-    return new AWS.DynamoDB.DocumentClient({
-      endpoint: process.env.DYNAMODB_ENDPOINT || 'http://localhost:8000'
+  if (isDevelopment && ENV.DYNAMODB_ENDPOINT) {
+    clients.dynamoDb = new AWS.DynamoDB.DocumentClient({
+      endpoint: ENV.DYNAMODB_ENDPOINT
     });
+  } else {
+    clients.dynamoDb = new AWS.DynamoDB.DocumentClient();
   }
   
-  return new AWS.DynamoDB.DocumentClient();
+  return clients.dynamoDb;
 };
 
 /**
@@ -59,16 +78,22 @@ const getDynamoDb = () => {
  * @returns {AWS.SNS} SNSクライアント
  */
 const getSNS = () => {
+  if (clients.sns) {
+    return clients.sns;
+  }
+  
   const AWS = configureAWS();
   
   // ローカル開発モードの場合の設定
-  if (isDevelopment && process.env.SNS_ENDPOINT) {
-    return new AWS.SNS({
-      endpoint: process.env.SNS_ENDPOINT
+  if (isDevelopment && ENV.SNS_ENDPOINT) {
+    clients.sns = new AWS.SNS({
+      endpoint: ENV.SNS_ENDPOINT
     });
+  } else {
+    clients.sns = new AWS.SNS();
   }
   
-  return new AWS.SNS();
+  return clients.sns;
 };
 
 /**
@@ -76,21 +101,39 @@ const getSNS = () => {
  * @returns {AWS.STS} STSクライアント
  */
 const getSTS = () => {
+  if (clients.sts) {
+    return clients.sts;
+  }
+  
   const AWS = configureAWS();
   
   // ローカル開発モードの場合の設定
-  if (isDevelopment && process.env.STS_ENDPOINT) {
-    return new AWS.STS({
-      endpoint: process.env.STS_ENDPOINT
+  if (isDevelopment && ENV.STS_ENDPOINT) {
+    clients.sts = new AWS.STS({
+      endpoint: ENV.STS_ENDPOINT
     });
+  } else {
+    clients.sts = new AWS.STS();
   }
   
-  return new AWS.STS();
+  return clients.sts;
+};
+
+/**
+ * AWS設定をリセットする（テスト用）
+ */
+const resetAWSConfig = () => {
+  clients.dynamoDb = null;
+  clients.sns = null;
+  clients.sts = null;
+  AWS.config = new AWS.Config();
+  configureAWS();
 };
 
 module.exports = {
   configureAWS,
   getDynamoDb,
   getSNS,
-  getSTS
+  getSTS,
+  resetAWSConfig
 };

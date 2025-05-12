@@ -3,179 +3,203 @@
  * ファイルパス: src/services/sources/yahooFinance.js
  * 
  * 説明: 
- * Yahoo Finance APIを使用して株価データを取得するサービス。
- * 米国株、日本株、ETFなど様々な金融商品の価格データを取得し、
- * ETF用の特別処理も含まれています。
+ * Yahoo Finance APIを使用して米国株式のデータを取得するサービス。
+ * 単一銘柄および複数銘柄の一括取得に対応しています。
+ * Rapid APIのYahoo Finance APIを使用しています。
+ * 
+ * @author Portfolio Manager Team
+ * @updated 2025-05-14
  */
+'use strict';
+
 const axios = require('axios');
+const { withRetry, isRetryableApiError } = require('../../utils/retry');
+const alertService = require('../alerts');
 
-// ETF関連の定義
-const ETF_PREFIXES = [
-  'SPY', 'VOO', 'VTI', 'QQQ', 'IVV', 'DIA', 'ARKK', 'ARKW', 'ARKG',
-  'LQD', 'BND', 'AGG', 'TLT', 'IEF', 'GOVT', 'HYG',
-  'INDA', 'EWZ', 'EWJ', 'VEA', 'VWO', 'IEFA', 'IEMG',
-  'GLD', 'SLV', 'USO', 'XLE', 'XLF', 'XLK', 'XLV', 'XLI', 'XLP',
-  'V', 'VO', 'VB', 'VT', 'VGT', 'VHT', 'VDC', 'VFH', 'VIS', 'VCR'
-];
+// 環境変数から設定を取得
+const API_KEY = process.env.YAHOO_FINANCE_API_KEY;
+const API_HOST = process.env.YAHOO_FINANCE_API_HOST || 'yh-finance.p.rapidapi.com';
+const API_TIMEOUT = parseInt(process.env.YAHOO_FINANCE_API_TIMEOUT || '5000', 10);
 
 /**
- * ティッカーシンボルがETFかどうかを判定する
- * @param {string} symbol - ティッカーシンボル
- * @returns {boolean} ETFの場合はtrue
+ * Yahoo Finance APIのエンドポイントを構築
+ * @param {string} path - APIパス
+ * @returns {string} 完全なAPIエンドポイントURL
  */
-const isETF = (symbol) => {
-  if (!symbol) return false;
-  
-  // 大文字に変換
-  const upperSymbol = symbol.toString().toUpperCase();
-  
-  // 既知のETFリストにあるか確認
-  for (const prefix of ETF_PREFIXES) {
-    if (upperSymbol === prefix || upperSymbol.startsWith(prefix)) {
-      return true;
-    }
-  }
-  
-  // 構造による判定
-  // ETFはほとんどが3-4文字で構成される
-  if (upperSymbol.length <= 4 && 
-      /^[A-Z]+$/.test(upperSymbol) && // 英字のみ
-      !upperSymbol.includes('.')) {
-    return true;
-  }
-  
-  return false;
+const buildApiUrl = (path) => {
+  return `https://${API_HOST}${path}`;
 };
 
 /**
- * ランダムなユーザーエージェントを取得する
- * @returns {string} ユーザーエージェント
- */
-const getRandomUserAgent = () => {
-  const userAgents = [
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.4 Safari/605.1.15',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
-  ];
-  
-  return userAgents[Math.floor(Math.random() * userAgents.length)];
-};
-
-/**
- * Yahoo Financeから株価データを取得する
+ * 単一銘柄の株価データを取得する
  * @param {string} symbol - ティッカーシンボル
  * @returns {Promise<Object>} 株価データ
  */
 const getStockData = async (symbol) => {
   try {
-    console.log(`Fetching Yahoo Finance data for: ${symbol}`);
-    
-    // 日本株の場合は.Tを追加
-    let formattedSymbol = symbol;
-    if (/^\d{4}$/.test(symbol) && !symbol.includes('.')) {
-      formattedSymbol = `${symbol}.T`;
+    if (!symbol) {
+      throw new Error('Symbol is required');
     }
-    
-    // ETFの場合は特別処理
-    const isEtfSymbol = isETF(symbol);
-    
-    // ランダムなユーザーエージェントを選択
-    const userAgent = getRandomUserAgent();
-    
-    // Yahoo FinanceのAPIエンドポイント
-    const url = isEtfSymbol
-      ? `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${formattedSymbol}?modules=price,defaultKeyStatistics,summaryDetail`
-      : `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${formattedSymbol}`;
-    
-    const response = await axios.get(url, {
-      headers: {
-        'User-Agent': userAgent,
-        'Accept': 'application/json',
-        'Referer': 'https://finance.yahoo.com/'
-      },
-      timeout: 10000
-    });
-    
-    // ETFの場合
-    if (isEtfSymbol) {
-      if (response.data && 
-          response.data.quoteSummary && 
-          response.data.quoteSummary.result && 
-          response.data.quoteSummary.result.length > 0) {
-        
-        const result = response.data.quoteSummary.result[0];
-        const priceData = result.price || {};
-        const statsData = result.defaultKeyStatistics || {};
-        const summaryData = result.summaryDetail || {};
-        
-        // 名前を取得
-        const name = priceData.shortName || priceData.longName || symbol;
-        
-        // 価格を取得
-        const price = priceData.regularMarketPrice?.raw || 0;
-        
-        // 配当利回りを取得
-        let dividendYield = 0;
-        let hasDividend = false;
-        
-        if (summaryData.dividendYield && summaryData.dividendYield.raw) {
-          dividendYield = (summaryData.dividendYield.raw * 100).toFixed(2);
-          hasDividend = dividendYield > 0;
-        }
-        
-        // 通貨を取得
-        const currency = priceData.currency || 'USD';
-        
-        return {
-          ticker: symbol,
-          price: price,
-          name: name,
-          currency: currency,
-          lastUpdated: new Date().toISOString(),
-          source: 'Yahoo Finance',
-          isStock: false,
-          isMutualFund: false,
-          isETF: true,
-          dividendYield,
-          hasDividend,
-          priceLabel: '株価'
-        };
+
+    // APIからデータを取得
+    const response = await withRetry(
+      () => axios.get(buildApiUrl(`/market/v2/get-quotes`), {
+        params: {
+          region: 'US',
+          symbols: symbol
+        },
+        headers: {
+          'X-RapidAPI-Key': API_KEY,
+          'X-RapidAPI-Host': API_HOST
+        },
+        timeout: API_TIMEOUT
+      }),
+      {
+        maxRetries: 3,
+        baseDelay: 500,
+        shouldRetry: isRetryableApiError
       }
-    } 
-    // 通常の株式の場合
-    else if (response.data && 
-             response.data.quoteResponse && 
-             response.data.quoteResponse.result && 
-             response.data.quoteResponse.result.length > 0) {
-      
-      const quote = response.data.quoteResponse.result[0];
-      
-      // 投資信託かどうかをチェック
-      const isMutualFundSymbol = /^\d{7,8}C(\.T)?$/i.test(symbol);
-      
-      return {
-        ticker: symbol,
-        price: quote.regularMarketPrice || quote.ask || quote.bid || 0,
-        name: quote.shortName || quote.longName || symbol,
-        currency: quote.currency || (formattedSymbol.includes('.T') ? 'JPY' : 'USD'),
-        lastUpdated: new Date().toISOString(),
-        source: 'Yahoo Finance',
-        isStock: !isMutualFundSymbol,
-        isMutualFund: isMutualFundSymbol,
-        priceLabel: isMutualFundSymbol ? '基準価額' : '株価'
-      };
+    );
+
+    // レスポンスを検証
+    if (!response.data || !response.data.quoteResponse || !response.data.quoteResponse.result) {
+      throw new Error('Invalid API response format');
     }
-    
-    // データが見つからない場合
-    throw new Error(`No valid data found for symbol: ${symbol}`);
+
+    const quotes = response.data.quoteResponse.result;
+    if (quotes.length === 0) {
+      throw new Error(`No data found for symbol: ${symbol}`);
+    }
+
+    const stockData = quotes[0];
+
+    // レスポンスデータを整形
+    return {
+      ticker: stockData.symbol,
+      price: stockData.regularMarketPrice,
+      change: stockData.regularMarketChange,
+      changePercent: stockData.regularMarketChangePercent,
+      name: stockData.shortName || stockData.longName || stockData.symbol,
+      currency: stockData.currency || 'USD',
+      lastUpdated: new Date(stockData.regularMarketTime * 1000).toISOString(),
+      source: 'Yahoo Finance API',
+      isStock: true,
+      isMutualFund: false,
+      volume: stockData.regularMarketVolume,
+      marketCap: stockData.marketCap
+    };
   } catch (error) {
-    console.error(`Yahoo Finance API error for ${symbol}:`, error.message);
-    throw error;
+    console.error(`Error fetching stock data for ${symbol}:`, error);
+
+    // APIキーエラーの場合はアラート通知
+    if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+      await alertService.notifyError(
+        'Yahoo Finance API Key Error',
+        new Error(`API key validation failed: ${error.response.status}`),
+        { symbol }
+      );
+    }
+
+    throw new Error(`Failed to retrieve stock data for ${symbol}: ${error.message}`);
+  }
+};
+
+/**
+ * 複数銘柄の株価データを一括取得する
+ * @param {Array<string>} symbols - ティッカーシンボルの配列
+ * @returns {Promise<Object>} シンボルをキーとする株価データのオブジェクト
+ */
+const getStocksData = async (symbols) => {
+  try {
+    if (!symbols || !Array.isArray(symbols) || symbols.length === 0) {
+      throw new Error('Symbols array is required');
+    }
+
+    // 一度に処理する銘柄数の上限（APIの制限に合わせる）
+    const BATCH_SIZE = 20;
+    let results = {};
+
+    // 複数の銘柄をバッチ処理
+    for (let i = 0; i < symbols.length; i += BATCH_SIZE) {
+      const batchSymbols = symbols.slice(i, i + BATCH_SIZE);
+      const symbolsString = batchSymbols.join(',');
+
+      // APIからデータを取得
+      const response = await withRetry(
+        () => axios.get(buildApiUrl(`/market/v2/get-quotes`), {
+          params: {
+            region: 'US',
+            symbols: symbolsString
+          },
+          headers: {
+            'X-RapidAPI-Key': API_KEY,
+            'X-RapidAPI-Host': API_HOST
+          },
+          timeout: API_TIMEOUT
+        }),
+        {
+          maxRetries: 3,
+          baseDelay: 500,
+          shouldRetry: isRetryableApiError
+        }
+      );
+
+      // レスポンスを検証
+      if (!response.data || !response.data.quoteResponse || !response.data.quoteResponse.result) {
+        throw new Error('Invalid API response format');
+      }
+
+      const quotes = response.data.quoteResponse.result;
+
+      // 各銘柄のデータを整形して結果に追加
+      quotes.forEach(stockData => {
+        results[stockData.symbol] = {
+          ticker: stockData.symbol,
+          price: stockData.regularMarketPrice,
+          change: stockData.regularMarketChange,
+          changePercent: stockData.regularMarketChangePercent,
+          name: stockData.shortName || stockData.longName || stockData.symbol,
+          currency: stockData.currency || 'USD',
+          lastUpdated: new Date(stockData.regularMarketTime * 1000).toISOString(),
+          source: 'Yahoo Finance API',
+          isStock: true,
+          isMutualFund: false,
+          volume: stockData.regularMarketVolume,
+          marketCap: stockData.marketCap
+        };
+      });
+
+      // バッチ間の遅延を入れてAPI制限を回避
+      if (i + BATCH_SIZE < symbols.length) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+
+    // 取得できなかった銘柄を確認
+    const missingSymbols = symbols.filter(symbol => !results[symbol]);
+    if (missingSymbols.length > 0) {
+      console.warn(`No data found for symbols: ${missingSymbols.join(', ')}`);
+    }
+
+    return results;
+  } catch (error) {
+    console.error(`Error fetching stocks data:`, error);
+
+    // APIキーエラーの場合はアラート通知
+    if (error.response && (error.response.status === 401 || error.response.status === 403)) {
+      await alertService.notifyError(
+        'Yahoo Finance API Key Error',
+        new Error(`API key validation failed: ${error.response.status}`),
+        { symbols: symbols.join(',') }
+      );
+    }
+
+    throw new Error(`Failed to retrieve stocks data: ${error.message}`);
   }
 };
 
 module.exports = {
   getStockData,
-  isETF
+  getStocksData
 };
+

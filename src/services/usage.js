@@ -6,16 +6,25 @@
  * API使用量を追跡し、制限を適用するサービス。
  * 日次・月次の使用量カウンターを管理し、設定された制限値に
  * 基づいてAPIアクセスを制御します。使用量の統計情報やリセット機能も提供。
+ * 
+ * @author Portfolio Manager Team
+ * @updated 2025-05-13
  */
-const AWS = require('aws-sdk');
-const dynamoDb = new AWS.DynamoDB.DocumentClient();
+'use strict';
+
+const { getDynamoDb } = require('../utils/awsConfig');
 const alertService = require('./alerts');
+const { withRetry, isRetryableApiError } = require('../utils/retry');
+
 const TABLE_NAME = process.env.DYNAMODB_TABLE;
 
 // 環境変数から制限値を取得
 const DAILY_REQUEST_LIMIT = parseInt(process.env.DAILY_REQUEST_LIMIT || '5000', 10);
 const MONTHLY_REQUEST_LIMIT = parseInt(process.env.MONTHLY_REQUEST_LIMIT || '100000', 10);
 const DISABLE_ON_LIMIT = (process.env.DISABLE_ON_LIMIT || 'true') === 'true';
+
+// アラート閾値（パーセンテージ）
+const USAGE_ALERT_THRESHOLDS = [50, 80, 90, 95, 99];
 
 /**
  * 現在の日付キーを生成する
@@ -42,14 +51,17 @@ const getCurrentMonthKey = () => {
  */
 const incrementCounter = async (key) => {
   try {
+    const dynamoDb = getDynamoDb();
+    
     // UpdateItem操作を使用して原子的にカウンターを増加
     const updateParams = {
       TableName: TABLE_NAME,
       Key: { id: key },
-      UpdateExpression: 'SET #count = if_not_exists(#count, :zero) + :incr, #created = if_not_exists(#created, :timestamp)',
+      UpdateExpression: 'SET #count = if_not_exists(#count, :zero) + :incr, #created = if_not_exists(#created, :timestamp), #updated = :timestamp',
       ExpressionAttributeNames: {
         '#count': 'count',
-        '#created': 'created'
+        '#created': 'created',
+        '#updated': 'updatedAt'
       },
       ExpressionAttributeValues: {
         ':incr': 1,
@@ -59,7 +71,16 @@ const incrementCounter = async (key) => {
       ReturnValues: 'UPDATED_NEW'
     };
     
-    const updateResult = await dynamoDb.update(updateParams).promise();
+    // 再試行ロジックを使用
+    const updateResult = await withRetry(
+      () => dynamoDb.update(updateParams).promise(),
+      {
+        maxRetries: 3,
+        baseDelay: 100,
+        shouldRetry: isRetryableApiError
+      }
+    );
+    
     return updateResult.Attributes.count;
   } catch (error) {
     console.error(`Error incrementing counter ${key}:`, error);
@@ -75,12 +96,22 @@ const incrementCounter = async (key) => {
  */
 const getCounter = async (key) => {
   try {
+    const dynamoDb = getDynamoDb();
+    
     const params = {
       TableName: TABLE_NAME,
       Key: { id: key }
     };
     
-    const result = await dynamoDb.get(params).promise();
+    // 再試行ロジックを使用
+    const result = await withRetry(
+      () => dynamoDb.get(params).promise(),
+      {
+        maxRetries: 2,
+        baseDelay: 100,
+        shouldRetry: isRetryableApiError
+      }
+    );
     
     return result.Item ? result.Item.count : 0;
   } catch (error) {
@@ -92,10 +123,12 @@ const getCounter = async (key) => {
 /**
  * カウンターをリセットする
  * @param {string} key - カウンターキー
- * @returns {Promise<boolean>} リセットが成功したかどうか
+ * @returns {Promise<Object>} リセット結果
  */
 const resetCounter = async (key) => {
   try {
+    const dynamoDb = getDynamoDb();
+    
     // 現在の値を取得
     const oldValue = await getCounter(key);
     
@@ -105,24 +138,88 @@ const resetCounter = async (key) => {
       Key: { id: key }
     };
     
-    await dynamoDb.delete(deleteParams).promise();
+    // 再試行ロジックを使用
+    await withRetry(
+      () => dynamoDb.delete(deleteParams).promise(),
+      {
+        maxRetries: 2,
+        baseDelay: 100,
+        shouldRetry: isRetryableApiError
+      }
+    );
     
     console.log(`Reset counter ${key} from ${oldValue} to 0`);
-    return true;
+    return {
+      success: true,
+      key,
+      oldValue,
+      newValue: 0,
+      timestamp: new Date().toISOString()
+    };
   } catch (error) {
     console.error(`Error resetting counter ${key}:`, error);
-    return false;
+    return {
+      success: false,
+      key,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    };
+  }
+};
+
+/**
+ * 使用量の閾値をチェックしてアラートを送信
+ * @param {number} count - カウント値
+ * @param {number} limit - 制限値
+ * @param {string} type - カウンターの種類（'daily'または'monthly'）
+ * @returns {Promise<void>}
+ */
+const checkUsageThresholds = async (count, limit, type) => {
+  try {
+    const percentage = Math.round((count / limit) * 100);
+    
+    // 各閾値をチェック
+    for (const threshold of USAGE_ALERT_THRESHOLDS) {
+      // ちょうど閾値に達した場合のみアラート通知（頻繁なアラートを防止）
+      if (percentage === threshold) {
+        await alertService.sendAlert({
+          subject: `API Usage ${threshold}% of ${type.toUpperCase()} Limit`,
+          message: `API usage has reached ${threshold}% of the ${type} limit (${count}/${limit}).`,
+          detail: {
+            type,
+            count,
+            limit,
+            percentage,
+            timestamp: new Date().toISOString()
+          },
+          // 90%以上は重大アラート
+          critical: threshold >= 90
+        });
+        
+        break; // 最も高い閾値のみ通知
+      }
+    }
+  } catch (error) {
+    console.error(`Error checking usage thresholds for ${type}:`, error);
   }
 };
 
 /**
  * 使用量をチェックして更新する
+ * @param {Object} options - オプション
+ * @param {string} options.dataType - データタイプ（'us-stock', 'jp-stock'など）
+ * @param {string} options.ip - IPアドレス（オプション）
+ * @param {string} options.userAgent - ユーザーエージェント（オプション）
+ * @param {string} options.sessionId - セッションID（オプション）
  * @returns {Promise<Object>} 使用量情報と制限状態
  */
-const checkAndUpdateUsage = async () => {
+const checkAndUpdateUsage = async (options = {}) => {
   try {
+    const { dataType = 'unknown', ip, userAgent, sessionId } = options;
+    
     const dailyKey = `usage_counter:daily:${getCurrentDateKey()}`;
     const monthlyKey = `usage_counter:monthly:${getCurrentMonthKey()}`;
+    const typeKey = `usage_counter:type:${dataType}:${getCurrentDateKey()}`;
     
     // 現在の使用量を取得
     const dailyCount = await getCounter(dailyKey);
@@ -139,11 +236,12 @@ const checkAndUpdateUsage = async () => {
         await alertService.sendAlert({
           subject: 'API Usage Limit Reached',
           message: `API usage limit has been reached: ${isOverDailyLimit ? 'Daily' : 'Monthly'} limit.`,
-          detail: JSON.stringify({
+          detail: {
             daily: { count: dailyCount, limit: DAILY_REQUEST_LIMIT },
             monthly: { count: monthlyCount, limit: MONTHLY_REQUEST_LIMIT },
             timestamp: new Date().toISOString()
-          })
+          },
+          critical: true
         });
       }
       
@@ -151,6 +249,8 @@ const checkAndUpdateUsage = async () => {
       if (DISABLE_ON_LIMIT) {
         return {
           allowed: false,
+          limitExceeded: true,
+          limitType: isOverDailyLimit ? 'daily' : 'monthly',
           usage: {
             daily: {
               count: dailyCount,
@@ -167,26 +267,24 @@ const checkAndUpdateUsage = async () => {
       }
     }
     
-    // カウンターを増加（原子的な操作に変更）
+    // カウンターを増加（原子的な操作）
     const newDailyCount = await incrementCounter(dailyKey);
     const newMonthlyCount = await incrementCounter(monthlyKey);
     
-    // 使用量の割合が閾値を超えた場合にアラートを送信
-    const dailyPercentage = Math.round((newDailyCount / DAILY_REQUEST_LIMIT) * 100);
-    const monthlyPercentage = Math.round((newMonthlyCount / MONTHLY_REQUEST_LIMIT) * 100);
+    // データタイプ別のカウンターも増加
+    await incrementCounter(typeKey);
     
-    // ちょうど80%に達した場合のみアラート通知（頻繁なアラートを防止）
-    if (dailyPercentage === 80 || monthlyPercentage === 80) {
-      await alertService.sendAlert({
-        subject: 'API Usage Warning - 80% of Limit',
-        message: `API usage has reached 80% of the ${dailyPercentage === 80 ? 'daily' : 'monthly'} limit.`,
-        detail: JSON.stringify({
-          daily: { count: newDailyCount, limit: DAILY_REQUEST_LIMIT, percentage: dailyPercentage },
-          monthly: { count: newMonthlyCount, limit: MONTHLY_REQUEST_LIMIT, percentage: monthlyPercentage },
-          timestamp: new Date().toISOString()
-        })
-      });
+    // セッション別や IP アドレス別のカウンターも記録（オプション）
+    if (sessionId) {
+      await incrementCounter(`usage_counter:session:${sessionId}:${getCurrentDateKey()}`);
     }
+    if (ip) {
+      await incrementCounter(`usage_counter:ip:${ip}:${getCurrentDateKey()}`);
+    }
+    
+    // 使用量の割合が閾値を超えた場合にアラートを送信
+    await checkUsageThresholds(newDailyCount, DAILY_REQUEST_LIMIT, 'daily');
+    await checkUsageThresholds(newMonthlyCount, MONTHLY_REQUEST_LIMIT, 'monthly');
     
     return {
       allowed: true,
@@ -194,13 +292,14 @@ const checkAndUpdateUsage = async () => {
         daily: {
           count: newDailyCount,
           limit: DAILY_REQUEST_LIMIT,
-          percentage: dailyPercentage
+          percentage: Math.round((newDailyCount / DAILY_REQUEST_LIMIT) * 100)
         },
         monthly: {
           count: newMonthlyCount,
           limit: MONTHLY_REQUEST_LIMIT,
-          percentage: monthlyPercentage
-        }
+          percentage: Math.round((newMonthlyCount / MONTHLY_REQUEST_LIMIT) * 100)
+        },
+        dataType
       }
     };
   } catch (error) {
@@ -267,6 +366,16 @@ const getUsageStats = async () => {
       });
     }
     
+    // データタイプ別の今日の使用量を取得
+    const dataTypeUsage = {};
+    const dataTypes = ['us-stock', 'jp-stock', 'mutual-fund', 'exchange-rate'];
+    
+    for (const type of dataTypes) {
+      const key = `usage_counter:type:${type}:${getCurrentDateKey()}`;
+      const count = await getCounter(key);
+      dataTypeUsage[type] = count;
+    }
+    
     return {
       current: {
         daily: {
@@ -279,6 +388,7 @@ const getUsageStats = async () => {
           limit: MONTHLY_REQUEST_LIMIT,
           percentage: Math.round((monthlyCount / MONTHLY_REQUEST_LIMIT) * 100)
         },
+        byType: dataTypeUsage,
         timestamp: new Date().toISOString()
       },
       history: {
@@ -306,19 +416,34 @@ const resetUsage = async (resetType) => {
     
     if (resetType === 'daily' || resetType === 'all') {
       const dailyKey = `usage_counter:daily:${getCurrentDateKey()}`;
-      await resetCounter(dailyKey);
-      resetItems.push(dailyKey);
+      const result = await resetCounter(dailyKey);
+      resetItems.push(result);
+      
+      // データタイプ別のカウンターもリセット
+      const dataTypes = ['us-stock', 'jp-stock', 'mutual-fund', 'exchange-rate'];
+      for (const type of dataTypes) {
+        const typeKey = `usage_counter:type:${type}:${getCurrentDateKey()}`;
+        const typeResult = await resetCounter(typeKey);
+        resetItems.push(typeResult);
+      }
     }
     
     if (resetType === 'monthly' || resetType === 'all') {
       const monthlyKey = `usage_counter:monthly:${getCurrentMonthKey()}`;
-      await resetCounter(monthlyKey);
-      resetItems.push(monthlyKey);
+      const result = await resetCounter(monthlyKey);
+      resetItems.push(result);
     }
+    
+    // アラート通知
+    await alertService.sendAlert({
+      subject: 'API Usage Counters Reset',
+      message: `${resetType} usage counters have been reset manually.`,
+      detail: resetItems
+    });
     
     return {
       success: true,
-      message: `${resetType}カウンターをリセットしました`,
+      message: `${resetType} カウンターをリセットしました`,
       resetTime: new Date().toISOString(),
       resetItems: resetItems
     };
@@ -326,7 +451,8 @@ const resetUsage = async (resetType) => {
     console.error(`Error resetting usage counters (${resetType}):`, error);
     return {
       success: false,
-      error: error.message
+      error: error.message,
+      resetTime: new Date().toISOString()
     };
   }
 };

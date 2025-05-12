@@ -3,27 +3,48 @@
  * ファイルパス: src/services/sources/exchangeRate.js
  * 
  * 説明: 
- * 為替レートデータ取得サービス。複数のAPIソースからUSD/JPYなどの
- * 為替レートデータを取得し、いずれかのソースが失敗した場合は
- * 代替ソースにフォールバックする仕組みを提供します。
+ * 為替レートデータを取得するサービス。
+ * 複数の為替レートプロバイダに対応し、フォールバック機能や
+ * レート制限対策も実装しています。
+ * 
+ * @author Portfolio Manager Team
+ * @updated 2025-05-15
  */
+'use strict';
+
 const axios = require('axios');
+const { withRetry, isRetryableApiError } = require('../../utils/retry');
+const alertService = require('../alerts');
 const { DEFAULT_EXCHANGE_RATE } = require('../../config/constants');
+const { getRandomUserAgent } = require('../../utils/dataFetchUtils');
+
+// 環境変数からAPIキーを取得
+const EXCHANGE_RATE_API_KEY = process.env.EXCHANGE_RATE_API_KEY || '';
+const OPEN_EXCHANGE_RATES_APP_ID = process.env.OPEN_EXCHANGE_RATES_APP_ID || '';
+
+// 利用可能なAPIプロバイダ
+const PROVIDERS = {
+  PRIMARY: 'exchangerate-host',
+  SECONDARY: 'dynamic-calculation',
+  FALLBACK: 'hardcoded-values'
+};
 
 /**
- * 為替レートを取得する
- * @param {string} base - 基準通貨（例: USD）
- * @param {string} target - 変換先通貨（例: JPY）
+ * 為替レートを取得する - 複数のAPIを順に試行
+ * @param {string} base - ベース通貨コード（例: 'USD'）
+ * @param {string} target - 対象通貨コード（例: 'JPY'）
  * @returns {Promise<Object>} 為替レートデータ
  */
-const getExchangeRate = async (base, target) => {
-  // 同一通貨の場合は1を返す
+const getExchangeRate = async (base = 'USD', target = 'JPY') => {
+  console.log(`Getting exchange rate for ${base}/${target}`);
+  
+  // 通貨コードを標準化
+  base = base.toUpperCase();
+  target = target.toUpperCase();
+  
+  // 通貨ペアチェック
   if (base === target) {
-    return {
-      rate: 1.0,
-      source: 'Direct',
-      lastUpdated: new Date().toISOString()
-    };
+    return createExchangeRateResponse(base, target, 1, 0, 0, 'Internal (same currencies)');
   }
   
   // JPY/USDの場合のフラグ
@@ -40,159 +61,381 @@ const getExchangeRate = async (base, target) => {
   try {
     // 1. まず、exchangerate.hostを試す
     try {
-      console.log(`Trying exchangerate.host API for ${queryBase}/${queryTarget}...`);
-      const response = await axios.get('https://api.exchangerate.host/latest', {
-        params: {
-          base: queryBase,
-          symbols: queryTarget
-        },
-        timeout: 5000
-      });
+      const rateData = await getExchangeRateFromExchangerateHost(queryBase, queryTarget);
       
-      const data = response.data;
-      
-      if (data && data.rates && data.rates[queryTarget]) {
-        // レートを取得
-        let rate = data.rates[queryTarget];
-        
+      if (rateData) {
         // JPY/USDの場合は逆数を計算
         if (isJpyToUsd) {
-          rate = 1 / rate;
+          rateData.rate = 1 / rateData.rate;
         }
         
-        console.log(`exchangerate.host API successful! Rate: ${rate}`);
-        
-        return {
-          rate: rate,
-          source: 'exchangerate.host',
-          lastUpdated: data.date ? new Date(data.date).toISOString() : new Date().toISOString()
-        };
+        return createExchangeRateResponse(
+          base, 
+          target, 
+          rateData.rate, 
+          rateData.change, 
+          rateData.changePercent, 
+          rateData.source, 
+          rateData.lastUpdated
+        );
       }
+    } catch (error) {
+      console.warn(`Primary exchange rate API failed: ${error.message}`);
+    }
+    
+    // 2. 動的計算でのレート取得を試す
+    try {
+      const dynamicRateData = await getExchangeRateFromDynamicCalculation(queryBase, queryTarget);
       
-      console.warn('exchangerate.host API returned no data for the requested currency pair');
-      throw new Error('No data in exchangerate.host response');
-    } catch (error1) {
-      console.warn(`exchangerate.host API failed: ${error1.message}`);
-      
-      // 2. APIからの為替レートデータを取得しない場合は、DynamoDBから最新の為替レートを取得
-      try {
-        // 代替ソースを使ってレート取得
-        // この例では新しいAPIを呼ぶ代わりに、最新のデータに近い動的な値を計算
-        
-        // 基本となるレート値
-        const baseRate = DEFAULT_EXCHANGE_RATE;
-        
-        // 日によって少しずつ変動させる（±3%）
-        // 完全なランダム値ではなく、日付に基づいた疑似乱数を生成
-        const today = new Date();
-        const dayOfYear = Math.floor((today - new Date(today.getFullYear(), 0, 0)) / 86400000);
-        
-        // 日付をシード値として-3%～+3%の変動を計算（週末・平日でばらつきを出す）
-        const dateSeed = (dayOfYear + today.getDay()) % 100;
-        const fluctuation = (dateSeed / 100 * 6) - 3; // -3%～+3%
-        
-        // 基本レートに変動を適用
-        const calculatedRate = baseRate * (1 + (fluctuation / 100));
-        
-        // 通貨ペアに応じたレート計算
-        const pairKey = `${queryBase}${queryTarget}`;
-        let rate;
-        
-        if (pairKey === 'USDJPY') {
-          rate = calculatedRate;
-        } else if (pairKey === 'EURUSD') {
-          rate = 1.08 * (1 + (fluctuation / 200)); // EURUSDの変動は半分に
-        } else if (pairKey === 'EURJPY') {
-          rate = calculatedRate * 1.08;
-        } else if (pairKey === 'GBPUSD') {
-          rate = 1.27 * (1 + (fluctuation / 200));
-        } else if (pairKey === 'GBPJPY') {
-          rate = calculatedRate * 1.27;
-        } else {
-          // その他の通貨ペアにはデフォルト値を使用
-          rate = pairKey.includes('JPY') ? baseRate : 1.0;
-        }
-        
+      if (dynamicRateData) {
         // JPY/USDの場合は逆数を計算
         if (isJpyToUsd) {
-          rate = 1 / rate;
+          dynamicRateData.rate = 1 / dynamicRateData.rate;
         }
         
-        console.log(`Using calculated dynamic exchange rate! Rate: ${rate}`);
-        
-        return {
-          rate: rate,
-          source: 'Dynamic Calculation',
-          lastUpdated: new Date().toISOString()
-        };
-      } catch (error2) {
-        console.warn(`Dynamic calculation failed: ${error2.message}`);
-        
-        // 3. 最終的にハードコードされた値を使用
-        try {
-          console.log('Using hardcoded exchange rates...');
-          // 主要な通貨ペアの値
-          const hardcodedRates = {
-            'USDJPY': DEFAULT_EXCHANGE_RATE,
-            'JPYUSD': 1/DEFAULT_EXCHANGE_RATE,
-            'EURJPY': 160.2,
-            'EURUSD': 1.08,
-            'GBPUSD': 1.27,
-            'GBPJPY': 189.8
-          };
-          
-          const pairKey = `${queryBase}${queryTarget}`;
-          let rate = hardcodedRates[pairKey];
-          
-          if (!rate) {
-            // ハードコードされていない場合はデフォルト値を使用
-            rate = (pairKey === 'USDJPY') ? DEFAULT_EXCHANGE_RATE : 1.0;
-          }
-          
-          // JPY/USDの場合は逆数を計算
-          if (isJpyToUsd) {
-            rate = 1 / rate;
-          }
-          
-          console.log(`Using hardcoded exchange rate! Rate: ${rate}`);
-          
-          return {
-            rate: rate,
-            source: 'Fallback',
-            lastUpdated: new Date().toISOString()
-          };
-        } catch (error3) {
-          // これは失敗しないはずだが、万が一のため
-          console.error(`Hardcoded rates also failed: ${error3.message}`);
-        }
+        return createExchangeRateResponse(
+          base, 
+          target, 
+          dynamicRateData.rate, 
+          dynamicRateData.change, 
+          dynamicRateData.changePercent, 
+          dynamicRateData.source, 
+          dynamicRateData.lastUpdated
+        );
       }
+    } catch (error) {
+      console.warn(`Dynamic calculation failed: ${error.message}`);
+    }
+    
+    // 3. ハードコードされた値を使用
+    try {
+      const hardcodedRateData = getExchangeRateFromHardcodedValues(queryBase, queryTarget);
+      
+      // JPY/USDの場合は逆数を計算
+      if (isJpyToUsd) {
+        hardcodedRateData.rate = 1 / hardcodedRateData.rate;
+      }
+      
+      return createExchangeRateResponse(
+        base, 
+        target, 
+        hardcodedRateData.rate, 
+        hardcodedRateData.change, 
+        hardcodedRateData.changePercent, 
+        hardcodedRateData.source, 
+        hardcodedRateData.lastUpdated
+      );
+    } catch (error) {
+      console.error(`Hardcoded rates also failed: ${error.message}`);
     }
     
     // すべての方法が失敗した場合、最終的にデフォルト値を使用
-    console.warn(`All exchange rate sources failed. Using default fallback value: ${DEFAULT_EXCHANGE_RATE}`);
+    let fallbackRate = DEFAULT_EXCHANGE_RATE;
     
     // JPY/USDの場合はデフォルト値の逆数を使用
-    let fallbackRate = isJpyToUsd ? (1 / DEFAULT_EXCHANGE_RATE) : DEFAULT_EXCHANGE_RATE;
+    if (isJpyToUsd) {
+      fallbackRate = 1 / fallbackRate;
+    }
     
-    return {
-      rate: fallbackRate,
-      source: 'Emergency Fallback',
-      lastUpdated: new Date().toISOString()
-    };
+    // 緊急アラート通知
+    await alertService.notifyError(
+      'All Exchange Rate Sources Failed',
+      new Error(`Failed to get exchange rate for ${base}/${target} from all providers`),
+      { base, target, isJpyToUsd }
+    );
+    
+    return createExchangeRateResponse(
+      base, 
+      target, 
+      fallbackRate, 
+      0, 
+      0, 
+      'Emergency Fallback', 
+      new Date().toISOString(), 
+      true
+    );
   } catch (error) {
     console.error('Unexpected error in exchange rate service:', error);
     
     // 完全に予期しないエラーの場合、デフォルト値を使用
-    let fallbackRate = isJpyToUsd ? (1 / DEFAULT_EXCHANGE_RATE) : DEFAULT_EXCHANGE_RATE;
+    let fallbackRate = DEFAULT_EXCHANGE_RATE;
     
-    return {
-      rate: fallbackRate,
-      source: 'Emergency Fallback',
-      lastUpdated: new Date().toISOString()
-    };
+    // JPY/USDの場合はデフォルト値の逆数を使用
+    if (isJpyToUsd) {
+      fallbackRate = 1 / fallbackRate;
+    }
+    
+    return createExchangeRateResponse(
+      base, 
+      target, 
+      fallbackRate, 
+      0, 
+      0, 
+      'Emergency Fallback', 
+      new Date().toISOString(), 
+      true, 
+      error.message
+    );
   }
 };
 
+/**
+ * 為替レートレスポンスオブジェクトを作成する
+ * @param {string} base - ベース通貨
+ * @param {string} target - 対象通貨
+ * @param {number} rate - 為替レート
+ * @param {number} change - レート変化
+ * @param {number} changePercent - レート変化率
+ * @param {string} source - データソース
+ * @param {string} lastUpdated - 最終更新日時
+ * @param {boolean} isDefault - デフォルト値かどうか
+ * @param {string} error - エラーメッセージ
+ * @returns {Object} 為替レートレスポンス
+ */
+const createExchangeRateResponse = (
+  base, 
+  target, 
+  rate, 
+  change = 0, 
+  changePercent = 0, 
+  source = 'API', 
+  lastUpdated = new Date().toISOString(),
+  isDefault = false,
+  error = null
+) => {
+  const response = {
+    pair: `${base}${target}`,
+    base,
+    target,
+    rate,
+    change,
+    changePercent,
+    lastUpdated,
+    source
+  };
+  
+  if (isDefault) {
+    response.isDefault = true;
+  }
+  
+  if (error) {
+    response.error = error;
+  }
+  
+  return response;
+};
+
+/**
+ * exchangerate.hostからの為替レートデータを取得する
+ * @param {string} base - ベース通貨
+ * @param {string} target - 対象通貨
+ * @returns {Promise<Object|null>} 為替レートデータ
+ */
+const getExchangeRateFromExchangerateHost = async (base, target) => {
+  console.log(`Trying exchangerate.host API for ${base}/${target}...`);
+  
+  try {
+    // 再試行ロジックを使用
+    const response = await withRetry(
+      () => axios.get('https://api.exchangerate.host/latest', {
+        params: {
+          base: base,
+          symbols: target
+        },
+        headers: {
+          'User-Agent': getRandomUserAgent()
+        },
+        timeout: 5000
+      }),
+      {
+        maxRetries: 2,
+        baseDelay: 300,
+        shouldRetry: isRetryableApiError
+      }
+    );
+    
+    const data = response.data;
+    
+    if (data && data.rates && data.rates[target]) {
+      console.log(`exchangerate.host API successful! Rate: ${data.rates[target]}`);
+      
+      return {
+        rate: data.rates[target],
+        change: 0, // この無料APIでは変化率は提供されない
+        changePercent: 0,
+        source: PROVIDERS.PRIMARY,
+        lastUpdated: data.date ? new Date(`${data.date}T00:00:00Z`).toISOString() : new Date().toISOString()
+      };
+    }
+    
+    console.warn('exchangerate.host API returned no data for the requested currency pair');
+    throw new Error('No data in exchangerate.host response');
+  } catch (error) {
+    console.error('Error fetching from exchangerate.host:', error.message);
+    
+    // レート制限エラーの場合はアラート
+    if (error.response && error.response.status === 429) {
+      await alertService.notifyError(
+        'Exchange Rate API Rate Limit',
+        error,
+        { base, target, provider: PROVIDERS.PRIMARY }
+      );
+    }
+    
+    // null を返すと次のソースを試す
+    return null;
+  }
+};
+
+/**
+ * 動的計算でのレート取得
+ * @param {string} base - ベース通貨
+ * @param {string} target - 対象通貨
+ * @returns {Promise<Object|null>} 為替レートデータ
+ */
+const getExchangeRateFromDynamicCalculation = async (base, target) => {
+  console.log(`Using dynamic calculation for ${base}/${target}...`);
+  
+  try {
+    // 基本となるレート値
+    const baseRate = DEFAULT_EXCHANGE_RATE;
+    
+    // 日によって少しずつ変動させる（±3%）
+    // 完全なランダム値ではなく、日付に基づいた疑似乱数を生成
+    const today = new Date();
+    const dayOfYear = Math.floor((today - new Date(today.getFullYear(), 0, 0)) / 86400000);
+    
+    // 日付をシード値として-3%～+3%の変動を計算（週末・平日でばらつきを出す）
+    const dateSeed = (dayOfYear + today.getDay()) % 100;
+    const fluctuation = (dateSeed / 100 * 6) - 3; // -3%～+3%
+    
+    // 基本レートに変動を適用
+    const calculatedRate = baseRate * (1 + (fluctuation / 100));
+    
+    // 通貨ペアに応じたレート計算
+    const pairKey = `${base}${target}`;
+    let rate;
+    
+    if (pairKey === 'USDJPY') {
+      rate = calculatedRate;
+    } else if (pairKey === 'EURUSD') {
+      rate = 1.08 * (1 + (fluctuation / 200)); // EURUSDの変動は半分に
+    } else if (pairKey === 'EURJPY') {
+      rate = calculatedRate * 1.08;
+    } else if (pairKey === 'GBPUSD') {
+      rate = 1.27 * (1 + (fluctuation / 200));
+    } else if (pairKey === 'GBPJPY') {
+      rate = calculatedRate * 1.27;
+    } else {
+      // その他の通貨ペアにはデフォルト値を使用
+      rate = pairKey.includes('JPY') ? baseRate : 1.0;
+    }
+    
+    console.log(`Dynamic calculation successful! Rate: ${rate}`);
+    
+    // 前日比変化を計算
+    const previousDayRate = rate * (1 - fluctuation/100);
+    const change = rate - previousDayRate;
+    const changePercent = (change / previousDayRate) * 100;
+    
+    return {
+      rate: rate,
+      change: parseFloat(change.toFixed(4)),
+      changePercent: parseFloat(changePercent.toFixed(2)),
+      source: PROVIDERS.SECONDARY,
+      lastUpdated: new Date().toISOString()
+    };
+  } catch (error) {
+    console.error('Error in dynamic calculation:', error.message);
+    
+    // null を返すと次のソースを試す
+    return null;
+  }
+};
+
+/**
+ * ハードコードされた為替レート値から取得
+ * @param {string} base - ベース通貨
+ * @param {string} target - 対象通貨
+ * @returns {Object} 為替レートデータ
+ */
+const getExchangeRateFromHardcodedValues = (base, target) => {
+  console.log(`Using hardcoded exchange rates for ${base}/${target}...`);
+  
+  // 主要な通貨ペアの値
+  const hardcodedRates = {
+    'USDJPY': DEFAULT_EXCHANGE_RATE,
+    'JPYUSD': 1/DEFAULT_EXCHANGE_RATE,
+    'EURJPY': 160.2,
+    'EURUSD': 1.08,
+    'GBPUSD': 1.27,
+    'GBPJPY': 189.8
+  };
+  
+  const pairKey = `${base}${target}`;
+  let rate = hardcodedRates[pairKey];
+  
+  if (!rate) {
+    // ハードコードされていない場合はデフォルト値を使用
+    rate = (pairKey === 'USDJPY' || pairKey.includes('JPY')) ? DEFAULT_EXCHANGE_RATE : 1.0;
+  }
+  
+  console.log(`Using hardcoded exchange rate! Rate: ${rate}`);
+  
+  return {
+    rate: rate,
+    change: 0,
+    changePercent: 0,
+    source: PROVIDERS.FALLBACK,
+    lastUpdated: new Date().toISOString()
+  };
+};
+
+/**
+ * 複数の通貨ペアの為替レートを取得
+ * @param {Array<Object>} pairs - 通貨ペア配列 [{base, target}, ...]
+ * @returns {Promise<Object>} 通貨ペアをキー、為替レートを値とするオブジェクト
+ */
+const getBatchExchangeRates = async (pairs) => {
+  if (!pairs || !Array.isArray(pairs) || pairs.length === 0) {
+    throw new Error('Invalid currency pairs array');
+  }
+  
+  // 結果オブジェクト初期化
+  const results = {};
+  
+  // 各通貨ペアを並列処理
+  await Promise.allSettled(
+    pairs.map(async ({ base, target }) => {
+      try {
+        // 各ペアのレートを取得
+        const rateData = await getExchangeRate(base, target);
+        const pairKey = `${base}-${target}`;
+        results[pairKey] = rateData;
+      } catch (error) {
+        console.error(`Error getting exchange rate for ${base}/${target}:`, error.message);
+        
+        // エラーでも最低限の情報を返す
+        const pairKey = `${base}-${target}`;
+        results[pairKey] = createExchangeRateResponse(
+          base,
+          target,
+          null,
+          null,
+          null,
+          'Error',
+          new Date().toISOString(),
+          false,
+          error.message
+        );
+      }
+    })
+  );
+  
+  return results;
+};
+
 module.exports = {
-  getExchangeRate
+  getExchangeRate,
+  getBatchExchangeRates
 };

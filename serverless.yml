@@ -4,7 +4,7 @@ frameworkVersion: '3'
 
 provider:
   name: aws
-  runtime: nodejs16.x
+  runtime: nodejs18.x
   region: ${opt:region, 'ap-northeast-1'}
   stage: ${opt:stage, 'dev'}
   profile: ${opt:profile, ''}
@@ -23,20 +23,28 @@ provider:
     CACHE_TIME_JP_STOCK: ${env:CACHE_TIME_JP_STOCK, '3600'}
     CACHE_TIME_MUTUAL_FUND: ${env:CACHE_TIME_MUTUAL_FUND, '10800'}
     CACHE_TIME_EXCHANGE_RATE: ${env:CACHE_TIME_EXCHANGE_RATE, '21600'}
+    GOOGLE_CLIENT_ID: ${env:GOOGLE_CLIENT_ID, ''}
+    GOOGLE_CLIENT_SECRET: ${env:GOOGLE_CLIENT_SECRET, ''}
+    SESSION_TABLE: ${env:SESSION_TABLE, '${self:service}-${self:provider.stage}-sessions'}
+    CORS_ALLOW_ORIGIN: ${env:CORS_ALLOW_ORIGIN, '*'}
+    DRIVE_FOLDER_NAME: ${env:DRIVE_FOLDER_NAME, 'PortfolioManagerData'}
   
   iamRoleStatements:
     - Effect: Allow
       Action:
         - dynamodb:*
-      Resource: !GetAtt MarketDataCacheTable.Arn
+      Resource: 
+        - !GetAtt MarketDataCacheTable.Arn
+        - !GetAtt SessionsTable.Arn
     - Effect: Allow
       Action:
         - sns:Publish
       Resource: !Ref AlertTopic
 
 functions:
+  # 既存のマーケットデータ関連機能
   marketData:
-    handler: src/functions/marketData.handler
+    handler: src/function/marketData.handler
     events:
       - http:
           path: api/market-data
@@ -44,12 +52,12 @@ functions:
           cors: true
   
   preWarmCache:
-    handler: src/functions/preWarmCache.handler
+    handler: src/function/preWarmCache.handler
     events:
       - schedule: rate(1 hour)
   
   getStatus:
-    handler: src/functions/admin/getStatus.handler
+    handler: src/function/admin/getStatus.handler
     events:
       - http:
           path: admin/status
@@ -58,13 +66,63 @@ functions:
           private: true
   
   resetUsage:
-    handler: src/functions/admin/resetUsage.handler
+    handler: src/function/admin/resetUsage.handler
     events:
       - http:
           path: admin/reset
           method: post
           cors: true
           private: true
+  
+  # 新規追加: Google認証関連
+  googleLogin:
+    handler: src/function/auth/googleLogin.handler
+    events:
+      - http:
+          path: auth/google/login
+          method: post
+          cors: true
+  
+  getSession:
+    handler: src/function/auth/getSession.handler
+    events:
+      - http:
+          path: auth/session
+          method: get
+          cors: true
+  
+  logout:
+    handler: src/function/auth/logout.handler
+    events:
+      - http:
+          path: auth/logout
+          method: post
+          cors: true
+  
+  # Google Drive連携
+  saveFile:
+    handler: src/function/drive/saveFile.handler
+    events:
+      - http:
+          path: drive/save
+          method: post
+          cors: true
+  
+  loadFile:
+    handler: src/function/drive/loadFile.handler
+    events:
+      - http:
+          path: drive/load
+          method: get
+          cors: true
+  
+  listFiles:
+    handler: src/function/drive/listFiles.handler
+    events:
+      - http:
+          path: drive/files
+          method: get
+          cors: true
 
 resources:
   Resources:
@@ -81,6 +139,22 @@ resources:
             KeyType: HASH
         TimeToLiveSpecification:
           AttributeName: expires
+          Enabled: true
+    
+    # 新規追加: セッション管理用DynamoDBテーブル
+    SessionsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${env:SESSION_TABLE, '${self:service}-${self:provider.stage}-sessions'}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: sessionId
+            AttributeType: S
+        KeySchema:
+          - AttributeName: sessionId
+            KeyType: HASH
+        TimeToLiveSpecification:
+          AttributeName: ttl
           Enabled: true
     
     AlertTopic:

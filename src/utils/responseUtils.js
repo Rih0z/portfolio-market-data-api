@@ -1,15 +1,19 @@
 /**
  * プロジェクト: portfolio-market-data-api
- * ファイルパス: src/utils/responseFormatter.js
+ * ファイルパス: src/utils/responseUtils.js
  * 
  * 説明: 
- * API レスポンスを標準化されたフォーマットで整形するユーティリティ関数。
- * 成功レスポンス、エラーレスポンス、リダイレクトレスポンスを一貫したフォーマットで提供します。
- *
+ * API レスポンスを標準化する共通ユーティリティ。
+ * 成功レスポンス、エラーレスポンス、リダイレクトレスポンスを
+ * 一貫したフォーマットで提供します。
+ * 
  * @author Portfolio Manager Team
- * @updated 2025-05-13
+ * @created 2025-05-15
  */
 'use strict';
+
+const { ENV } = require('../config/envConfig');
+const { ERROR_CODES, RESPONSE_FORMATS } = require('../config/constants');
 
 /**
  * 成功レスポンスを整形する
@@ -37,7 +41,7 @@ const formatResponse = (options = {}) => {
   // デフォルトのCORSヘッダーを設定
   const defaultHeaders = {
     'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
+    'Access-Control-Allow-Origin': ENV.CORS_ALLOW_ORIGIN,
     'Access-Control-Allow-Credentials': 'true'
   };
 
@@ -79,7 +83,7 @@ const formatResponse = (options = {}) => {
 const formatErrorResponse = (options = {}) => {
   const {
     statusCode = 500,
-    code,
+    code = ERROR_CODES.SERVER_ERROR,
     message = 'サーバー内部エラーが発生しました',
     details = null,
     headers = {},
@@ -89,7 +93,7 @@ const formatErrorResponse = (options = {}) => {
   // デフォルトのCORSヘッダー
   const defaultHeaders = {
     'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
+    'Access-Control-Allow-Origin': ENV.CORS_ALLOW_ORIGIN,
     'Access-Control-Allow-Credentials': 'true'
   };
 
@@ -97,17 +101,13 @@ const formatErrorResponse = (options = {}) => {
   const errorBody = {
     success: false,
     error: {
+      code,
       message
     }
   };
 
-  // エラーコードがある場合は追加
-  if (code) {
-    errorBody.error.code = code;
-  }
-
   // 開発環境の場合は詳細情報も含める
-  if (details && (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test')) {
+  if (details && (ENV.NODE_ENV === 'development' || ENV.NODE_ENV === 'test')) {
     errorBody.error.details = details;
   }
 
@@ -134,15 +134,49 @@ const formatRedirectResponse = (location, statusCode = 302) => {
     statusCode,
     headers: {
       Location: location,
-      'Access-Control-Allow-Origin': process.env.CORS_ALLOW_ORIGIN || '*',
+      'Access-Control-Allow-Origin': ENV.CORS_ALLOW_ORIGIN,
       'Access-Control-Allow-Credentials': 'true'
     },
     body: ''
   };
 };
 
+/**
+ * OPTIONSリクエストのレスポンスを作成する（CORS対応）
+ * @param {Object} [headers={}] - 追加のレスポンスヘッダー
+ * @returns {Object} - API Gatewayレスポンス
+ */
+const formatOptionsResponse = (headers = {}) => {
+  const defaultHeaders = {
+    'Access-Control-Allow-Origin': ENV.CORS_ALLOW_ORIGIN,
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-api-key',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Credentials': 'true'
+  };
+
+  return {
+    statusCode: 204,
+    headers: { ...defaultHeaders, ...headers },
+    body: ''
+  };
+};
+
+/**
+ * APIリクエストのOPTIONSメソッドをハンドルする
+ * @param {Object} event - API Gatewayイベント
+ * @returns {Object|null} OPTIONSレスポンスまたはnull
+ */
+const handleOptions = (event) => {
+  if (event.httpMethod === 'OPTIONS') {
+    return formatOptionsResponse();
+  }
+  return null;
+};
+
 module.exports = {
   formatResponse,
   formatErrorResponse,
-  formatRedirectResponse
+  formatRedirectResponse,
+  formatOptionsResponse,
+  handleOptions
 };

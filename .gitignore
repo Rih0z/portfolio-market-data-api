@@ -32,6 +32,7 @@ yarn-error.log*
 # テスト
 /coverage
 /.nyc_output
+/test-results
 
 # エディタ関連
 /.idea
@@ -61,4 +62,6 @@ Thumbs.db
 .fusebox/
 .dynamodb/
 
-
+# DynamoDB Local 関連ファイル
+/dynamodb-local/
+dynamodb-local/

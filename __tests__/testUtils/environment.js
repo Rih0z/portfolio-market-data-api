@@ -1,15 +1,14 @@
 /**
- * ファイルパス: __tests__/testUtils/environment.js
- * 
  * テスト環境のセットアップと破棄を管理するユーティリティ
  * 
  * @file __tests__/testUtils/environment.js
  * @author Portfolio Manager Team
- * @updated Koki - 2025-05-12 バグ修正: エラーハンドリングを追加、テーブル作成を非同期に改善
+ * @updated 2025-05-12 バグ修正: エラーハンドリングを追加、テーブル作成を非同期に改善
  */
 const { startDynamoDBLocal, stopDynamoDBLocal, createTestTable } = require('./dynamodbLocal');
 const { setupMockServer, stopMockServer } = require('./mockServer');
 const { mockExternalApis } = require('./apiMocks');
+const axios = require('axios');
 
 /**
  * テスト環境をセットアップする
@@ -19,6 +18,16 @@ const setupTestEnvironment = async () => {
     // テスト用の環境変数をセット
     process.env.NODE_ENV = 'test';
     process.env.DYNAMODB_ENDPOINT = 'http://localhost:8000';
+    
+    // API サーバーが稼働しているか確認
+    const apiBaseUrl = process.env.API_TEST_URL || 'http://localhost:3000';
+    try {
+      await axios.get(`${apiBaseUrl}/health`, { timeout: 2000 });
+      console.log(`✅ API server is running at ${apiBaseUrl}`);
+    } catch (apiError) {
+      console.warn(`⚠️ API server at ${apiBaseUrl} may not be running. E2E tests will likely fail.`);
+      console.warn('Please start the API server with `npm run dev` in a separate terminal window.');
+    }
     
     // DynamoDB Localを起動
     await startDynamoDBLocal().catch(error => {

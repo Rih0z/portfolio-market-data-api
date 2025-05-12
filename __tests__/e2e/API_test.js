@@ -9,7 +9,7 @@
 const axios = require('axios');
 const { setupTestEnvironment, teardownTestEnvironment } = require('../testUtils/environment');
 
-// APIエンドポイント（テスト環境用）
+// APIエンドポイント（テスト環境用）- APIサーバーが実際に起動していることを確認
 const API_BASE_URL = process.env.API_TEST_URL || 'http://localhost:3000';
 
 // テストデータ
@@ -41,6 +41,14 @@ describe('Portfolio Market Data API E2Eテスト', () => {
   // テスト環境のセットアップ
   beforeAll(async () => {
     await setupTestEnvironment();
+    // サーバーが起動していることを確認
+    try {
+      await axios.get(`${API_BASE_URL}/health`);
+      console.log(`✅ API server is running at ${API_BASE_URL}`);
+    } catch (error) {
+      console.error(`❌ API server is not running at ${API_BASE_URL}. Please start the server with 'npm run dev'`);
+      throw new Error('API server is not running');
+    }
   });
   
   // テスト環境のクリーンアップ
@@ -303,4 +311,3 @@ describe('Portfolio Market Data API E2Eテスト', () => {
     });
   });
 });
-

@@ -1,58 +1,63 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuites name="jest tests" tests="18" failures="3" errors="0" time="2.932">
-  <testsuite name="responseUtils" errors="0" failures="1" skipped="0" timestamp="2025-05-12T08:59:10" time="0.132" tests="12">
-    <testcase classname="responseUtils formatResponse デフォルトパラメータでの正常レスポンス" name="responseUtils formatResponse デフォルトパラメータでの正常レスポンス" time="0.002">
+<testsuites name="jest tests" tests="27" failures="0" errors="0" time="1.17">
+  <testsuite name="Google Login Handler" errors="0" failures="0" skipped="0" timestamp="2025-05-13T09:43:50" time="0.698" tests="6">
+    <testcase classname="__tests__/integration/auth/googleLogin.test.js" name="Google Login Handler &gt; 正常なGoogleログイン処理の実行" time="0.01">
     </testcase>
-    <testcase classname="responseUtils formatResponse カスタムステータスコードとヘッダーでの正常レスポンス" name="responseUtils formatResponse カスタムステータスコードとヘッダーでの正常レスポンス" time="0.001">
-      <failure>TypeError: Cannot read properties of undefined (reading &apos;statusCode&apos;)
-    at Object.statusCode (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/unit/utils/responseUtils.test.js:70:23)
-    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
+    <testcase classname="__tests__/integration/auth/googleLogin.test.js" name="Google Login Handler &gt; 認証コードなしでの呼び出し" time="0">
     </testcase>
-    <testcase classname="responseUtils formatResponse 予算警告スキップオプション" name="responseUtils formatResponse 予算警告スキップオプション" time="0">
+    <testcase classname="__tests__/integration/auth/googleLogin.test.js" name="Google Login Handler &gt; 認証コード交換エラー時の処理" time="0.006">
     </testcase>
-    <testcase classname="responseUtils formatErrorResponse デフォルトパラメータでのエラーレスポンス" name="responseUtils formatErrorResponse デフォルトパラメータでのエラーレスポンス" time="0.001">
+    <testcase classname="__tests__/integration/auth/googleLogin.test.js" name="Google Login Handler &gt; IDトークン検証エラー時の処理" time="0.001">
     </testcase>
-    <testcase classname="responseUtils formatErrorResponse 詳細エラー情報を含むエラーレスポンス（開発環境用）" name="responseUtils formatErrorResponse 詳細エラー情報を含むエラーレスポンス（開発環境用）" time="0">
+    <testcase classname="__tests__/integration/auth/googleLogin.test.js" name="Google Login Handler &gt; セッション作成エラー時の処理" time="0.001">
     </testcase>
-    <testcase classname="responseUtils formatErrorResponse 使用量情報を含むエラーレスポンス" name="responseUtils formatErrorResponse 使用量情報を含むエラーレスポンス" time="0">
-    </testcase>
-    <testcase classname="responseUtils formatRedirectResponse デフォルトの一時的リダイレクト" name="responseUtils formatRedirectResponse デフォルトの一時的リダイレクト" time="0">
-    </testcase>
-    <testcase classname="responseUtils formatRedirectResponse 恒久的リダイレクト" name="responseUtils formatRedirectResponse 恒久的リダイレクト" time="0">
-    </testcase>
-    <testcase classname="responseUtils formatOptionsResponse デフォルトのOPTIONSレスポンス" name="responseUtils formatOptionsResponse デフォルトのOPTIONSレスポンス" time="0.001">
-    </testcase>
-    <testcase classname="responseUtils formatOptionsResponse カスタムヘッダー付きのOPTIONSレスポンス" name="responseUtils formatOptionsResponse カスタムヘッダー付きのOPTIONSレスポンス" time="0">
-    </testcase>
-    <testcase classname="responseUtils handleOptions OPTIONSメソッドの処理" name="responseUtils handleOptions OPTIONSメソッドの処理" time="0.001">
-    </testcase>
-    <testcase classname="responseUtils handleOptions OPTIONSメソッド以外の処理" name="responseUtils handleOptions OPTIONSメソッド以外の処理" time="0">
+    <testcase classname="__tests__/integration/auth/googleLogin.test.js" name="Google Login Handler &gt; 完全な認証フロー（ログイン→セッション確認→ログアウト）" time="0.001">
     </testcase>
   </testsuite>
-  <testsuite name="Google Login Handler" errors="0" failures="2" skipped="0" timestamp="2025-05-12T08:59:10" time="0.949" tests="6">
-    <testcase classname="Google Login Handler 正常なGoogleログイン処理の実行" name="Google Login Handler 正常なGoogleログイン処理の実行" time="0.024">
-      <failure>Error: expect(received).toBeDefined()
-
-Received: undefined
-    at Object.toBeDefined (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/integration/auth/googleLogin.test.js:153:30)
-    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
+  <testsuite name="Portfolio Market Data API E2Eテスト" errors="0" failures="0" skipped="0" timestamp="2025-05-13T09:43:51" time="0.43" tests="9">
+    <testcase classname="__tests__/e2e/API_test.js" name="Portfolio Market Data API E2Eテスト &gt; マーケットデータAPI &gt; 米国株データ取得" time="0.004">
     </testcase>
-    <testcase classname="Google Login Handler 認証コードなしでの呼び出し" name="Google Login Handler 認証コードなしでの呼び出し" time="0">
+    <testcase classname="__tests__/e2e/API_test.js" name="Portfolio Market Data API E2Eテスト &gt; マーケットデータAPI &gt; 日本株データ取得" time="0.003">
     </testcase>
-    <testcase classname="Google Login Handler 認証コード交換エラー時の処理" name="Google Login Handler 認証コード交換エラー時の処理" time="0.003">
+    <testcase classname="__tests__/e2e/API_test.js" name="Portfolio Market Data API E2Eテスト &gt; マーケットデータAPI &gt; 投資信託データ取得" time="0.004">
     </testcase>
-    <testcase classname="Google Login Handler IDトークン検証エラー時の処理" name="Google Login Handler IDトークン検証エラー時の処理" time="0.001">
+    <testcase classname="__tests__/e2e/API_test.js" name="Portfolio Market Data API E2Eテスト &gt; マーケットデータAPI &gt; 為替レートデータ取得" time="0.003">
     </testcase>
-    <testcase classname="Google Login Handler セッション作成エラー時の処理" name="Google Login Handler セッション作成エラー時の処理" time="0.001">
+    <testcase classname="__tests__/e2e/API_test.js" name="Portfolio Market Data API E2Eテスト &gt; マーケットデータAPI &gt; 無効なパラメータでのエラーハンドリング" time="0.005">
     </testcase>
-    <testcase classname="Google Login Handler 完全な認証フロー（ログイン→セッション確認→ログアウト）" name="Google Login Handler 完全な認証フロー（ログイン→セッション確認→ログアウト）" time="0.006">
-      <failure>Error: expect(jest.fn()).toHaveBeenCalledWith(...expected)
-
-Expected: &quot;complete-flow-session-id&quot;
-
-Number of calls: 0
-    at Object.toHaveBeenCalledWith (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/integration/auth/googleLogin.test.js:434:42)
-    at processTicksAndRejections (node:internal/process/task_queues:105:5)</failure>
+    <testcase classname="__tests__/e2e/API_test.js" name="Portfolio Market Data API E2Eテスト &gt; 認証API &gt; 認証フロー: ログイン、セッション取得、ログアウト" time="0.016">
+    </testcase>
+    <testcase classname="__tests__/e2e/API_test.js" name="Portfolio Market Data API E2Eテスト &gt; Google Drive API &gt; ポートフォリオデータの保存と読み込み" time="0.012">
+    </testcase>
+    <testcase classname="__tests__/e2e/API_test.js" name="Portfolio Market Data API E2Eテスト &gt; Google Drive API &gt; 認証なしでのアクセス拒否" time="0.009">
+    </testcase>
+    <testcase classname="__tests__/e2e/API_test.js" name="Portfolio Market Data API E2Eテスト &gt; API基本機能 &gt; ヘルスチェックエンドポイント" time="0.003">
+    </testcase>
+  </testsuite>
+  <testsuite name="responseUtils" errors="0" failures="0" skipped="0" timestamp="2025-05-13T09:43:51" time="0.018" tests="12">
+    <testcase classname="__tests__/unit/utils/responseUtils.test.js" name="responseUtils &gt; formatResponse &gt; デフォルトパラメータでの正常レスポンス" time="0">
+    </testcase>
+    <testcase classname="__tests__/unit/utils/responseUtils.test.js" name="responseUtils &gt; formatResponse &gt; カスタムステータスコードとヘッダーでの正常レスポンス" time="0.001">
+    </testcase>
+    <testcase classname="__tests__/unit/utils/responseUtils.test.js" name="responseUtils &gt; formatResponse &gt; 予算警告スキップオプション" time="0">
+    </testcase>
+    <testcase classname="__tests__/unit/utils/responseUtils.test.js" name="responseUtils &gt; formatErrorResponse &gt; デフォルトパラメータでのエラーレスポンス" time="0">
+    </testcase>
+    <testcase classname="__tests__/unit/utils/responseUtils.test.js" name="responseUtils &gt; formatErrorResponse &gt; 詳細エラー情報を含むエラーレスポンス（開発環境用）" time="0">
+    </testcase>
+    <testcase classname="__tests__/unit/utils/responseUtils.test.js" name="responseUtils &gt; formatErrorResponse &gt; 使用量情報を含むエラーレスポンス" time="0">
+    </testcase>
+    <testcase classname="__tests__/unit/utils/responseUtils.test.js" name="responseUtils &gt; formatRedirectResponse &gt; デフォルトの一時的リダイレクト" time="0.001">
+    </testcase>
+    <testcase classname="__tests__/unit/utils/responseUtils.test.js" name="responseUtils &gt; formatRedirectResponse &gt; 恒久的リダイレクト" time="0">
+    </testcase>
+    <testcase classname="__tests__/unit/utils/responseUtils.test.js" name="responseUtils &gt; formatOptionsResponse &gt; デフォルトのOPTIONSレスポンス" time="0">
+    </testcase>
+    <testcase classname="__tests__/unit/utils/responseUtils.test.js" name="responseUtils &gt; formatOptionsResponse &gt; カスタムヘッダー付きのOPTIONSレスポンス" time="0">
+    </testcase>
+    <testcase classname="__tests__/unit/utils/responseUtils.test.js" name="responseUtils &gt; handleOptions &gt; OPTIONSメソッドの処理" time="0">
+    </testcase>
+    <testcase classname="__tests__/unit/utils/responseUtils.test.js" name="responseUtils &gt; handleOptions &gt; OPTIONSメソッド以外の処理" time="0">
     </testcase>
   </testsuite>
 </testsuites>

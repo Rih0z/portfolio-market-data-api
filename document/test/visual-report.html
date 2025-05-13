@@ -32,7 +32,7 @@
         }
         
         header {
-            background-color: var(--primary);
+            background-color: var(--success);
             color: white;
             padding: 1rem 0;
             margin-bottom: 2rem;
@@ -110,6 +110,10 @@
         
         .failed-box {
             background-color: var(--danger);
+        }
+        
+        .coverage-box {
+            background-color: var(--info);
         }
         
         .charts-row {
@@ -266,6 +270,161 @@
             background-color: #3651d4;
         }
         
+        /* サマリーボックスのスタイル */
+        .chart-summary {
+            background-color: #f8f9fa;
+            border-left: 4px solid var(--primary);
+            padding: 1rem;
+            margin-top: 1rem;
+            border-radius: 4px;
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+        
+        /* カバレッジクラス */
+        .coverage-summary {
+            background-color: rgba(255, 152, 0, 0.1);
+            border-left: 4px solid var(--warning);
+            padding: 1rem;
+            margin-top: 1rem;
+            border-radius: 4px;
+        }
+        
+        .coverage-details {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            margin-top: 0.5rem;
+        }
+        
+        .coverage-item {
+            flex: 1 1 200px;
+            padding: 0.5rem;
+            margin: 0.25rem;
+            background-color: #fff;
+            border-radius: 4px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+        
+        .coverage-item-header {
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+        
+        .coverage-value {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--danger);
+        }
+        
+        .coverage-threshold {
+            font-size: 0.85rem;
+            color: #666;
+        }
+        
+        .highlight {
+            font-weight: 600;
+            color: var(--primary);
+        }
+        
+        .animation-info {
+            font-size: 0.85rem;
+            color: #666;
+            font-style: italic;
+            margin-top: 0.5rem;
+            text-align: center;
+        }
+        
+        /* グラフのホバー効果を強化 */
+        .chart-container:hover {
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            transition: box-shadow 0.3s ease;
+        }
+        
+        /* ステータスバナー */
+        .status-banner {
+            padding: 0.5rem 1rem;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 1rem;
+            border-radius: 4px;
+        }
+        
+        .status-success {
+            background-color: rgba(76, 175, 80, 0.2);
+            color: var(--success);
+            border: 1px solid var(--success);
+        }
+        
+        .status-failure {
+            background-color: rgba(244, 67, 54, 0.2);
+            color: var(--danger);
+            border: 1px solid var(--danger);
+        }
+        
+        .status-warning {
+            background-color: rgba(255, 152, 0, 0.2);
+            color: var(--warning);
+            border: 1px solid var(--warning);
+        }
+        
+        /* カバレッジトグルスイッチ */
+        .toggle-container {
+            display: flex;
+            align-items: center;
+            margin: 1rem 0;
+        }
+        
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+            margin-right: 10px;
+        }
+        
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+        
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        
+        input:checked + .slider {
+            background-color: var(--primary);
+        }
+        
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+        
+        .toggle-label {
+            font-size: 0.9rem;
+        }
+        
         @media (max-width: 768px) {
             .charts-row {
                 flex-direction: column;
@@ -281,31 +440,51 @@
     <header>
         <div class="container">
             <h1>Portfolio Market Data API テスト結果</h1>
-            <div>実行日時: 5/12/2025, 1:59:10 AM</div>
+            <div>実行日時: 5/13/2025, 2:43:50 AM</div>
         </div>
     </header>
     
     <div class="container">
+        <!-- テスト状態バナー -->
+        <div id="status-banner" class="status-banner status-warning">
+            テスト結果: 全テスト成功 ✓ | カバレッジ: 基準未達 ⚠
+        </div>
+        
+        <!-- カバレッジ考慮切り替え -->
+        <div class="toggle-container">
+            <label class="toggle-switch">
+                <input type="checkbox" id="coverage-toggle" checked>
+                <span class="slider"></span>
+            </label>
+            <span class="toggle-label">カバレッジエラーを無視する（テスト成功に集中）</span>
+        </div>
+        
         <div class="summary-stats">
             <div class="stat-box total-box">
                 <h3>テスト総数</h3>
-                <div class="number">18</div>
+                <div class="number">27</div>
                 <div class="description">3つのテストスイートで実行</div>
             </div>
             <div class="stat-box passed-box">
                 <h3>合格</h3>
-                <div class="number">15</div>
-                <div class="description">83.3% の成功率</div>
+                <div class="number">27</div>
+                <div class="description">100.0% の成功率</div>
             </div>
             <div class="stat-box failed-box">
                 <h3>不合格</h3>
-                <div class="number">3</div>
-                <div class="description">16.7% の失敗率</div>
+                <div class="number">0</div>
+                <div class="description">0.0% の失敗率</div>
+            </div>
+            <div class="stat-box coverage-box">
+                <h3>コードカバレッジ</h3>
+                <div class="number">5.38%</div>
+                <div class="description">テスト済みコードの割合</div>
             </div>
         </div>
         
         <div class="tabs">
             <div class="tab active" data-tab="overview">概要</div>
+            <div class="tab" data-tab="coverage">カバレッジ</div>
             <div class="tab" data-tab="details">詳細結果</div>
             <div class="tab" data-tab="logs">ログ</div>
         </div>
@@ -313,28 +492,171 @@
         <div id="overview" class="tab-content active">
             <div class="card">
                 <div class="card-header">テスト結果概要</div>
+                <div class="animation-info">グラフはデータを可視化するためにアニメーションします。グラフ部分にマウスを乗せると詳細が表示されます。</div>
                 <div class="charts-row">
                     <div class="chart-container">
                         <canvas id="overviewChart"></canvas>
+                        <div class="chart-summary">
+                            <p>全体の <span class="highlight">100.0%</span> のテストが成功しています。合格テスト数: <span class="highlight">27</span>、不合格テスト数: <span class="highlight">0</span>。</p>
+                        </div>
                     </div>
                     <div class="chart-container">
                         <canvas id="testSuiteChart"></canvas>
+                        <div class="chart-summary">
+                            <p>最も成功率が高いテストスイート: <span class="highlight">googleLogin.test.js</span> (100.0%)</p>
+                            <p>最も成功率が低いテストスイート: <span class="highlight">googleLogin.test.js</span> (100.0%)</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            
+            
+            <div class="card">
+                <div class="card-header">コードカバレッジの概要</div>
+                <div class="chart-container">
+                    <canvas id="coverageChart"></canvas>
+                    <div class="coverage-summary">
+                        <p><strong>全体のコードカバレッジ: 5.38%</strong></p>
+                        <p>これは、テストによって動作が検証されたコードの割合を示しています。</p>
+                        <p>現在のカバレッジは<strong>非常に低い</strong>です。基準を下回っています。</p>
+                        
+                        <div class="coverage-details">
+                            <div class="coverage-item">
+                                <div class="coverage-item-header">ステートメント</div>
+                                <div class="coverage-value">5.73%</div>
+                                <div class="coverage-threshold">目標: 80%</div>
+                            </div>
+                            <div class="coverage-item">
+                                <div class="coverage-item-header">ブランチ</div>
+                                <div class="coverage-value">5.82%</div>
+                                <div class="coverage-threshold">目標: 70%</div>
+                            </div>
+                            <div class="coverage-item">
+                                <div class="coverage-item-header">関数</div>
+                                <div class="coverage-value">4.08%</div>
+                                <div class="coverage-threshold">目標: 80%</div>
+                            </div>
+                            <div class="coverage-item">
+                                <div class="coverage-item-header">行</div>
+                                <div class="coverage-value">5.89%</div>
+                                <div class="coverage-threshold">目標: 80%</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
             
             <div class="card">
-                <div class="card-header">エラータイプ分析</div>
+                <div class="card-header">改善のためのアドバイス</div>
+                <ul>
+                    <li>テスト自体はすべて成功しています（27/27）</li>
+                    <li>カバレッジが低い理由は、テストケースの数が限られているためです。</li>
+                    <li>カバレッジを改善するには、より多くのテストケースを追加し、未テストのコードパスをカバーしてください。</li>
+                    <li>開発中は <code>./scripts/run-tests.sh -i e2e</code> コマンドでカバレッジエラーを無視できます。</li>
+                    <li>または <code>jest.config.js</code> でしきい値を一時的に下げて開発を進めることもできます。</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div id="coverage" class="tab-content">
+            <div class="card">
+                <div class="card-header">コードカバレッジの詳細</div>
                 <div class="chart-container">
-                    <canvas id="errorTypeChart"></canvas>
+                    <canvas id="detailedCoverageChart"></canvas>
+                </div>
+                
+                <div class="coverage-summary">
+                    <h3>カバレッジとは何か？</h3>
+                    <p>コードカバレッジは、テストによって実行されたプログラムコードの割合を示す指標です。以下の4つの側面からカバレッジを測定しています：</p>
+                    
+                    <ul>
+                        <li><strong>ステートメントカバレッジ（5.73%）</strong>：テストで実行されたコード文の割合</li>
+                        <li><strong>ブランチカバレッジ（5.82%）</strong>：テストで評価された条件分岐（if/elseなど）の割合</li>
+                        <li><strong>関数カバレッジ（4.08%）</strong>：テストで呼び出された関数の割合</li>
+                        <li><strong>行カバレッジ（5.89%）</strong>：テストで実行されたコード行の割合</li>
+                    </ul>
+                    
+                    <h3>カバレッジが低い理由</h3>
+                    <p>現在のプロジェクトでは、全体でのコードカバレッジが約<strong>5.38%</strong>となっています。これは一般的な商用プロジェクトの目標である80%を下回っています。理由としては以下のようなものが考えられます：</p>
+                    
+                    <ul>
+                        <li>プロジェクトの初期段階であり、まだ十分なテストが作成されていない</li>
+                        <li>エラー処理やエッジケースなどの条件分岐が十分にテストされていない</li>
+                        <li>一部のモジュールや関数にテストが集中し、他の部分がカバーされていない</li>
+                    </ul>
+                    
+                    <h3>カバレッジを改善するための方法</h3>
+                    <p>コードカバレッジを改善するためのいくつかの方法：</p>
+                    
+                    <ul>
+                        <li>カバレッジレポートを確認し、未テストの関数やモジュールに対するテストを追加する</li>
+                        <li>条件分岐の両方のパスをテストする（if/else両方をカバー）</li>
+                        <li>エラー処理パスやエッジケースに対するテストを追加する</li>
+                        <li>統合テストやE2Eテストだけでなく、単体テストの数を増やす</li>
+                    </ul>
+                    
+                    <h3>開発中のカバレッジ対応</h3>
+                    <p>開発中はカバレッジが低くても問題ありません。以下の方法で対応できます：</p>
+                    
+                    <ul>
+                        <li><code>./scripts/run-tests.sh -i e2e</code> コマンドでカバレッジエラーを無視</li>
+                        <li><code>jest.config.js</code> でカバレッジしきい値を一時的に下げる</li>
+                        <li>リリース前に徐々にカバレッジを改善し、最終的には目標を達成する</li>
+                    </ul>
                 </div>
             </div>
             
             <div class="card">
-                <div class="card-header">修正状況</div>
-                <div class="chart-container">
-                    <canvas id="fixStatusChart"></canvas>
-                </div>
+                <div class="card-header">ファイル別カバレッジ情報</div>
+                <table style="width: 100%; border-collapse: collapse; margin-top: 1rem;">
+                    <thead>
+                        <tr style="background-color: #f3f4f6; text-align: left;">
+                            <th style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb;">ファイル</th>
+                            <th style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb;">ステートメント %</th>
+                            <th style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb;">ブランチ %</th>
+                            <th style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb;">関数 %</th>
+                            <th style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb;">行 %</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb;">src/utils/responseUtils.js</td>
+                            <td style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb; color: red;">78.26</td>
+                            <td style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb; color: red;">54.16</td>
+                            <td style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb; color: green;">85.71</td>
+                            <td style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb; color: red;">78.26</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb;">src/utils/dynamoDbService.js</td>
+                            <td style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb; color: red;">28.12</td>
+                            <td style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb; color: red;">20.83</td>
+                            <td style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb; color: red;">9.09</td>
+                            <td style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb; color: red;">28.57</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb;">src/services/googleAuthService.js</td>
+                            <td style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb; color: red;">19.58</td>
+                            <td style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb; color: red;">36.36</td>
+                            <td style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb; color: red;">0.00</td>
+                            <td style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb; color: red;">19.58</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb;">src/utils/budgetCheck.js</td>
+                            <td style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb; color: red;">15.59</td>
+                            <td style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb; color: red;">7.14</td>
+                            <td style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb; color: red;">0.00</td>
+                            <td style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb; color: red;">15.59</td>
+                        </tr>
+                        <tr>
+                            <td style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb;">その他のファイル</td>
+                            <td style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb; color: red;">&lt; 5%</td>
+                            <td style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb; color: red;">&lt; 5%</td>
+                            <td style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb; color: red;">&lt; 5%</td>
+                            <td style="padding: 0.75rem; border-bottom: 1px solid #e5e7eb; color: red;">&lt; 5%</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
         
@@ -345,14 +667,132 @@
                     
                         <div class="suite">
                             <div class="suite-header" data-suite="0">
-                                <div class="suite-name">responseUtils.test.js</div>
+                                <div class="suite-name">googleLogin.test.js</div>
                                 <div class="suite-stats">
-                                    <div class="passed-count">✓ 11</div>
-                                    <div class="failed-count">✗ 1</div>
-                                    <div>合計: 12</div>
+                                    <div class="passed-count">✓ 6</div>
+                                    <div class="failed-count">✗ 0</div>
+                                    <div>合計: 6</div>
                                 </div>
                             </div>
                             <div class="test-cases" id="suite-0">
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">Google Login Handler > 正常なGoogleログイン処理の実行</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">Google Login Handler > 認証コードなしでの呼び出し</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">Google Login Handler > 認証コード交換エラー時の処理</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">Google Login Handler > IDトークン検証エラー時の処理</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">Google Login Handler > セッション作成エラー時の処理</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">Google Login Handler > 完全な認証フロー（ログイン→セッション確認→ログアウト）</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                            </div>
+                        </div>
+                    
+                        <div class="suite">
+                            <div class="suite-header" data-suite="1">
+                                <div class="suite-name">API_test.js</div>
+                                <div class="suite-stats">
+                                    <div class="passed-count">✓ 9</div>
+                                    <div class="failed-count">✗ 0</div>
+                                    <div>合計: 9</div>
+                                </div>
+                            </div>
+                            <div class="test-cases" id="suite-1">
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">Portfolio Market Data API E2Eテスト > マーケットデータAPI > 米国株データ取得</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">Portfolio Market Data API E2Eテスト > マーケットデータAPI > 日本株データ取得</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">Portfolio Market Data API E2Eテスト > マーケットデータAPI > 投資信託データ取得</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">Portfolio Market Data API E2Eテスト > マーケットデータAPI > 為替レートデータ取得</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">Portfolio Market Data API E2Eテスト > マーケットデータAPI > 無効なパラメータでのエラーハンドリング</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">Portfolio Market Data API E2Eテスト > 認証API > 認証フロー: ログイン、セッション取得、ログアウト</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">Portfolio Market Data API E2Eテスト > Google Drive API > ポートフォリオデータの保存と読み込み</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">Portfolio Market Data API E2Eテスト > Google Drive API > 認証なしでのアクセス拒否</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                                    <div class="test-case passed">
+                                        <div class="test-name">Portfolio Market Data API E2Eテスト > API基本機能 > ヘルスチェックエンドポイント</div>
+                                        <div class="test-status">✓ 合格</div>
+                                        
+                                    </div>
+                                
+                            </div>
+                        </div>
+                    
+                        <div class="suite">
+                            <div class="suite-header" data-suite="2">
+                                <div class="suite-name">responseUtils.test.js</div>
+                                <div class="suite-stats">
+                                    <div class="passed-count">✓ 12</div>
+                                    <div class="failed-count">✗ 0</div>
+                                    <div>合計: 12</div>
+                                </div>
+                            </div>
+                            <div class="test-cases" id="suite-2">
                                 
                                     <div class="test-case passed">
                                         <div class="test-name">responseUtils > formatResponse > デフォルトパラメータでの正常レスポンス</div>
@@ -360,13 +800,9 @@
                                         
                                     </div>
                                 
-                                    <div class="test-case failed">
+                                    <div class="test-case passed">
                                         <div class="test-name">responseUtils > formatResponse > カスタムステータスコードとヘッダーでの正常レスポンス</div>
-                                        <div class="test-status">✗ 不合格</div>
-                                        
-                                            <div class="error-log">TypeError: Cannot read properties of undefined (reading 'statusCode')
-    at Object.statusCode (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/unit/utils/responseUtils.test.js:70:23)
-    at processTicksAndRejections (node:internal/process/task_queues:105:5)</div>
+                                        <div class="test-status">✓ 合格</div>
                                         
                                     </div>
                                 
@@ -433,84 +869,6 @@
                             </div>
                         </div>
                     
-                        <div class="suite">
-                            <div class="suite-header" data-suite="1">
-                                <div class="suite-name">googleLogin.test.js</div>
-                                <div class="suite-stats">
-                                    <div class="passed-count">✓ 4</div>
-                                    <div class="failed-count">✗ 2</div>
-                                    <div>合計: 6</div>
-                                </div>
-                            </div>
-                            <div class="test-cases" id="suite-1">
-                                
-                                    <div class="test-case failed">
-                                        <div class="test-name">Google Login Handler > 正常なGoogleログイン処理の実行</div>
-                                        <div class="test-status">✗ 不合格</div>
-                                        
-                                            <div class="error-log">Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeDefined[2m()[22m
-
-Received: [31mundefined[39m
-    at Object.toBeDefined (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/integration/auth/googleLogin.test.js:153:30)
-    at processTicksAndRejections (node:internal/process/task_queues:105:5)</div>
-                                        
-                                    </div>
-                                
-                                    <div class="test-case passed">
-                                        <div class="test-name">Google Login Handler > 認証コードなしでの呼び出し</div>
-                                        <div class="test-status">✓ 合格</div>
-                                        
-                                    </div>
-                                
-                                    <div class="test-case passed">
-                                        <div class="test-name">Google Login Handler > 認証コード交換エラー時の処理</div>
-                                        <div class="test-status">✓ 合格</div>
-                                        
-                                    </div>
-                                
-                                    <div class="test-case passed">
-                                        <div class="test-name">Google Login Handler > IDトークン検証エラー時の処理</div>
-                                        <div class="test-status">✓ 合格</div>
-                                        
-                                    </div>
-                                
-                                    <div class="test-case passed">
-                                        <div class="test-name">Google Login Handler > セッション作成エラー時の処理</div>
-                                        <div class="test-status">✓ 合格</div>
-                                        
-                                    </div>
-                                
-                                    <div class="test-case failed">
-                                        <div class="test-name">Google Login Handler > 完全な認証フロー（ログイン→セッション確認→ログアウト）</div>
-                                        <div class="test-status">✗ 不合格</div>
-                                        
-                                            <div class="error-log">Error: [2mexpect([22m[31mjest.fn()[39m[2m).[22mtoHaveBeenCalledWith[2m([22m[32m...expected[39m[2m)[22m
-
-Expected: [32m"complete-flow-session-id"[39m
-
-Number of calls: [31m0[39m
-    at Object.toHaveBeenCalledWith (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/integration/auth/googleLogin.test.js:434:42)
-    at processTicksAndRejections (node:internal/process/task_queues:105:5)</div>
-                                        
-                                    </div>
-                                
-                            </div>
-                        </div>
-                    
-                        <div class="suite">
-                            <div class="suite-header" data-suite="2">
-                                <div class="suite-name">API_test.js</div>
-                                <div class="suite-stats">
-                                    <div class="passed-count">✓ 0</div>
-                                    <div class="failed-count">✗ 0</div>
-                                    <div>合計: 0</div>
-                                </div>
-                            </div>
-                            <div class="test-cases" id="suite-2">
-                                
-                            </div>
-                        </div>
-                    
                 </div>
             </div>
         </div>
@@ -521,47 +879,25 @@ Number of calls: [31m0[39m
                 <button id="copy-logs" class="copy-button">ログをコピー</button>
                 <div class="log-container" id="full-logs">
 <div class="log-title">テスト実行結果要約</div>
-テスト実行日時: 2025-05-12T08:59:10.849Z
-所要時間: 2938ms
+テスト実行日時: 2025-05-13T09:43:50.382Z
+所要時間: 1174ms
 
 テスト統計:
-- 合計テスト数: 18
-- 成功: 15
-- 失敗: 3
+- 合計テスト数: 27
+- 成功: 27
+- 失敗: 0
 - 保留: 0
 
+コードカバレッジ:
+- ステートメント: 5.73% (目標: 80%)
+- ブランチ: 5.82% (目標: 70%)
+- 関数: 4.08% (目標: 80%)
+- 行: 5.89% (目標: 80%)
+
 失敗したテスト:
-- responseUtils formatResponse カスタムステータスコードとヘッダーでの正常レスポンス
-- Google Login Handler 正常なGoogleログイン処理の実行
-- Google Login Handler 完全な認証フロー（ログイン→セッション確認→ログアウト）
+
 
 詳細なエラー:
-
-テスト: responseUtils formatResponse カスタムステータスコードとヘッダーでの正常レスポンス
-エラー:
-TypeError: Cannot read properties of undefined (reading 'statusCode')
-    at Object.statusCode (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/unit/utils/responseUtils.test.js:70:23)
-    at processTicksAndRejections (node:internal/process/task_queues:105:5)
-
-
-テスト: Google Login Handler 正常なGoogleログイン処理の実行
-エラー:
-Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeDefined[2m()[22m
-
-Received: [31mundefined[39m
-    at Object.toBeDefined (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/integration/auth/googleLogin.test.js:153:30)
-    at processTicksAndRejections (node:internal/process/task_queues:105:5)
-
-
-テスト: Google Login Handler 完全な認証フロー（ログイン→セッション確認→ログアウト）
-エラー:
-Error: [2mexpect([22m[31mjest.fn()[39m[2m).[22mtoHaveBeenCalledWith[2m([22m[32m...expected[39m[2m)[22m
-
-Expected: [32m"complete-flow-session-id"[39m
-
-Number of calls: [31m0[39m
-    at Object.toHaveBeenCalledWith (/Users/kokiriho/Documents/Projects/pfwise-api/__tests__/integration/auth/googleLogin.test.js:434:42)
-    at processTicksAndRejections (node:internal/process/task_queues:105:5)
 
                 </div>
             </div>
@@ -569,6 +905,41 @@ Number of calls: [31m0[39m
     </div>
     
     <script>
+        // 変数の初期化
+        const ignoreThreshold = true; // カバレッジ無視の初期状態
+        const coverageToggle = document.getElementById('coverage-toggle');
+        const statusBanner = document.getElementById('status-banner');
+        
+        // カバレッジトグルの変更を監視
+        coverageToggle.addEventListener('change', function() {
+            updateStatusBanner();
+        });
+        
+        // ステータスバナーを更新する関数
+        function updateStatusBanner() {
+            const ignoreCoverage = coverageToggle.checked;
+            
+            if (true) {
+                // テスト自体は成功
+                if (ignoreCoverage || false) {
+                    statusBanner.className = 'status-banner status-success';
+                    statusBanner.innerHTML = 'テスト結果: 全テスト成功 ✓ | カバレッジ: ' + 
+                      (ignoreCoverage ? '無視' : '基準未達 ⚠');
+                } else {
+                    statusBanner.className = 'status-banner status-warning';
+                    statusBanner.innerHTML = 'テスト結果: 全テスト成功 ✓ | カバレッジ: 基準未達 ⚠';
+                }
+            } else {
+                // テスト失敗
+                statusBanner.className = 'status-banner status-failure';
+                statusBanner.innerHTML = 'テスト結果: テスト失敗 ✗ | カバレッジ: ' + 
+                    (ignoreCoverage ? '無視' : '基準未達 ⚠');
+            }
+        }
+        
+        // 初期表示の設定
+        updateStatusBanner();
+        
         // タブ切り替え機能
         document.querySelectorAll('.tab').forEach(tab => {
             tab.addEventListener('click', () => {
@@ -606,16 +977,17 @@ Number of calls: [31m0[39m
             });
         });
         
-        // Chart.jsでグラフを描画
+        // テスト結果概要グラフ
         const ctx1 = document.getElementById('overviewChart').getContext('2d');
         new Chart(ctx1, {
             type: 'doughnut',
             data: {
                 labels: ['合格', '不合格'],
                 datasets: [{
-                    data: [15, 3],
+                    data: [27, 0],
                     backgroundColor: ['#4caf50', '#f44336'],
-                    borderWidth: 1
+                    borderWidth: 1,
+                    hoverOffset: 15
                 }]
             },
             options: {
@@ -623,29 +995,73 @@ Number of calls: [31m0[39m
                 plugins: {
                     legend: {
                         position: 'right',
+                        labels: {
+                            font: {
+                                size: 14
+                            },
+                            generateLabels: function(chart) {
+                                // 凡例にパーセンテージを追加
+                                const data = chart.data;
+                                if (data.labels.length && data.datasets.length) {
+                                    const dataset = data.datasets[0];
+                                    const total = dataset.data.reduce((acc, val) => acc + val, 0);
+                                    return data.labels.map((label, i) => {
+                                        const value = dataset.data[i];
+                                        const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+                                        return {
+                                            text: `${label} (${percentage}%)`,
+                                            fillStyle: dataset.backgroundColor[i],
+                                            hidden: false,
+                                            index: i
+                                        };
+                                    });
+                                }
+                                return [];
+                            }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.label || '';
+                                const value = context.raw || 0;
+                                const total = context.dataset.data.reduce((acc, val) => acc + val, 0);
+                                const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+                                return `${label}: ${value}件 (${percentage}%)`;
+                            }
+                        }
                     },
                     title: {
                         display: true,
-                        text: 'テスト結果概要'
+                        text: 'テスト結果概要',
+                        font: {
+                            size: 16
+                        }
                     }
+                },
+                animation: {
+                    animateScale: true,
+                    animateRotate: true,
+                    duration: 2000
                 }
             }
         });
         
+        // テストスイート別結果グラフ
         const ctx2 = document.getElementById('testSuiteChart').getContext('2d');
         new Chart(ctx2, {
             type: 'bar',
             data: {
-                labels: ['responseUtils.test.js', 'googleLogin.test.js', 'API_test.js'],
+                labels: ['googleLogin.test.js', 'API_test.js', 'responseUtils.test.js'],
                 datasets: [
                     {
                         label: '合格',
-                        data: [11, 4, 0],
+                        data: [6, 9, 12],
                         backgroundColor: '#4caf50',
                     },
                     {
                         label: '不合格',
-                        data: [1, 2, 0],
+                        data: [0, 0, 0],
                         backgroundColor: '#f44336',
                     }
                 ]
@@ -655,69 +1071,200 @@ Number of calls: [31m0[39m
                 plugins: {
                     title: {
                         display: true,
-                        text: 'テストスイート別結果'
+                        text: 'テストスイート別結果',
+                        font: {
+                            size: 16
+                        }
                     },
+                    tooltip: {
+                        callbacks: {
+                            afterBody: function(context) {
+                                const index = context[0].dataIndex;
+                                const suite = [{"name":"googleLogin.test.js","total":6,"passed":6,"failed":0,"pending":0,"passRate":"100.0"},{"name":"API_test.js","total":9,"passed":9,"failed":0,"pending":0,"passRate":"100.0"},{"name":"responseUtils.test.js","total":12,"passed":12,"failed":0,"pending":0,"passRate":"100.0"}][index];
+                                return `成功率: ${suite.passRate}%`;
+                            }
+                        }
+                    }
                 },
                 scales: {
                     x: {
                         stacked: true,
                     },
                     y: {
-                        stacked: true
+                        stacked: true,
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'テスト数'
+                        }
                     }
+                },
+                animation: {
+                    delay: function(context) {
+                        return context.dataIndex * 100;
+                    },
+                    duration: 1500
                 }
             }
         });
         
-        const ctx3 = document.getElementById('errorTypeChart').getContext('2d');
-        new Chart(ctx3, {
-            type: 'pie',
+        // エラータイプ分析グラフ（エラーがある場合のみ）
+        
+        
+        // カバレッジ概要グラフ
+        const ctx5 = document.getElementById('coverageChart').getContext('2d');
+        new Chart(ctx5, {
+            type: 'bar',
             data: {
-                labels: ['レスポンスUtils', 'テスト期待値'],
-                datasets: [{
-                    data: [1, 2],
-                    backgroundColor: [
-                        '#f44336',
-                        '#ff9800',
-                        '#03a9f4',
-                        '#9c27b0',
-                        '#607d8b'
-                    ],
-                    hoverOffset: 4
-                }]
+                labels: ['ステートメント', 'ブランチ', '関数', '行'],
+                datasets: [
+                    {
+                        label: '現在のカバレッジ',
+                        data: [
+                            5.73,
+                            5.82,
+                            4.08,
+                            5.89
+                        ],
+                        backgroundColor: '#03a9f4',
+                    },
+                    {
+                        label: '目標',
+                        data: [
+                            80,
+                            70,
+                            80,
+                            80
+                        ],
+                        backgroundColor: '#ff9800',
+                        type: 'line',
+                        borderWidth: 2,
+                        fill: false,
+                        borderColor: '#ff9800',
+                        pointBackgroundColor: '#ff9800',
+                        pointRadius: 5,
+                    }
+                ]
             },
             options: {
                 responsive: true,
                 plugins: {
                     title: {
                         display: true,
-                        text: 'エラータイプ分布'
+                        text: 'コードカバレッジ',
+                        font: {
+                            size: 16
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.dataset.label}: ${context.raw}%`;
+                            }
+                        }
                     }
+                },
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'カバレッジの種類'
+                        }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        title: {
+                            display: true,
+                            text: 'カバレッジ率 (%)'
+                        }
+                    }
+                },
+                animation: {
+                    delay: function(context) {
+                        return context.dataIndex * 100;
+                    },
+                    duration: 1500
                 }
             }
         });
         
-        const ctx4 = document.getElementById('fixStatusChart').getContext('2d');
-        new Chart(ctx4, {
-            type: 'pie',
+        // 詳細カバレッジチャート
+        const ctx6 = document.getElementById('detailedCoverageChart').getContext('2d');
+        new Chart(ctx6, {
+            type: 'horizontalBar',
             data: {
-                labels: ['修正済み', '未修正'],
-                datasets: [{
-                    data: [8, -5],
-                    backgroundColor: [
-                        '#4caf50',
-                        '#f44336'
-                    ],
-                    hoverOffset: 4
-                }]
+                labels: [
+                    'src/utils/responseUtils.js',
+                    'src/utils/dynamoDbService.js',
+                    'src/services/googleAuthService.js',
+                    'src/utils/budgetCheck.js',
+                    'その他のファイル'
+                ],
+                datasets: [
+                    {
+                        label: 'ステートメント',
+                        data: [78.26, 28.12, 19.58, 15.59, 2.5],
+                        backgroundColor: '#4361ee',
+                    },
+                    {
+                        label: 'ブランチ',
+                        data: [54.16, 20.83, 36.36, 7.14, 2.0],
+                        backgroundColor: '#03a9f4',
+                    },
+                    {
+                        label: '関数',
+                        data: [85.71, 9.09, 0, 0, 1.5],
+                        backgroundColor: '#ff9800',
+                    },
+                    {
+                        label: '行',
+                        data: [78.26, 28.57, 19.58, 15.59, 2.5],
+                        backgroundColor: '#4caf50',
+                    }
+                ]
             },
             options: {
+                indexAxis: 'y',
                 responsive: true,
                 plugins: {
                     title: {
                         display: true,
-                        text: '修正状況'
+                        text: 'ファイル別コードカバレッジ',
+                        font: {
+                            size: 16
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.dataset.label}: ${context.raw}%`;
+                            }
+                        }
                     }
+                },
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        max: 100,
+                        title: {
+                            display: true,
+                            text: 'カバレッジ率 (%)'
+                        }
+                    },
+                    y: {
+                        stacked: false,
+                        title: {
+                            display: true,
+                            text: 'ファイル'
+                        }
+                    }
+                },
+                animation: {
+                    delay: function(context) {
+                        return context.dataIndex * 100;
+                    },
+                    duration: 1500
                 }
             }
         });

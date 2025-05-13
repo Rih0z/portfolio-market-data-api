@@ -13,6 +13,9 @@
 - [デプロイ手順](#デプロイ手順)
 - [環境変数](#環境変数)
 - [開発ガイド](#開発ガイド)
+- [認証フロー](#認証フロー)
+- [Google Drive連携](#google-drive連携)
+- [テスト実行ガイド](#テスト実行ガイド)
 - [トラブルシューティング](#トラブルシューティング)
 - [ライセンス](#ライセンス)
 
@@ -30,6 +33,8 @@ DynamoDBを使ったキャッシュシステムにより、同じデータに対
 - **安全策**: 使用量制限と自動停止機能による予期せぬ課金の防止
 - **自動予熱**: 人気銘柄の定期的なキャッシュ予熱
 - **管理者API**: 使用状況監視とメンテナンス用の管理者機能
+- **Google認証**: Google OAuthを使用したユーザー認証
+- **Google Drive連携**: ポートフォリオデータのクラウド保存・読み込み
 
 ## 技術スタック
 
@@ -44,8 +49,12 @@ DynamoDBを使ったキャッシュシステムにより、同じデータに対
 | 開発言語 | Node.js | >=16.x | サーバーサイドロジック |
 | HTTPクライアント | axios | ^1.6.2 | API・スクレイピング |
 | HTML解析 | cheerio | ^1.0.0-rc.12 | スクレイピング |
+| 認証 | Google OAuth 2.0 | - | ユーザー認証 |
+| クラウドストレージ | Google Drive API | - | データ同期 |
 
 ## アーキテクチャ
+
+システムアーキテクチャの概要図：
 
 ```
 +-------------------+       +-------------------+         +-------------------+
@@ -65,6 +74,8 @@ DynamoDBを使ったキャッシュシステムにより、同じデータに対
                             | (予算アラート)    |         | (管理者通知)      |
                             +-------------------+         +-------------------+
 ```
+
+詳細なデータフロー図については [document/market-data-flow.mmd](document/market-data-flow.mmd) を参照してください。
 
 ## APIリファレンス
 
@@ -154,6 +165,38 @@ GET /api/market-data?type=us-stock&symbols=AAPL&refresh=true
 **メソッド**: POST  
 **認証**: API Key (x-api-key ヘッダー)
 
+### 認証API
+
+**エンドポイント**: `/auth/google/login`  
+**メソッド**: POST  
+**認証**: なし
+
+### セッション確認API
+
+**エンドポイント**: `/auth/session`  
+**メソッド**: GET  
+**認証**: HTTPクッキー
+
+### ログアウトAPI
+
+**エンドポイント**: `/auth/logout`  
+**メソッド**: POST  
+**認証**: HTTPクッキー
+
+### Google Drive連携API
+
+**エンドポイント**: `/drive/save`  
+**メソッド**: POST  
+**認証**: HTTPクッキー
+
+**エンドポイント**: `/drive/load`  
+**メソッド**: GET  
+**認証**: HTTPクッキー
+
+**エンドポイント**: `/drive/files`  
+**メソッド**: GET  
+**認証**: HTTPクッキー
+
 ## セットアップ手順
 
 ### 環境要件
@@ -200,6 +243,8 @@ endpoints:
   POST - https://xxxxxxxx.execute-api.ap-northeast-1.amazonaws.com/prod/admin/reset
 ```
 
+詳細なデプロイガイドについては [document/deploy-guide.md](document/deploy-guide.md) を参照してください。
+
 ## 環境変数
 
 `.env`ファイルには以下の変数を設定：
@@ -220,6 +265,12 @@ CACHE_TIME_US_STOCK=3600               # 米国株キャッシュ時間(秒)
 CACHE_TIME_JP_STOCK=3600               # 日本株キャッシュ時間(秒)
 CACHE_TIME_MUTUAL_FUND=10800           # 投資信託キャッシュ時間(秒)
 CACHE_TIME_EXCHANGE_RATE=21600         # 為替レートキャッシュ時間(秒)
+
+# Google OAuth設定
+GOOGLE_CLIENT_ID=your-client-id        # Google OAuth クライアントID
+GOOGLE_CLIENT_SECRET=your-client-secret # Google OAuth クライアントシークレット
+SESSION_TABLE=session-table-name       # セッション情報テーブル名
+SESSION_EXPIRES_DAYS=7                 # セッション有効期間（日）
 ```
 
 ## 開発ガイド
@@ -239,6 +290,14 @@ portfolio-market-data-api/
 │   ├── functions/          # Lambda関数
 │   │   ├── marketData.js   # 市場データAPI関数
 │   │   ├── preWarmCache.js # キャッシュ予熱関数
+│   │   ├── auth/           # 認証関連関数
+│   │   │   ├── googleLogin.js # Google認証ログイン
+│   │   │   ├── getSession.js  # セッション確認
+│   │   │   └── logout.js      # ログアウト
+│   │   ├── drive/          # Google Drive関連関数
+│   │   │   ├── saveFile.js    # ファイル保存
+│   │   │   ├── loadFile.js    # ファイル読み込み
+│   │   │   └── listFiles.js   # ファイル一覧取得
 │   │   ├── admin/          # 管理者関数
 │   │       ├── getStatus.js   # ステータス取得
 │   │       └── resetUsage.js  # 使用量リセット
@@ -247,6 +306,7 @@ portfolio-market-data-api/
 │   │   ├── cache.js        # キャッシュサービス
 │   │   ├── usage.js        # 使用量追跡サービス
 │   │   ├── alerts.js       # アラート通知サービス
+│   │   ├── googleAuthService.js # Google認証サービス
 │   │   └── sources/        # データソース
 │   │       ├── yahooFinance.js  # Yahoo Finance API
 │   │       ├── exchangeRate.js  # 為替レート取得 
@@ -267,6 +327,64 @@ portfolio-market-data-api/
     └── deploy.sh           # デプロイスクリプト
 ```
 
+## 認証フロー
+
+アプリケーションはGoogle OAuth 2.0を使用してユーザー認証を行います。認証フローの詳細は以下のシーケンス図を参照してください：
+
+![Google認証フロー図](document/google-auth-flow.mmd)
+
+詳細なフロー図については [document/google-auth-flow.mmd](document/google-auth-flow.mmd) を参照してください。
+
+## Google Drive連携
+
+認証されたユーザーはGoogle Driveを使用してポートフォリオデータの保存と読み込みが可能です：
+
+![Google Drive連携図](document/google-drive.mmd)
+
+詳細なフロー図については [document/google-drive.mmd](document/google-drive.mmd) を参照してください。
+
+API利用方法の詳細については [document/how-to-call-api.md](document/how-to-call-api.md) を参照してください。
+
+## テスト実行ガイド
+
+プロジェクトには単体テスト、統合テスト、E2Eテストが含まれています。テストの実行方法は以下の通りです：
+
+### テスト環境のセットアップ
+
+```bash
+# 依存関係のインストール
+npm install
+
+# DynamoDB Localのセットアップ
+mkdir -p ./dynamodb-local
+curl -L -o ./dynamodb-local/dynamodb-local-latest.tar.gz https://d1ni2b6xgvw0s0.cloudfront.net/dynamodb_local_latest.tar.gz
+tar -xzf ./dynamodb-local/dynamodb-local-latest.tar.gz -C ./dynamodb-local
+
+# テスト実行スクリプトに実行権限を付与
+chmod +x scripts/run-tests.sh
+```
+
+### テスト実行
+
+```bash
+# すべてのテストを実行
+npm test
+
+# 単体テストのみ実行
+npm run test:unit
+
+# 統合テストのみ実行
+npm run test:integration
+
+# E2Eテストのみ実行
+npm run test:e2e
+
+# テストカバレッジを計測
+npm run test:coverage
+```
+
+詳細なテスト実行ガイドについては [document/how-to-test.md](document/how-to-test.md) と [document/test-plan.md](document/test-plan.md) を参照してください。
+
 ## トラブルシューティング
 
 ### よくある問題と解決策
@@ -277,6 +395,8 @@ portfolio-market-data-api/
 | データ取得エラー | スクレイピング元サイトの構造変更 | サービスコードの更新が必要 |
 | 高いレイテンシ | キャッシュミス率の上昇 | 予熱対象の銘柄を増やす |
 | 予算超過アラート | 予想以上の使用量 | 使用量分析と制限値の見直し |
+| 認証エラー | Googleトークンの期限切れ | ユーザーに再ログインを促す |
+| Google Drive APIエラー | スコープ不足 | 認証スコープの追加と再認証 |
 
 ### 緊急対応手順
 
@@ -288,7 +408,8 @@ curl -X POST https://your-api-url.execute-api.ap-northeast-1.amazonaws.com/prod/
   -d '{"resetType":"all"}'
 ```
 
+詳細な技術仕様については [document/specification.md](document/specification.md) を参照してください。
+
 ## ライセンス
 
 &copy; 2025 Koki Riho. All Rights Reserved.
-

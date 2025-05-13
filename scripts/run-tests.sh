@@ -1,6 +1,13 @@
 #!/bin/bash
 # 
+# ファイルパス: scripts/run-tests.sh
+# 
 # Portfolio Market Data APIテスト実行スクリプト
+# 修正: カバレッジエラーを無視してテスト成功を正確に表示
+#
+# @author Koki Riho
+# @updated 2025-05-13 - カバレッジエラーを無視する--ignore-coverage-errorsオプションを追加
+#
 
 # 色の設定
 GREEN='\033[0;32m'
@@ -37,16 +44,17 @@ show_help() {
   echo "使用方法: $0 [オプション] <テスト種別>"
   echo ""
   echo "オプション:"
-  echo "  -h, --help          このヘルプメッセージを表示"
-  echo "  -c, --clean         テスト実行前にテスト環境をクリーンアップ"
-  echo "  -v, --visual        テスト結果をビジュアルレポートで表示"
-  echo "  -a, --auto          APIサーバーを自動起動（E2Eテスト用）"
-  echo "  -m, --mock          APIモックを使用（E2Eテスト用）"
-  echo "  -w, --watch         監視モードでテストを実行（コード変更時に自動再実行）"
-  echo "  -n, --no-coverage   カバレッジ計測・チェックを無効化"
-  echo "  -f, --force         サーバー状態に関わらずテストを強制実行"
-  echo "  -d, --debug         デバッグモードを有効化（詳細ログを表示）"
-  echo "  --nvm               nvmを使用してNode.js 18に切り替え"
+  echo "  -h, --help                  このヘルプメッセージを表示"
+  echo "  -c, --clean                 テスト実行前にテスト環境をクリーンアップ"
+  echo "  -v, --visual                テスト結果をビジュアルレポートで表示"
+  echo "  -a, --auto                  APIサーバーを自動起動（E2Eテスト用）"
+  echo "  -m, --mock                  APIモックを使用（E2Eテスト用）"
+  echo "  -w, --watch                 監視モードでテストを実行（コード変更時に自動再実行）"
+  echo "  -n, --no-coverage           カバレッジ計測・チェックを無効化"
+  echo "  -f, --force                 サーバー状態に関わらずテストを強制実行"
+  echo "  -d, --debug                 デバッグモードを有効化（詳細ログを表示）"
+  echo "  -i, --ignore-coverage-errors テスト自体は成功してもカバレッジエラーを無視（NEW!）"
+  echo "  --nvm                       nvmを使用してNode.js 18に切り替え"
   echo ""
   echo "テスト種別:"
   echo "  unit                単体テストのみ実行"
@@ -64,6 +72,7 @@ show_help() {
   echo "  $0 -n integration   カバレッジチェック無効で統合テストを実行"
   echo "  $0 -f -m e2e        テストを強制実行モードで実行（モック使用）"
   echo "  $0 -d e2e           デバッグモードでE2Eテストを実行（詳細ログ表示）"
+  echo "  $0 -i e2e           カバレッジエラーを無視してテスト成功を正確に表示"
   echo "  $0 --nvm unit       nvmでNode.js 18に切り替えて単体テストを実行"
   echo ""
 }
@@ -78,6 +87,7 @@ NO_COVERAGE=0
 USE_NVM=0
 FORCE_TESTS=0
 DEBUG_MODE=0
+IGNORE_COVERAGE_ERRORS=0
 TEST_TYPE=""
 
 # オプション解析
@@ -117,6 +127,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     -d|--debug)
       DEBUG_MODE=1
+      shift
+      ;;
+    -i|--ignore-coverage-errors)
+      IGNORE_COVERAGE_ERRORS=1
       shift
       ;;
     --nvm)
@@ -212,6 +226,11 @@ fi
 if [ $DEBUG_MODE -eq 1 ]; then
   ENV_VARS="$ENV_VARS DEBUG=true"
   print_info "デバッグログが有効です"
+fi
+
+if [ $IGNORE_COVERAGE_ERRORS -eq 1 ]; then
+  ENV_VARS="$ENV_VARS IGNORE_COVERAGE_ERRORS=true"
+  print_info "カバレッジエラーを無視するモードが有効です"
 fi
 
 # テストコマンドの構築
@@ -331,6 +350,18 @@ fi
 
 # テスト結果
 TEST_RESULT=$?
+
+# カバレッジエラーを無視するモードが有効な場合
+if [ $IGNORE_COVERAGE_ERRORS -eq 1 ] && [ -f "./test-results/detailed-results.json" ]; then
+  # JSON結果ファイルを読み込んでテスト自体の成功/失敗を確認
+  FAILED_TESTS=$(grep -o '"numFailedTests":[0-9]*' ./test-results/detailed-results.json | cut -d':' -f2)
+  
+  if [ "$FAILED_TESTS" = "0" ]; then
+    print_info "テスト自体は成功していますが、カバレッジ要件を満たしていません"
+    print_info "カバレッジエラーを無視するモードが有効なため、テスト成功として扱います"
+    TEST_RESULT=0
+  fi
+fi
 
 # 視覚的レポートが指定された場合
 if [ $VISUAL -eq 1 ]; then

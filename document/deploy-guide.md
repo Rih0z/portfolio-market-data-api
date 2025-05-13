@@ -1222,3 +1222,4 @@ process.env.AWS_SECRET_ACCESS_KEY = 'test';
 
 このガイドは、特にMacBookでの開発に最適化されています。実際のプロジェクト要件に応じて適宜調整してください。
 
+

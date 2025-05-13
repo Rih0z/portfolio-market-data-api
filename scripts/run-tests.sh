@@ -241,7 +241,7 @@ fi
 if [ $WATCH -eq 1 ]; then
   print_info "監視モードが有効です"
   if [ -n "$ENV_VARS" ]; then
-    eval "cross-env $ENV_VARS npm run test:watch"
+    eval "npx cross-env $ENV_VARS npm run test:watch"
   else
     npm run test:watch
   fi
@@ -249,7 +249,7 @@ else
   # 通常実行
   if [ -n "$ENV_VARS" ] && [ "$TEST_TYPE" != "e2e" ]; then
     # e2eは専用コマンドがあるため除外
-    eval "cross-env $ENV_VARS npm run $TEST_CMD"
+    eval "npx cross-env $ENV_VARS npm run $TEST_CMD"
   else
     npm run $TEST_CMD
   fi

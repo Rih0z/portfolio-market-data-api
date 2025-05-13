@@ -9,6 +9,7 @@
 # @updated 2025-05-12
 # @updated 2025-05-13 - nvm対応とカバレッジオプションの追加
 # @updated 2025-05-14 - 強制実行フラグを追加、デバッグモードの追加
+# @updated 2025-05-14 - カバレッジなしとモック組み合わせ時の問題修正
 #
 
 # 色の設定
@@ -258,19 +259,60 @@ esac
 if [ $NO_COVERAGE -eq 1 ]; then
   print_info "カバレッジチェックが無効化されています"
   
-  # カバレッジなしのコマンドに変更
-  case $TEST_TYPE in
-    unit|integration|e2e)
+  # 修正: E2Eテストでモックを使用する場合は特別な処理
+  if [ "$TEST_TYPE" = "e2e" ]; then
+    if [ $MOCK -eq 1 ]; then
+      # 直接JESTコマンドを構築
+      JEST_CMD="jest --selectProjects e2e --no-coverage --forceExit"
+      print_info "カスタムJestコマンドを使用します: $JEST_CMD"
+      
+      if [ -n "$ENV_VARS" ]; then
+        eval "npx cross-env $ENV_VARS $JEST_CMD"
+      else
+        npx $JEST_CMD
+      fi
+      TEST_RESULT=$?
+      
+      # 視覚的レポートが指定された場合
+      if [ $VISUAL -eq 1 ]; then
+        print_info "テスト結果をビジュアルレポートで表示します..."
+        open ./test-results/visual-report.html || print_warning "ビジュアルレポートのオープンに失敗しました"
+      fi
+      
+      # 結果の表示
+      if [ $TEST_RESULT -eq 0 ]; then
+        print_header "テスト実行が成功しました! 🎉"
+      else
+        print_header "テスト実行が失敗しました... 😢"
+        # デバッグモードの場合、詳細情報を表示
+        if [ $DEBUG_MODE -eq 1 ]; then
+          print_info "テスト失敗の詳細情報:"
+          echo "テスト種別: $TEST_TYPE"
+          echo "終了コード: $TEST_RESULT"
+          echo "ログファイルは ./test-results/ ディレクトリにあります"
+        fi
+      fi
+      
+      exit $TEST_RESULT
+    else
+      # 通常のnocovコマンドを使用
       TEST_CMD="${TEST_CMD}:nocov"
-      ;;
-    all)
-      TEST_CMD="test:nocov"
-      ;;
-    quick)
-      ENV_VARS="$ENV_VARS USE_API_MOCKS=true"
-      TEST_CMD="test:nocov"
-      ;;
-  esac
+    fi
+  else
+    # その他のテスト種別はそのまま処理
+    case $TEST_TYPE in
+      unit|integration|e2e)
+        TEST_CMD="${TEST_CMD}:nocov"
+        ;;
+      all)
+        TEST_CMD="test:nocov"
+        ;;
+      quick)
+        ENV_VARS="$ENV_VARS USE_API_MOCKS=true"
+        TEST_CMD="test:nocov"
+        ;;
+    esac
+  fi
 fi
 
 # 監視モードが指定された場合
@@ -290,8 +332,7 @@ else
   fi
   
   # 通常実行
-  if [ -n "$ENV_VARS" ] && [ "$TEST_TYPE" != "e2e" ]; then
-    # e2eは専用コマンドがあるため除外
+  if [ -n "$ENV_VARS" ]; then
     eval "npx cross-env $ENV_VARS npm run $TEST_CMD"
   else
     npm run $TEST_CMD
@@ -322,3 +363,4 @@ else
 fi
 
 exit $TEST_RESULT
+

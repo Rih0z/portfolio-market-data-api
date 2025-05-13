@@ -4,6 +4,7 @@
  * 外部APIのモックを設定するユーティリティ
  * 修正: エラーハンドリングとAPIキー設定強化、モック用ノックの安定性向上
  * @updated 2025-05-14 修正: デバッグログ追加、nockのクリーンアップロジック改善
+ * @updated 2025-05-15 修正: フォールバックレスポンス機能の強化、未処理リクエスト対応
  */
 const nock = require('nock');
 
@@ -17,6 +18,17 @@ console.log('=============================');
 const getYahooFinanceApiKey = () => process.env.YAHOO_FINANCE_API_KEY || 'test-api-key';
 const getYahooFinanceApiHost = () => process.env.YAHOO_FINANCE_API_HOST || 'yh-finance.p.rapidapi.com';
 const getExchangeRateApiKey = () => process.env.EXCHANGE_RATE_API_KEY || 'test-api-key';
+
+// テストデータへの参照 - 他のファイルからも利用可能にする
+const TEST_DATA = {
+  samplePortfolio: {
+    name: 'Test Portfolio',
+    holdings: [
+      { symbol: 'AAPL', shares: 10, cost: 150.0 },
+      { symbol: '7203', shares: 100, cost: 2000 }
+    ]
+  }
+};
 
 /**
  * 外部APIのモックを設定する
@@ -280,36 +292,159 @@ const getRecordedApis = () => {
 const setupFallbackResponses = () => {
   console.log('フォールバックレスポンスの設定を開始...');
   
-  // すべてのHTTPリクエストに対するフォールバックを設定
+  // Google Driveファイル読み込みのフォールバック（あらゆるファイルIDに対応）
+  nock(/.*/)
+    .persist()
+    .get(/\/drive\/load.*/)
+    .query(true)
+    .reply(function(uri, requestBody) {
+      console.log(`フォールバック: Drive読み込みリクエスト: ${uri}`);
+      return [
+        200,
+        {
+          success: true,
+          mockFallback: true,
+          message: 'Fallback portfolio data response',
+          data: TEST_DATA.samplePortfolio
+        }
+      ];
+    });
+  
+  // APIサーバーヘルスチェックのフォールバック
+  nock(/.*/)
+    .persist()
+    .get(/\/health.*/)
+    .reply(function(uri, requestBody) {
+      console.log(`フォールバック: ヘルスチェックリクエスト: ${uri}`);
+      return [
+        200,
+        {
+          success: true,
+          status: 'ok',
+          mockFallback: true,
+          version: '1.0.0',
+          timestamp: new Date().toISOString()
+        }
+      ];
+    });
+  
+  // セッション取得APIのフォールバック
+  nock(/.*/)
+    .persist()
+    .get(/\/auth\/session.*/)
+    .reply(function(uri, requestBody) {
+      console.log(`フォールバック: セッション取得リクエスト: ${uri}`);
+      // リクエストのCookieをチェック
+      const cookies = this.req.headers.cookie;
+      const hasSession = cookies && cookies.includes('session=');
+      
+      if (hasSession) {
+        return [
+          200,
+          {
+            success: true,
+            mockFallback: true,
+            data: {
+              isAuthenticated: true,
+              user: {
+                id: 'user-123',
+                email: 'test@example.com',
+                name: 'Test User'
+              }
+            }
+          }
+        ];
+      } else {
+        return [
+          401,
+          {
+            success: false,
+            mockFallback: true,
+            error: {
+              code: 'NO_SESSION',
+              message: '認証されていません'
+            }
+          }
+        ];
+      }
+    });
+  
+  // ファイル一覧APIのフォールバック
+  nock(/.*/)
+    .persist()
+    .get(/\/drive\/files.*/)
+    .reply(function(uri, requestBody) {
+      console.log(`フォールバック: ファイル一覧リクエスト: ${uri}`);
+      // リクエストのCookieをチェック
+      const cookies = this.req.headers.cookie;
+      const hasSession = cookies && cookies.includes('session=');
+      
+      if (hasSession) {
+        return [
+          200,
+          {
+            success: true,
+            mockFallback: true,
+            files: [
+              {
+                id: 'file-123',
+                name: 'test-portfolio.json',
+                createdTime: new Date().toISOString(),
+                modifiedTime: new Date().toISOString()
+              },
+              {
+                id: 'new-file-123',
+                name: 'portfolio-data.json',
+                createdTime: new Date().toISOString(),
+                modifiedTime: new Date().toISOString()
+              }
+            ]
+          }
+        ];
+      } else {
+        return [
+          401,
+          {
+            success: false,
+            mockFallback: true,
+            error: {
+              code: 'NO_SESSION',
+              message: '認証されていません'
+            }
+          }
+        ];
+      }
+    });
+  
+  // その他の一般的なGETリクエストのフォールバック
   nock(/.*/)
     .persist()
     .get(/.*/)
     .query(true)
     .reply(function(uri, requestBody) {
-      console.warn(`Unhandled GET request to: ${uri}`);
+      console.log(`フォールバック: 未処理のGET ${uri}`);
       return [
         200,
         {
           success: true,
           mockFallback: true,
-          message: 'This is a fallback response for an unhandled request',
-          data: {}
+          message: 'This is a fallback response for an unhandled GET request'
         }
       ];
     });
   
+  // その他の一般的なPOSTリクエストのフォールバック
   nock(/.*/)
     .persist()
     .post(/.*/)
     .reply(function(uri, requestBody) {
-      console.warn(`Unhandled POST request to: ${uri}`);
+      console.log(`フォールバック: 未処理のPOST ${uri}`);
       return [
         200,
         {
           success: true,
           mockFallback: true,
-          message: 'This is a fallback response for an unhandled request',
-          data: {}
+          message: 'This is a fallback response for an unhandled POST request'
         }
       ];
     });
@@ -325,5 +460,6 @@ module.exports = {
   mockApiRequest,
   enableApiLogging,
   getRecordedApis,
-  setupFallbackResponses
+  setupFallbackResponses,
+  TEST_DATA
 };

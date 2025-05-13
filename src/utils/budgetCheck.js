@@ -8,10 +8,13 @@
  * 
  * @author Portfolio Manager Team
  * @created 2025-05-16
+ * @updated 2025-05-18 AWS SDK v3に移行
  */
 'use strict';
 
-const AWS = require('aws-sdk');
+// AWS SDK v3のインポート
+const { BudgetsClient, DescribeBudgetPerformanceHistoryCommand } = require('@aws-sdk/client-budgets');
+const { STSClient, GetCallerIdentityCommand } = require('@aws-sdk/client-sts');
 const { withRetry } = require('./retry');
 
 // キャッシュ設定（予算情報を頻繁に取得しないため）
@@ -23,6 +26,36 @@ const CACHE_TTL = 3600000; // 1時間
 const FREE_TIER_LIMIT = parseFloat(process.env.FREE_TIER_LIMIT || '25');
 const BUDGET_CHECK_ENABLED = process.env.BUDGET_CHECK_ENABLED === 'true';
 const BUDGET_NAME = `${process.env.SERVICE_NAME || 'pfwise-api'}-${process.env.NODE_ENV || 'dev'}-free-tier-budget`;
+
+// STS クライアントの初期化
+const getStsClient = () => {
+  return new STSClient({
+    region: process.env.AWS_REGION || 'us-east-1'
+  });
+};
+
+// Budgets クライアントの初期化
+const getBudgetsClient = () => {
+  return new BudgetsClient({
+    region: process.env.AWS_REGION || 'us-east-1'
+  });
+};
+
+/**
+ * AWS アカウント ID を取得する
+ * @returns {Promise<string>} AWS アカウント ID
+ */
+const getAccountId = async () => {
+  try {
+    const stsClient = getStsClient();
+    const command = new GetCallerIdentityCommand({});
+    const identity = await stsClient.send(command);
+    return identity.Account;
+  } catch (error) {
+    console.error('Error getting AWS account ID:', error);
+    throw new Error('Failed to get AWS account ID');
+  }
+};
 
 /**
  * 現在の予算使用状況を取得する
@@ -46,7 +79,7 @@ const getBudgetStatus = async (forceRefresh = false) => {
   }
 
   try {
-    const budgets = new AWS.Budgets();
+    const budgetsClient = getBudgetsClient();
     
     // 現在の年月
     const date = new Date();
@@ -66,8 +99,9 @@ const getBudgetStatus = async (forceRefresh = false) => {
     };
     
     // 予算情報を取得（再試行ロジック付き）
+    const command = new DescribeBudgetPerformanceHistoryCommand(params);
     const budgetResponse = await withRetry(
-      () => budgets.describeBudgetPerformanceHistory(params).promise(),
+      () => budgetsClient.send(command),
       {
         maxRetries: 3,
         baseDelay: 300
@@ -87,7 +121,7 @@ const getBudgetStatus = async (forceRefresh = false) => {
     
     const budgetedAmount = parseFloat(performance.BudgetedAmount.Amount);
     const actualAmount = parseFloat(performance.ActualAmount.Amount);
-    const forecastAmount = parseFloat(performance.ForecastedAmount.Amount || actualAmount);
+    const forecastAmount = parseFloat(performance.ForecastedAmount?.Amount || actualAmount);
     
     // 使用率を計算
     const usagePercentage = (actualAmount / budgetedAmount) * 100;
@@ -154,21 +188,6 @@ const getBudgetStatus = async (forceRefresh = false) => {
       status: 'ERROR',
       error: error.message
     };
-  }
-};
-
-/**
- * AWS アカウント ID を取得する
- * @returns {Promise<string>} AWS アカウント ID
- */
-const getAccountId = async () => {
-  try {
-    const sts = new AWS.STS();
-    const identity = await sts.getCallerIdentity().promise();
-    return identity.Account;
-  } catch (error) {
-    console.error('Error getting AWS account ID:', error);
-    throw new Error('Failed to get AWS account ID');
   }
 };
 

@@ -567,47 +567,443 @@ const x = y + z; // x に y と z を加える
 
 ## 8. テスト
 
-### 8.1 テストの命名規則
-- テストファイル名は `{対象ファイル名}.test.js` としてください
-- テストケースの説明は明確で具体的にしてください
+### 8.1 テストの種類と目的
+
+プロジェクトでは以下の3種類のテストを実施します：
+
+#### 8.1.1 ユニットテスト
+- 個々の関数やモジュールの機能を検証します
+- 外部依存関係はモックまたはスタブに置き換えます
+- 実行速度が速く、CI/CDパイプラインの早期段階で実行します
+
+#### 8.1.2 統合テスト
+- 複数のモジュール間の連携を検証します
+- 実際のモジュールとモックを組み合わせて使用します
+- 特定のサブシステム（認証、データ取得など）の機能を検証します
+
+#### 8.1.3 エンドツーエンド（E2E）テスト
+- システム全体の機能を検証します
+- 実際のAPIエンドポイントに対して実行します
+- ユーザーの視点からのシナリオを検証します
+
+### 8.2 テストディレクトリ構造
+
+テストは以下のディレクトリ構造に従って配置します：
+
+```
+__tests__/
+  ├── unit/                  # ユニットテスト
+  │   ├── services/          # サービス層のテスト
+  │   ├── utils/             # ユーティリティ関数のテスト
+  │   └── function/          # API関数のテスト
+  │
+  ├── integration/           # 統合テスト
+  │   ├── auth/              # 認証関連の統合テスト
+  │   ├── marketData/        # マーケットデータ関連の統合テスト
+  │   └── drive/             # Googleドライブ関連の統合テスト
+  │
+  ├── e2e/                   # エンドツーエンドテスト
+  │   └── API_test.js        # API全体の機能テスト
+  │
+  ├── setup.js               # テスト環境の共通セットアップ
+  │
+  └── testUtils/             # テスト用ユーティリティ
+      ├── apiMocks.js        # APIモックユーティリティ
+      ├── apiServer.js       # APIサーバーユーティリティ
+      ├── awsEmulator.js     # AWSエミュレーター
+      ├── dynamodbLocal.js   # DynamoDB Localユーティリティ
+      ├── environment.js     # テスト環境管理
+      ├── failureSimulator.js # 障害シミュレーター
+      ├── googleMock.js      # Google認証モック 
+      └── mockServer.js      # モックサーバー
+```
+
+### 8.3 テストファイルの命名規則
+
+- **ユニットテスト**: `{対象ファイル名}.test.js`
+- **統合テスト**: `{テスト対象機能}.test.js`
+- **E2Eテスト**: `{テスト対象API}.test.js` または `API_test.js`
+
+各テストファイルのヘッダーには、テストの目的と範囲を明確に記述してください：
 
 ```javascript
-// Good test naming
-describe('getExchangeRate', () => {
-  it('returns cached data when available', () => {
-    // ...
+/**
+ * ファイルパス: __tests__/unit/utils/responseUtils.test.js
+ * 
+ * responseUtils.js のユニットテスト
+ * レスポンス形式の変換機能を検証します
+ * 
+ * @author Portfolio Manager Team
+ * @created YYYY-MM-DD
+ * @updated YYYY-MM-DD - 更新内容の簡単な説明
+ */
+```
+
+### 8.4 テストケースの構造と命名
+
+テストケースの命名は以下の規則に従ってください：
+
+- **ユニットテスト**:「関数名 + 期待される動作」
+  ```javascript
+  describe('formatResponse', () => {
+    it('デフォルトパラメータでの正常レスポンスを返す', () => {
+      // ...
+    });
   });
+  ```
+
+- **統合テスト**:「機能名 + シナリオ」
+  ```javascript
+  describe('Google認証ログインハンドラー', () => {
+    it('正常なGoogleログイン処理を実行する', () => {
+      // ...
+    });
+  });
+  ```
+
+- **E2Eテスト**:「API名 + エンドポイント + シナリオ」
+  ```javascript
+  describe('マーケットデータAPI', () => {
+    it('米国株データを取得する', () => {
+      // ...
+    });
+  });
+  ```
+
+各テストの構造はAAA（Arrange-Act-Assert）パターンに従ってください：
+
+```javascript
+it('正常なレスポンスを返す', async () => {
+  // Arrange - テストデータとモックの設定
+  const mockData = { symbol: 'AAPL', price: 150 };
   
-  it('fetches from primary source when cache is empty', () => {
-    // ...
-  });
+  // Act - テスト対象の関数を実行
+  const result = await fetchData('AAPL');
   
-  it('falls back to secondary source when primary fails', () => {
-    // ...
-  });
+  // Assert - 結果を検証
+  expect(result).toBeDefined();
+  expect(result.symbol).toBe('AAPL');
+  expect(result.price).toBe(150);
 });
 ```
 
-### 8.2 テストの構造
-- AAA パターン（Arrange, Act, Assert）に従ってください
-- モックとスタブを適切に使用してください
-- 各テストは独立していて、他のテストに依存しないようにしてください
+### 8.5 モックとスタブの使用
+
+#### 8.5.1 外部依存関係のモック
+
+外部サービスやAPIはテスト環境で以下のユーティリティを使用してモック化します：
 
 ```javascript
-it('falls back to secondary source when primary fails', async () => {
-  // Arrange
-  const symbol = 'AAPL';
-  const primarySourceMock = sinon.stub().rejects(new Error('Primary source error'));
-  const secondarySourceMock = sinon.stub().resolves({ price: 150 });
-  
-  // Act
-  const result = await fetchDataWithFallback(symbol, [primarySourceMock, secondarySourceMock]);
-  
-  // Assert
-  expect(primarySourceMock.calledOnce).to.be.true;
-  expect(secondarySourceMock.calledOnce).to.be.true;
-  expect(result.price).to.equal(150);
+// APIモックの設定例
+const { mockApiRequest } = require('../testUtils/apiMocks');
+
+// ヘルスチェックAPIのモック
+mockApiRequest(`${API_BASE_URL}/health`, 'GET', {
+  success: true,
+  status: 'ok',
+  version: '1.0.0'
 });
+```
+
+#### 8.5.2 モジュールのモック化
+
+Jestを使用してモジュールをモック化する方法：
+
+```javascript
+// モジュールのモック化
+jest.mock('../../../src/services/googleAuthService');
+
+// モック実装の設定
+googleAuthService.exchangeCodeForTokens.mockResolvedValue({
+  id_token: 'test-id-token',
+  access_token: 'test-access-token',
+  refresh_token: 'test-refresh-token',
+  expires_in: 3600
+});
+```
+
+#### 8.5.3 条件付きテスト
+
+環境やAPIサーバーの状態に応じて条件付きでテストを実行する方法：
+
+```javascript
+// 条件付きテスト関数
+const conditionalTest = (name, fn) => {
+  if (!apiServerAvailable && !USE_MOCKS) {
+    test.skip(name, () => {
+      console.log(`Skipping test: ${name} - API server not available and mocks not enabled`);
+    });
+  } else {
+    test(name, fn);
+  }
+};
+
+// 使用例
+conditionalTest('米国株データ取得', async () => {
+  // テスト内容
+});
+```
+
+### 8.6 テスト環境の設定
+
+#### 8.6.1 環境変数の設定
+
+テスト環境用の環境変数を設定します：
+
+```javascript
+// テスト用の環境変数をセット
+process.env.NODE_ENV = 'test';
+process.env.DYNAMODB_ENDPOINT = 'http://localhost:8000';
+process.env.SESSION_TABLE = 'test-sessions';
+process.env.DYNAMODB_TABLE_PREFIX = 'test-';
+```
+
+#### 8.6.2 モック使用フラグ
+
+テスト実行時のモック使用を制御する環境変数：
+
+```javascript
+// モック使用フラグ
+process.env.USE_API_MOCKS = 'true'; // モックを使用
+process.env.RUN_E2E_TESTS = 'true'; // E2Eテストを実行
+process.env.SKIP_E2E_TESTS = 'true'; // E2Eテストをスキップ
+```
+
+#### 8.6.3 Jest設定
+
+Jest実行前のセットアップファイル（`__tests__/setup.js`）を使用します：
+
+```javascript
+// テスト用のタイムアウト設定
+jest.setTimeout(30000); // 30秒
+
+// エラーハンドリングを改善
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+// 各テスト後のクリーンアップ
+afterEach(() => {
+  jest.clearAllTimers();
+  jest.resetAllMocks();
+});
+```
+
+### 8.7 データソースのエミュレーション
+
+#### 8.7.1 AWS サービスのエミュレーション
+
+AWS サービス（DynamoDB、SNSなど）をローカルでエミュレートします：
+
+```javascript
+// LocalStackエミュレーターのセットアップ
+const localstack = await setupLocalStackEmulator({
+  services: ['dynamodb'],
+  region: 'us-east-1'
+});
+
+// DynamoDBアイテムの取得
+const sessionData = await localstack.getDynamoDBItem({
+  TableName: process.env.SESSION_TABLE || 'test-sessions',
+  Key: {
+    sessionId: { S: 'session-123' }
+  }
+});
+```
+
+#### 8.7.2 外部APIのモック
+
+外部APIへのリクエストをモック化します：
+
+```javascript
+// Yahoo Finance APIのモック
+nock('https://yh-finance.p.rapidapi.com')
+  .persist()
+  .get('/v8/finance/quote')
+  .query(true)
+  .reply(200, {
+    quoteResponse: {
+      result: [{
+        symbol: 'AAPL',
+        regularMarketPrice: 190.5,
+        regularMarketChange: 2.3,
+        regularMarketChangePercent: 1.2,
+        currency: 'USD'
+      }],
+      error: null
+    }
+  });
+```
+
+#### 8.7.3 障害シミュレーション
+
+テスト中に特定のAPIやサービスの障害をシミュレートします：
+
+```javascript
+// データソースの失敗をシミュレート
+await simulateDataSourceFailure('yahoo-finance-api');
+
+// テスト実行
+
+// データソースをリセット
+await resetDataSources();
+```
+
+### 8.8 E2Eテスト特有のガイドライン
+
+#### 8.8.1 APIサーバーの自動起動
+
+テスト実行時にAPIサーバーを自動的に起動します：
+
+```javascript
+// APIサーバーを起動
+if (process.env.RUN_E2E_TESTS === 'true') {
+  await startApiServer();
+  console.log('✅ API server started successfully for E2E tests');
+}
+```
+
+#### 8.8.2 フォールバックレスポンスの設定
+
+未処理のAPIリクエスト用にフォールバックレスポンスを設定します：
+
+```javascript
+// APIサーバーヘルスチェックのフォールバック
+nock(/.*/)
+  .persist()
+  .get(/\/health.*/)
+  .reply(200, {
+    success: true,
+    status: 'ok',
+    mockFallback: true,
+    version: '1.0.0',
+    timestamp: new Date().toISOString()
+  });
+```
+
+#### 8.8.3 セッション状態の管理
+
+認証状態を追跡し、テスト間で一貫したセッション管理を行います：
+
+```javascript
+// セッション状態の追跡
+const sessionState = {
+  // 有効なセッションクッキーを追跡
+  activeSessions: new Set(['test-session-id']),
+  
+  // ログアウト状態のセッションを追跡
+  loggedOutSessions: new Set(),
+  
+  // セッションが有効かチェック
+  isSessionValid(cookie) {
+    if (!cookie) return false;
+    
+    const sessionMatch = cookie.match(/session=([^;]+)/);
+    if (!sessionMatch) return false;
+    
+    const sessionId = sessionMatch[1];
+    return this.activeSessions.has(sessionId) && !this.loggedOutSessions.has(sessionId);
+  }
+};
+```
+
+### 8.9 テストデータの管理
+
+#### 8.9.1 テストデータの定義
+
+共通のテストデータを一元管理します：
+
+```javascript
+// テストデータ
+const TEST_DATA = {
+  // 証券コード
+  usStockSymbol: 'AAPL',
+  jpStockCode: '7203',
+  mutualFundCode: '0131103C',
+  exchangeRate: 'USD-JPY',
+  
+  // 認証情報
+  testAuthCode: 'test-auth-code',
+  redirectUri: 'http://localhost:3000/callback',
+  
+  // ポートフォリオデータ
+  samplePortfolio: {
+    name: 'Test Portfolio',
+    holdings: [
+      { symbol: 'AAPL', shares: 10, cost: 150.0 },
+      { symbol: '7203', shares: 100, cost: 2000 }
+    ]
+  }
+};
+```
+
+#### 8.9.2 DynamoDBテストデータの設定
+
+テスト用のテーブルとデータを作成します：
+
+```javascript
+// テスト用のテーブルを作成
+await Promise.allSettled([
+  createTestTable(process.env.SESSION_TABLE || 'test-sessions', { sessionId: 'S' }),
+  createTestTable(`${process.env.DYNAMODB_TABLE_PREFIX || 'test-'}cache`, { key: 'S' })
+]);
+```
+
+### 8.10 エラーハンドリングテスト
+
+さまざまなエラーシナリオをテストします：
+
+```javascript
+conditionalTest('無効なパラメータでのエラーハンドリング', async () => {
+  try {
+    // 不正なパラメータでAPIリクエスト
+    const response = await axios.get(`${API_BASE_URL}/api/market-data`, {
+      params: {
+        type: 'invalid-type',
+        symbols: TEST_DATA.usStockSymbol
+      }
+    });
+    
+    // 予期しない成功レスポンスの場合
+    expect(response?.status).toBe(400);
+  } catch (error) {
+    // エラーレスポンス検証
+    expect(error.response.status).toBe(400);
+    expect(error.response.data.success).toBe(false);
+    expect(error.response.data.error.code).toBe('INVALID_PARAMS');
+  }
+});
+```
+
+### 8.11 テストカバレッジ
+
+- 全体のコードカバレッジは80%以上を目標とします
+- ビジネスロジックを含むコアモジュールは90%以上のカバレッジを目標とします
+- テストカバレッジレポートを定期的に確認し、カバレッジ改善に努めます
+
+```javascript
+// package.jsonの設定例
+{
+  "scripts": {
+    "test": "jest",
+    "test:coverage": "jest --coverage"
+  },
+  "jest": {
+    "collectCoverageFrom": [
+      "src/**/*.js",
+      "!src/config/**",
+      "!**/node_modules/**"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "statements": 80,
+        "branches": 70,
+        "functions": 80,
+        "lines": 80
+      }
+    }
+  }
+}
 ```
 
 ## 9. セキュリティ
@@ -742,6 +1138,31 @@ module.exports = {
  * @param {string} message - エラーメッセージ
  * @param {string} code - エラーコード
  * @param {number} statusCode - HTTPステータスコード
+ */
+```
+
+## 付録: テストに関するJSDocテンプレート
+
+### テストファイルのヘッダーテンプレート
+```javascript
+/**
+ * ファイルパス: __tests__/unit/services/cacheService.test.js
+ * 
+ * キャッシュサービスのユニットテスト
+ * DynamoDBキャッシュの読み書き機能を検証します。
+ * 
+ * @author Portfolio Manager Team
+ * @created 2025-05-20
+ */
+```
+
+### テストユーティリティ関数テンプレート
+```javascript
+/**
+ * テスト用にDynamoDBテーブルをセットアップする
+ * @param {string} tableName - 作成するテーブル名
+ * @param {Object} keySchema - プライマリキーのスキーマ（例: { key: 'S' }）
+ * @returns {Promise<void>} 処理完了後にresolveするPromise
  */
 ```
 

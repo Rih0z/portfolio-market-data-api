@@ -2,8 +2,8 @@
  * Google認証ログインハンドラーの統合テスト
  * 
  * @file __tests__/integration/auth/googleLogin.test.js
- * @author Portfolio Manager Team
- * @updated 2025-05-12 バグ修正: 認証フローテストの完全な書き直し
+ * @author Koki Riho
+ * @updated 2025-05-12 バグ修正: Jest モック定義でのスコープ問題を解決
  */
 
 // テスト対象の関数をインポート
@@ -18,9 +18,18 @@ const cookieParser = require('../../../src/utils/cookieParser');
 const { setupLocalStackEmulator } = require('../../testUtils/awsEmulator');
 const { setupGoogleOAuth2Mock } = require('../../testUtils/googleMock');
 
+// モジュールのモック化 - 名前に「mock」プレフィックスをつけるか、ここでは直接モック
 jest.mock('../../../src/services/googleAuthService');
 jest.mock('../../../src/utils/responseUtils');
 jest.mock('../../../src/utils/cookieParser');
+
+// モジュールパスを変数に格納
+const getSessionModulePath = '../../../src/function/auth/getSession';
+const logoutModulePath = '../../../src/function/auth/logout';
+
+// これらのモジュールもモック化（修正: jest.mockは変数参照できないため変更）
+jest.mock(getSessionModulePath);
+jest.mock(logoutModulePath);
 
 // テスト用のレスポンスオブジェクト
 const mockResponseObject = {
@@ -67,6 +76,36 @@ describe('Google Login Handler', () => {
     
     // cookieParserのモック実装
     cookieParser.createSessionCookie.mockReturnValue('session=test-session-id; HttpOnly; Secure');
+    
+    // getSessionとlogoutのモック実装（修正: 外部変数を参照せずにbeforeEachでセット）
+    const mockGetSession = require(getSessionModulePath);
+    mockGetSession.handler = jest.fn().mockImplementation(() => {
+      return {
+        statusCode: 200,
+        body: JSON.stringify({ 
+          success: true, 
+          data: { 
+            isAuthenticated: true,
+            user: {
+              id: 'user-123',
+              email: 'test@example.com',
+              name: 'Test User'
+            }
+          }
+        })
+      };
+    });
+    
+    const mockLogout = require(logoutModulePath);
+    mockLogout.handler = jest.fn().mockImplementation(() => {
+      return {
+        statusCode: 200,
+        body: JSON.stringify({ 
+          success: true, 
+          message: 'ログアウトしました'
+        })
+      };
+    });
   });
   
   test('正常なGoogleログイン処理の実行', async () => {
@@ -326,48 +365,9 @@ describe('Google Login Handler', () => {
    * モックと実装を分離し、個別のテストに分ける
    */
   test('完全な認証フロー（ログイン→セッション確認→ログアウト）', async () => {
-    // この問題のある統合テストを分離し、シンプルなテストに置き換え
-    
-    // 1. まず必要なモックを手動で作成する
-    const getSessionMock = jest.fn().mockImplementation(() => {
-      return {
-        statusCode: 200,
-        body: JSON.stringify({ 
-          success: true, 
-          data: { 
-            isAuthenticated: true,
-            user: {
-              id: 'user-123',
-              email: 'test@example.com',
-              name: 'Test User'
-            }
-          }
-        })
-      };
-    });
-    
-    const logoutMock = jest.fn().mockImplementation(() => {
-      return {
-        statusCode: 200,
-        body: JSON.stringify({ 
-          success: true, 
-          message: 'ログアウトしました'
-        })
-      };
-    });
-    
-    // 実際の関数をモックに置き換える
-    const getSessionModulePath = '../../../src/function/auth/getSession';
-    const logoutModulePath = '../../../src/function/auth/logout';
-    
-    // モジュールキャッシュから直接モックを設定
-    jest.mock(getSessionModulePath, () => ({
-      handler: getSessionMock
-    }));
-    
-    jest.mock(logoutModulePath, () => ({
-      handler: logoutMock
-    }));
+    // モックの参照を取得（修正: 外部変数使用の代わりにrequireして使用）
+    const getSessionModule = require(getSessionModulePath);
+    const logoutModule = require(logoutModulePath);
     
     // 2. セッションサービスのモックを設定
     googleAuthService.getSession = jest.fn().mockImplementation(sessionId => {
@@ -399,7 +399,7 @@ describe('Google Login Handler', () => {
     };
     
     // ハンドラーを直接参照せず、モックを直接テスト
-    getSessionMock(sessionEvent);
+    getSessionModule.handler(sessionEvent);
     
     // 5. ログアウトリクエストをテスト
     const logoutEvent = {
@@ -408,11 +408,11 @@ describe('Google Login Handler', () => {
       }
     };
     
-    logoutMock(logoutEvent);
+    logoutModule.handler(logoutEvent);
     
     // 6. モックが呼び出されたことを検証
-    expect(getSessionMock).toHaveBeenCalledWith(sessionEvent);
-    expect(logoutMock).toHaveBeenCalledWith(logoutEvent);
+    expect(getSessionModule.handler).toHaveBeenCalledWith(sessionEvent);
+    expect(logoutModule.handler).toHaveBeenCalledWith(logoutEvent);
     
     // 注: 実際のgetSessionとlogoutはモック化されているため、内部の
     // googleAuthService.getSessionやinvalidateSessionは呼び出されません

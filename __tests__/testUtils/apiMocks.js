@@ -36,8 +36,10 @@ const TEST_DATA = {
 const mockExternalApis = () => {
   console.log('外部APIモックの設定を開始...');
   
-  // モックをクリア（重複設定を防止）
+  // モックのクリア（重複設定を防止）
   nock.cleanAll();
+  // nockの設定を緩める（開発環境でのテスト向け）
+  nock.enableNetConnect();
   
   try {
     // Yahoo Finance APIのモック
@@ -208,8 +210,9 @@ const mockExternalApis = () => {
  * @param {object} response - レスポンスデータ
  * @param {number} statusCode - HTTPステータスコード
  * @param {object} headers - レスポンスヘッダー
+ * @param {object} options - 追加オプション（queryParamsなど）
  */
-const mockApiRequest = (url, method = 'GET', response = {}, statusCode = 200, headers = {}) => {
+const mockApiRequest = (url, method = 'GET', response = {}, statusCode = 200, headers = {}, options = {}) => {
   try {
     const urlObj = new URL(url);
     
@@ -222,14 +225,23 @@ const mockApiRequest = (url, method = 'GET', response = {}, statusCode = 200, he
     // デバッグ: リクエストをセットアップ
     console.log(`モック設定: ${method.toUpperCase()} ${url}`);
     
-    const mockInstance = nock(urlObj.origin)
-      .persist()
-      [normalizedMethod](urlObj.pathname + urlObj.search)
-      .reply(function(uri, requestBody) {
-        // リクエストのデバッグ情報
-        console.log(`モックがリクエストを受信: ${method.toUpperCase()} ${urlObj.pathname}`);
-        return [statusCode, response, headers];
-      });
+    // クエリパラメータがある場合
+    let mockScope = nock(urlObj.origin).persist();
+    
+    if (options.queryParams) {
+      // クエリパラメータを指定してモック
+      mockScope = mockScope[normalizedMethod](urlObj.pathname)
+        .query(options.queryParams);
+    } else {
+      // パスとクエリ文字列をそのまま使用
+      mockScope = mockScope[normalizedMethod](urlObj.pathname + urlObj.search);
+    }
+    
+    mockScope.reply(function(uri, requestBody) {
+      // リクエストのデバッグ情報
+      console.log(`モックがリクエストを受信: ${method.toUpperCase()} ${uri}`);
+      return [statusCode, response, headers];
+    });
     
     return true;
   } catch (error) {
@@ -378,17 +390,21 @@ const setupFallbackResponses = () => {
       }
     });
   
-  // ファイル一覧APIのフォールバック
+  // 最後に設定する - セッション認証関連のフォールバック
+  
+  // 認証なしのドライブファイル一覧APIのフォールバック
+  // ルートパスの /drive/files にマッチするように正規表現を使用
   nock(/.*/)
     .persist()
-    .get(/\/drive\/files.*/)
+    .get(/^\/(?:.+\/)?drive\/files(?:\?.*)?$/)
     .reply(function(uri, requestBody) {
-      console.log(`フォールバック: ファイル一覧リクエスト: ${uri}`);
       // リクエストのCookieをチェック
       const cookies = this.req.headers.cookie;
-      const hasSession = cookies && cookies.includes('session=');
+      const hasValidSession = cookies && (cookies.includes('session=test-session-id') || cookies.includes('session=complete-flow-session-id'));
       
-      if (hasSession) {
+      console.log(`認証ドライブファイル一覧リクエスト: ${uri}, Cookie: ${cookies}`);
+      
+      if (hasValidSession) {
         return [
           200,
           {
@@ -472,3 +488,4 @@ module.exports = {
   setupFallbackResponses,
   TEST_DATA
 };
+

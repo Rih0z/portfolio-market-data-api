@@ -6,9 +6,10 @@
  * @file __tests__/testUtils/dynamodbLocal.js
  * @author Portfolio Manager Team
  * @updated 2025-05-12 バグ修正: AWS SDK v3のエラーハンドリングを改善
+ * @updated 2025-05-13 AWS SDK v3マイグレーション対応の完了
  */
 const { spawn } = require('child_process');
-const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
+const { DynamoDBClient, CreateTableCommand, DescribeTableCommand } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
 
 let dynamoProcess = null;
@@ -113,8 +114,6 @@ const getDynamoDBClient = () => {
  * 修正: エラーハンドリングを改善し、テーブル作成エラーで全体のテストが失敗しないようにする
  */
 const createTestTable = async (tableName, keySchema = { key: 'S' }) => {
-  const { CreateTableCommand, DescribeTableCommand } = require('@aws-sdk/client-dynamodb');
-  
   try {
     const client = new DynamoDBClient({
       region: 'us-east-1',
@@ -157,6 +156,10 @@ const createTestTable = async (tableName, keySchema = { key: 'S' }) => {
     // テーブルが存在しない場合、新しく作成
     await client.send(new CreateTableCommand(params));
     console.log(`Created table: ${tableName}`);
+    
+    // テーブル作成後に少し待機（DynamoDB Local が非同期で処理を完了するため）
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
   } catch (error) {
     if (error.name === 'ResourceInUseException') {
       console.log(`Table ${tableName} already exists`);

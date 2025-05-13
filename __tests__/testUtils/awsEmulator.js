@@ -6,10 +6,11 @@
  * @file __tests__/testUtils/awsEmulator.js
  * @author Portfolio Manager Team
  * @updated Koki - 2025-05-12 バグ修正: エラーハンドリングを改善し、モックフォールバックを追加
+ * @updated 2025-05-13 AWS SDK v3マイグレーション対応とテーブル作成タイミングを修正
  */
-const { DynamoDBClient, CreateTableCommand, GetItemCommand } = require('@aws-sdk/client-dynamodb');
+const { DynamoDBClient, CreateTableCommand, GetItemCommand, PutItemCommand } = require('@aws-sdk/client-dynamodb');
 const { marshall, unmarshall } = require('@aws-sdk/util-dynamodb');
-const { startDynamoDBLocal, stopDynamoDBLocal } = require('./dynamodbLocal');
+const { startDynamoDBLocal, stopDynamoDBLocal, createTestTable } = require('./dynamodbLocal');
 
 /**
  * LocalStack エミュレーターのセットアップ
@@ -22,15 +23,6 @@ const setupLocalStackEmulator = async (options = {}) => {
   } = options;
   
   console.log(`Setting up AWS emulator for services: ${services.join(', ')}`);
-  
-  // DynamoDBのエミュレーション
-  if (services.includes('dynamodb')) {
-    try {
-      await startDynamoDBLocal();
-    } catch (error) {
-      console.warn('Failed to start DynamoDB Local, using mock fallbacks:', error.message);
-    }
-  }
   
   // モック操作用のテストデータストア
   const mockDataStore = {
@@ -55,6 +47,30 @@ const setupLocalStackEmulator = async (options = {}) => {
     name: 'Test User',
     expiresAt: new Date(Date.now() + 86400000).toISOString()
   }));
+  
+  // DynamoDBのエミュレーション
+  if (services.includes('dynamodb')) {
+    try {
+      // DynamoDB Localを起動
+      await startDynamoDBLocal();
+      
+      // テスト用のテーブルを作成（重要: クエリの前にテーブルを作成する）
+      try {
+        // 必要なテーブルを並列に作成
+        await Promise.allSettled([
+          createTestTable(process.env.SESSION_TABLE || 'test-sessions', { sessionId: 'S' }),
+          createTestTable(`${process.env.DYNAMODB_TABLE_PREFIX || 'test-'}cache`, { key: 'S' }),
+          createTestTable(`${process.env.DYNAMODB_TABLE_PREFIX || 'test-'}scraping-blacklist`, { symbol: 'S' })
+        ]);
+        console.log('Test tables created successfully');
+      } catch (tableError) {
+        console.warn('Failed to create test tables:', tableError.message);
+        console.warn('Will use mock data store as fallback');
+      }
+    } catch (error) {
+      console.warn('Failed to start DynamoDB Local, using mock fallbacks:', error.message);
+    }
+  }
   
   return {
     // エミュレーターの停止
@@ -186,8 +202,6 @@ const setupLocalStackEmulator = async (options = {}) => {
     
     // DynamoDBにアイテムを保存
     putDynamoDBItem: async (tableName, item) => {
-      const { PutItemCommand } = require('@aws-sdk/client-dynamodb');
-      
       try {
         const client = new DynamoDBClient({
           region,
@@ -273,6 +287,17 @@ const setupLocalStackEmulator = async (options = {}) => {
           jest.restoreAllMocks();
         }
       };
+    },
+    
+    // モックDynamoDBを設定するためのヘルパーメソッド
+    mockDynamoDB: (item) => {
+      if (item && item.TableName && item.Item) {
+        if (item.TableName.includes('session') && item.Item.sessionId) {
+          const sessionId = item.Item.sessionId.S;
+          mockDataStore.sessions.set(sessionId, item.Item);
+          console.log(`Mocked DynamoDB item for sessionId: ${sessionId}`);
+        }
+      }
     }
   };
 };

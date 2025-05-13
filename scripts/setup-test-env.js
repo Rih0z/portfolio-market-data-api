@@ -5,12 +5,13 @@
  * 
  * @author Koki Riho
  * @created 2025-05-12
- * @updated 2025-05-12 環境構築プロセスを改善
+ * @updated 2025-05-13 AWS SDK v3対応、テーブル作成とDynamoDBLocalの起動順序を改善
  */
 
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { DynamoDBClient, CreateTableCommand, ListTablesCommand } = require('@aws-sdk/client-dynamodb');
 
 // 色の設定
 const colors = {
@@ -30,7 +31,7 @@ const log = {
 };
 
 // DynamoDB Local の起動
-function startDynamoDBLocal() {
+async function startDynamoDBLocal() {
   log.info('DynamoDB Local の起動を確認中...');
   
   try {
@@ -64,7 +65,7 @@ function startDynamoDBLocal() {
       
       // 起動を待機
       log.info('DynamoDB Local の起動を待機しています...');
-      execSync('sleep 2');
+      execSync('sleep 3'); // 起動を待つために少し長くスリープ
       
       try {
         // 起動確認
@@ -100,6 +101,76 @@ function createTestDirectories() {
   });
 }
 
+// 必要なテーブルの作成
+async function createRequiredTables() {
+  log.info('DynamoDB テーブルを作成しています...');
+  
+  try {
+    const client = new DynamoDBClient({
+      region: 'us-east-1',
+      endpoint: process.env.DYNAMODB_ENDPOINT || 'http://localhost:8000',
+      credentials: {
+        accessKeyId: 'test',
+        secretAccessKey: 'test'
+      }
+    });
+    
+    // 既存のテーブルを確認
+    const { TableNames } = await client.send(new ListTablesCommand({}));
+    log.info(`現在のテーブル一覧: ${TableNames?.join(', ') || '(なし)'}`);
+    
+    // 必要なテーブルの定義
+    const tables = [
+      {
+        name: process.env.SESSION_TABLE || 'test-sessions',
+        keySchema: [{ AttributeName: 'sessionId', KeyType: 'HASH' }],
+        attributeDefinitions: [{ AttributeName: 'sessionId', AttributeType: 'S' }]
+      },
+      {
+        name: `${process.env.DYNAMODB_TABLE_PREFIX || 'test-'}cache`,
+        keySchema: [{ AttributeName: 'key', KeyType: 'HASH' }],
+        attributeDefinitions: [{ AttributeName: 'key', AttributeType: 'S' }]
+      },
+      {
+        name: `${process.env.DYNAMODB_TABLE_PREFIX || 'test-'}scraping-blacklist`,
+        keySchema: [{ AttributeName: 'symbol', KeyType: 'HASH' }],
+        attributeDefinitions: [{ AttributeName: 'symbol', AttributeType: 'S' }]
+      }
+    ];
+    
+    // 各テーブルを必要に応じて作成
+    for (const table of tables) {
+      if (TableNames && !TableNames.includes(table.name)) {
+        try {
+          await client.send(new CreateTableCommand({
+            TableName: table.name,
+            KeySchema: table.keySchema,
+            AttributeDefinitions: table.attributeDefinitions,
+            ProvisionedThroughput: {
+              ReadCapacityUnits: 5,
+              WriteCapacityUnits: 5
+            }
+          }));
+          log.success(`テーブルを作成しました: ${table.name}`);
+        } catch (error) {
+          if (error.name === 'ResourceInUseException') {
+            log.info(`テーブルはすでに存在します: ${table.name}`);
+          } else {
+            log.error(`テーブル作成エラー - ${table.name}: ${error.message}`);
+          }
+        }
+      } else {
+        log.info(`テーブルはすでに存在します: ${table.name}`);
+      }
+    }
+    
+    return true;
+  } catch (error) {
+    log.error(`テーブル作成時にエラーが発生しました: ${error.message}`);
+    return false;
+  }
+}
+
 // テスト環境変数の設定
 function setupEnvironmentVariables() {
   log.info('テスト環境変数を設定しています...');
@@ -120,6 +191,7 @@ SESSION_TABLE=test-sessions
 DYNAMODB_TABLE_PREFIX=test-
 API_TEST_URL=http://localhost:3000/dev
 SKIP_E2E_TESTS=false
+SKIP_DYNAMODB_CHECKS=true
 `;
     
     fs.writeFileSync(envFile, defaultEnv);
@@ -131,6 +203,8 @@ SKIP_E2E_TESTS=false
   process.env.DYNAMODB_ENDPOINT = 'http://localhost:8000';
   process.env.SESSION_TABLE = 'test-sessions';
   process.env.DYNAMODB_TABLE_PREFIX = 'test-';
+  // DynamoDBチェックをスキップする設定を追加（テスト環境では特に重要）
+  process.env.SKIP_DYNAMODB_CHECKS = 'true';
 }
 
 // テストセットアップの実行
@@ -144,7 +218,14 @@ async function setupTestEnvironment() {
   setupEnvironmentVariables();
   
   // DynamoDB Local の起動
-  const dynamoDBStatus = startDynamoDBLocal();
+  const dynamoDBStatus = await startDynamoDBLocal();
+  
+  // テーブルの作成（DynamoDBが起動している場合のみ）
+  if (dynamoDBStatus) {
+    // 少し待機してからテーブル作成を実行（DynamoDB Local の初期化を待つ）
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    await createRequiredTables();
+  }
   
   // 結果の出力
   log.info('テスト環境のセットアップが完了しました');

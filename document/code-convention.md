@@ -5,6 +5,10 @@
 ### 1.1 目的と適用範囲
 本規約は、portfolio-market-data-api プロジェクトのコードの一貫性、可読性、保守性を確保するために作成されました。すべての新規コードと既存コードの修正に適用されます。
 
+### 1.1.1 著者情報
+- **著者**: Koki Riho (https://github.com/Rih0z)
+- **貢献者**: Portfolio Manager Team
+
 ### 1.2 使用言語とバージョン
 - **言語**: JavaScript (Node.js)
 - **Node.js バージョン**: 14.x 以上

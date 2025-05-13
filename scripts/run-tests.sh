@@ -7,6 +7,7 @@
 # @author Koki Riho
 # @created 2025-05-12
 # @updated 2025-05-12
+# @updated 2025-05-13 - nvm対応とカバレッジオプションの追加
 #
 
 # 色の設定
@@ -50,6 +51,8 @@ show_help() {
   echo "  -a, --auto          APIサーバーを自動起動（E2Eテスト用）"
   echo "  -m, --mock          APIモックを使用（E2Eテスト用）"
   echo "  -w, --watch         監視モードでテストを実行（コード変更時に自動再実行）"
+  echo "  -n, --no-coverage   カバレッジ計測・チェックを無効化"
+  echo "  --nvm               nvmを使用してNode.js 18に切り替え"
   echo ""
   echo "テスト種別:"
   echo "  unit                単体テストのみ実行"
@@ -64,6 +67,8 @@ show_help() {
   echo "  $0 -a -v e2e        APIサーバー自動起動でE2Eテストを実行し、結果をビジュアル表示"
   echo "  $0 -m -w unit       モックを使用し、監視モードで単体テストを実行"
   echo "  $0 quick            単体テストと統合テストを高速実行（モック使用）"
+  echo "  $0 -n integration   カバレッジチェック無効で統合テストを実行"
+  echo "  $0 --nvm unit       nvmでNode.js 18に切り替えて単体テストを実行"
   echo ""
 }
 
@@ -73,6 +78,8 @@ VISUAL=0
 AUTO=0
 MOCK=0
 WATCH=0
+NO_COVERAGE=0
+USE_NVM=0
 TEST_TYPE=""
 
 # オプション解析
@@ -102,6 +109,14 @@ while [[ $# -gt 0 ]]; do
       WATCH=1
       shift
       ;;
+    -n|--no-coverage)
+      NO_COVERAGE=1
+      shift
+      ;;
+    --nvm)
+      USE_NVM=1
+      shift
+      ;;
     unit|integration|e2e|all|quick)
       TEST_TYPE=$1
       shift
@@ -113,6 +128,33 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# nvmが指定されている場合、Node.js 18に切り替え
+if [ $USE_NVM -eq 1 ]; then
+  print_info "nvmを使用してNode.js 18に切り替えます..."
+  
+  # nvmをロード
+  export NVM_DIR="$HOME/.nvm"
+  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+  
+  # 現在のNode.jsバージョンを確認
+  CURRENT_NODE_VERSION=$(node -v)
+  
+  if [[ "$CURRENT_NODE_VERSION" == v18.* ]]; then
+    print_success "既にNode.js $CURRENT_NODE_VERSION を使用しています"
+  else
+    # Node.js 18に切り替え
+    nvm use 18 || {
+      print_warning "Node.js 18に切り替えられませんでした。インストールを試みます..."
+      nvm install 18 && nvm use 18 || {
+        print_error "Node.js 18のインストールに失敗しました。"
+        print_info "nvm install 18 を手動で実行するか、npm config set engine-strict false を実行してください。"
+        exit 1
+      }
+    }
+    print_success "Node.js $(node -v) に切り替えました"
+  fi
+fi
 
 # テスト種別が指定されていない場合はエラー
 if [ -z "$TEST_TYPE" ]; then
@@ -175,6 +217,25 @@ case $TEST_TYPE in
     TEST_CMD="test:quick"
     ;;
 esac
+
+# カバレッジが無効化されている場合はコマンドを調整
+if [ $NO_COVERAGE -eq 1 ]; then
+  print_info "カバレッジチェックが無効化されています"
+  
+  # カバレッジなしのコマンドに変更
+  case $TEST_TYPE in
+    unit|integration|e2e)
+      TEST_CMD="${TEST_CMD}:nocov"
+      ;;
+    all)
+      TEST_CMD="test:nocov"
+      ;;
+    quick)
+      ENV_VARS="$ENV_VARS USE_API_MOCKS=true"
+      TEST_CMD="test:nocov"
+      ;;
+  esac
+fi
 
 # 監視モードが指定された場合
 if [ $WATCH -eq 1 ]; then

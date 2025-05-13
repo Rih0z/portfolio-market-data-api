@@ -299,13 +299,22 @@ const setupFallbackResponses = () => {
     .query(true)
     .reply(function(uri, requestBody) {
       console.log(`フォールバック: Drive読み込みリクエスト: ${uri}`);
+      // クエリパラメータを解析
+      const url = new URL(`http://localhost${uri}`);
+      const fileId = url.searchParams.get('fileId') || 'file-123';
+      
       return [
         200,
         {
           success: true,
           mockFallback: true,
-          message: 'Fallback portfolio data response',
-          data: TEST_DATA.samplePortfolio
+          message: `Fallback portfolio data response for fileId: ${fileId}`,
+          data: TEST_DATA.samplePortfolio,
+          file: {
+            id: fileId,
+            name: 'test-portfolio.json',
+            createdTime: new Date().toISOString()
+          }
         }
       ];
     });

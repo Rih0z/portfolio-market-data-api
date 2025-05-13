@@ -50,6 +50,9 @@ let sessionCookie = '';
 // APIサーバー実行状態フラグ - デフォルトでmock使用時はtrueに設定
 let apiServerAvailable = USE_MOCKS;
 
+// Jest関数をグローバルにインポート
+const { expect, test, describe, beforeAll, afterAll, beforeEach, fail } = global;
+
 // 条件付きテスト関数 - APIサーバーが実行されていない場合はスキップ
 const conditionalTest = (name, fn) => {
   if (!apiServerAvailable && !USE_MOCKS) {
@@ -112,6 +115,14 @@ describe('Portfolio Market Data API E2Eテスト', () => {
   const setupMockResponses = () => {
     // 安全性のため先に全ての外部APIをモック
     mockExternalApis();
+    
+    // ヘルスチェックAPI (最初に設定して、APIサーバー起動チェックで使用可能にする)
+    mockApiRequest(`${API_BASE_URL}/health`, 'GET', {
+      success: true,
+      status: 'ok',
+      version: '1.0.0',
+      timestamp: new Date().toISOString()
+    });
     
     // 米国株データAPI
     mockApiRequest(`${API_BASE_URL}/api/market-data?type=us-stock&symbols=${TEST_DATA.usStockSymbol}`, 'GET', {
@@ -296,7 +307,7 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         expect(stockData.currency).toBe('USD');
       } catch (error) {
         console.error('米国株データ取得テストエラー:', error.message);
-        fail(`テストが失敗しました: ${error.message}`);
+        expect(true).toBe(false, `テストが失敗しました: ${error.message}`);
       }
     });
     
@@ -324,7 +335,7 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         expect(stockData.currency).toBe('JPY');
       } catch (error) {
         console.error('日本株データ取得テストエラー:', error.message);
-        fail(`テストが失敗しました: ${error.message}`);
+        expect(true).toBe(false, `テストが失敗しました: ${error.message}`);
       }
     });
     
@@ -352,7 +363,7 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         expect(fundData.isMutualFund).toBe(true);
       } catch (error) {
         console.error('投資信託データ取得テストエラー:', error.message);
-        fail(`テストが失敗しました: ${error.message}`);
+        expect(true).toBe(false, `テストが失敗しました: ${error.message}`);
       }
     });
     
@@ -383,7 +394,7 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         expect(rateData.target).toBe('JPY');
       } catch (error) {
         console.error('為替レートデータ取得テストエラー:', error.message);
-        fail(`テストが失敗しました: ${error.message}`);
+        expect(true).toBe(false, `テストが失敗しました: ${error.message}`);
       }
     });
     
@@ -398,7 +409,7 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         });
         
         // ここに到達したらテスト失敗
-        fail('Expected request to fail with 400 error');
+        expect(true).toBe(false, 'Expected request to fail with 400 error');
       } catch (error) {
         // エラーレスポンスが存在することを確認
         expect(error.response).toBeDefined();
@@ -483,7 +494,7 @@ describe('Portfolio Market Data API E2Eテスト', () => {
           });
           
           // ここに到達したらテスト失敗
-          fail('Expected request to fail with 401 error after logout');
+          expect(true).toBe(false, 'Expected request to fail with 401 error after logout');
         } catch (error) {
           // エラーレスポンス検証
           expect(error.response).toBeDefined();
@@ -492,7 +503,7 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         }
       } catch (error) {
         console.error('認証フローテストエラー:', error.message);
-        fail(`テストが失敗しました: ${error.message}`);
+        expect(true).toBe(false, `テストが失敗しました: ${error.message}`);
       }
     });
   });
@@ -565,9 +576,9 @@ describe('Portfolio Market Data API E2Eテスト', () => {
           expect(savedFile).toBeDefined();
         }
         
-        // ステップ3: 保存したファイルを読み込み
+        // 保存したファイルを読み込み
         // 修正: 使用するファイルIDを明示的に選択し、try-catchで囲む
-        const useFileId = fileId || 'new-file-123'; // モックの場合は固定ID
+        const useFileId = fileId || 'file-123'; // モックの場合は固定ID
         
         try {
           const loadResponse = await axios.get(`${API_BASE_URL}/drive/load`, {
@@ -578,7 +589,9 @@ describe('Portfolio Market Data API E2Eテスト', () => {
           });
           
           // レスポンスの存在確認
-          expect(loadResponse).toBeDefined();
+          if (!loadResponse) {
+            throw new Error(`ファイル読み込みのレスポンスが未定義です (fileId: ${useFileId})`);
+          }
           
           // レスポンス検証
           expect(loadResponse.status).toBe(200);
@@ -587,7 +600,8 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         } catch (loadError) {
           console.warn(`ファイル読み込みエラー(${useFileId}):`, loadError.message);
           
-          // フォールバック: 元のファイルIDを試す
+          // フォールバック: 固定のファイルIDを試す
+          console.log('フォールバックファイルIDを使用して再試行します: file-123');
           const fallbackResponse = await axios.get(`${API_BASE_URL}/drive/load`, {
             params: { fileId: 'file-123' }, // 固定のファイルIDを使用
             headers: {
@@ -595,12 +609,16 @@ describe('Portfolio Market Data API E2Eテスト', () => {
             }
           });
           
+          if (!fallbackResponse) {
+            throw new Error('フォールバックファイル読み込みのレスポンスが未定義です');
+          }
+          
           expect(fallbackResponse.status).toBe(200);
           expect(fallbackResponse.data.data).toEqual(TEST_DATA.samplePortfolio);
         }
       } catch (error) {
         console.error('ポートフォリオデータテストエラー:', error.message);
-        fail(`テストが失敗しました: ${error.message}`);
+        expect(true).toBe(false, `テストが失敗しました: ${error.message}`);
       }
     });
     
@@ -610,7 +628,7 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         await axios.get(`${API_BASE_URL}/drive/files`);
         
         // ここに到達したらテスト失敗
-        fail('Expected request to fail with 401 error');
+        expect(true).toBe(false, 'Expected request to fail with 401 error');
       } catch (error) {
         // エラーレスポンスが存在することを確認
         expect(error.response).toBeDefined();
@@ -638,7 +656,7 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         // APIがレスポンスを返せていることが重要
       } catch (error) {
         console.error('ヘルスチェックテストエラー:', error.message);
-        fail(`テストが失敗しました: ${error.message}`);
+        expect(true).toBe(false, `テストが失敗しました: ${error.message}`);
       }
     });
   });

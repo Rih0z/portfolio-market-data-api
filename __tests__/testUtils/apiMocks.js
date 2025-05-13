@@ -1,8 +1,17 @@
 /**
+ * ファイルパス: __tests__/testUtils/apiMocks.js
+ * 
  * 外部APIのモックを設定するユーティリティ
  * 修正: エラーハンドリングとAPIキー設定強化、モック用ノックの安定性向上
+ * @updated 2025-05-14 修正: デバッグログ追加、nockのクリーンアップロジック改善
  */
 const nock = require('nock');
+
+// デバッグログを追加
+console.log('==== API MOCKS DEBUG INFO ====');
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('USE_API_MOCKS:', process.env.USE_API_MOCKS);
+console.log('=============================');
 
 // API鍵の取得（環境変数からまたはデフォルト値）
 const getYahooFinanceApiKey = () => process.env.YAHOO_FINANCE_API_KEY || 'test-api-key';
@@ -13,6 +22,8 @@ const getExchangeRateApiKey = () => process.env.EXCHANGE_RATE_API_KEY || 'test-a
  * 外部APIのモックを設定する
  */
 const mockExternalApis = () => {
+  console.log('外部APIモックの設定を開始...');
+  
   // モックをクリア（重複設定を防止）
   nock.cleanAll();
   
@@ -170,9 +181,11 @@ const mockExternalApis = () => {
       .get(/^\/FdsWeb\/FDST/)
       .reply(200, '<html><body><div class="standard-price">10000</div></body></html>');
       
-    console.log('All external APIs mocked successfully');
+    console.log('✅ すべての外部APIのモックが設定されました');
+    return true;
   } catch (error) {
     console.error('Error setting up API mocks:', error);
+    return false;
   }
 };
 
@@ -182,16 +195,29 @@ const mockExternalApis = () => {
  * @param {string} method - HTTPメソッド
  * @param {object} response - レスポンスデータ
  * @param {number} statusCode - HTTPステータスコード
+ * @param {object} headers - レスポンスヘッダー
  */
-const mockApiRequest = (url, method = 'GET', response = {}, statusCode = 200) => {
+const mockApiRequest = (url, method = 'GET', response = {}, statusCode = 200, headers = {}) => {
   try {
     const urlObj = new URL(url);
     
-    nock(urlObj.origin)
+    // メソッドを小文字に変換し、存在チェック
+    const normalizedMethod = method.toLowerCase();
+    if (!['get', 'post', 'put', 'delete', 'patch', 'head', 'options'].includes(normalizedMethod)) {
+      throw new Error(`Invalid HTTP method: ${method}`);
+    }
+    
+    // デバッグ: リクエストをセットアップ
+    console.log(`モック設定: ${method.toUpperCase()} ${url}`);
+    
+    const mockInstance = nock(urlObj.origin)
       .persist()
-      [method.toLowerCase()](urlObj.pathname)
-      .query(true)
-      .reply(statusCode, response);
+      [normalizedMethod](urlObj.pathname + urlObj.search)
+      .reply(function(uri, requestBody) {
+        // リクエストのデバッグ情報
+        console.log(`モックがリクエストを受信: ${method.toUpperCase()} ${urlObj.pathname}`);
+        return [statusCode, response, headers];
+      });
     
     return true;
   } catch (error) {
@@ -205,7 +231,16 @@ const mockApiRequest = (url, method = 'GET', response = {}, statusCode = 200) =>
  */
 const resetApiMocks = () => {
   try {
+    // 既存のモックをすべてクリア
     nock.cleanAll();
+    
+    // 未解決のモックをチェック
+    const pendingMocks = nock.pendingMocks();
+    if (pendingMocks.length > 0) {
+      console.warn(`警告: ${pendingMocks.length}個の未解決モックがあります`);
+      console.warn(pendingMocks);
+    }
+    
     console.log('API mocks reset');
     return true;
   } catch (error) {
@@ -243,6 +278,8 @@ const getRecordedApis = () => {
  * （テスト安定性の向上）
  */
 const setupFallbackResponses = () => {
+  console.log('フォールバックレスポンスの設定を開始...');
+  
   // すべてのHTTPリクエストに対するフォールバックを設定
   nock(/.*/)
     .persist()
@@ -277,9 +314,11 @@ const setupFallbackResponses = () => {
       ];
     });
   
-  console.log('Fallback responses setup for unhandled requests');
+  console.log('✅ フォールバックレスポンスが設定されました');
+  return true;
 };
 
+// モジュールのエクスポート
 module.exports = {
   mockExternalApis,
   resetApiMocks,

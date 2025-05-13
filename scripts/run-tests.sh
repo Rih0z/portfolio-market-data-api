@@ -8,6 +8,7 @@
 # @created 2025-05-12
 # @updated 2025-05-12
 # @updated 2025-05-13 - nvm対応とカバレッジオプションの追加
+# @updated 2025-05-14 - 強制実行フラグを追加、デバッグモードの追加
 #
 
 # 色の設定
@@ -52,6 +53,8 @@ show_help() {
   echo "  -m, --mock          APIモックを使用（E2Eテスト用）"
   echo "  -w, --watch         監視モードでテストを実行（コード変更時に自動再実行）"
   echo "  -n, --no-coverage   カバレッジ計測・チェックを無効化"
+  echo "  -f, --force         サーバー状態に関わらずテストを強制実行"
+  echo "  -d, --debug         デバッグモードを有効化（詳細ログを表示）"
   echo "  --nvm               nvmを使用してNode.js 18に切り替え"
   echo ""
   echo "テスト種別:"
@@ -68,6 +71,8 @@ show_help() {
   echo "  $0 -m -w unit       モックを使用し、監視モードで単体テストを実行"
   echo "  $0 quick            単体テストと統合テストを高速実行（モック使用）"
   echo "  $0 -n integration   カバレッジチェック無効で統合テストを実行"
+  echo "  $0 -f -m e2e        テストを強制実行モードで実行（モック使用）"
+  echo "  $0 -d e2e           デバッグモードでE2Eテストを実行（詳細ログ表示）"
   echo "  $0 --nvm unit       nvmでNode.js 18に切り替えて単体テストを実行"
   echo ""
 }
@@ -80,6 +85,8 @@ MOCK=0
 WATCH=0
 NO_COVERAGE=0
 USE_NVM=0
+FORCE_TESTS=0
+DEBUG_MODE=0
 TEST_TYPE=""
 
 # オプション解析
@@ -113,6 +120,14 @@ while [[ $# -gt 0 ]]; do
       NO_COVERAGE=1
       shift
       ;;
+    -f|--force)
+      FORCE_TESTS=1
+      shift
+      ;;
+    -d|--debug)
+      DEBUG_MODE=1
+      shift
+      ;;
     --nvm)
       USE_NVM=1
       shift
@@ -128,6 +143,17 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# デバッグモードが指定されている場合、詳細情報を表示
+if [ $DEBUG_MODE -eq 1 ]; then
+  print_info "デバッグモードが有効です"
+  print_info "実行環境情報:"
+  echo "- Node.js Version: $(node -v 2>/dev/null || echo 'Not found')"
+  echo "- npm Version: $(npm -v 2>/dev/null || echo 'Not found')"
+  echo "- Current directory: $(pwd)"
+  echo "- Available environment variables:"
+  env | grep -E "NODE_ENV|API_|TEST_|MOCK|E2E|DYNAMODB" | sort
+fi
 
 # nvmが指定されている場合、Node.js 18に切り替え
 if [ $USE_NVM -eq 1 ]; then
@@ -185,6 +211,16 @@ fi
 if [ $MOCK -eq 1 ]; then
   ENV_VARS="$ENV_VARS USE_API_MOCKS=true"
   print_info "APIモック使用モードが有効です"
+fi
+
+if [ $FORCE_TESTS -eq 1 ]; then
+  ENV_VARS="$ENV_VARS FORCE_TESTS=true"
+  print_info "テスト強制実行モードが有効です"
+fi
+
+if [ $DEBUG_MODE -eq 1 ]; then
+  ENV_VARS="$ENV_VARS DEBUG=true"
+  print_info "デバッグログが有効です"
 fi
 
 # テストコマンドの構築
@@ -246,6 +282,13 @@ if [ $WATCH -eq 1 ]; then
     npm run test:watch
   fi
 else
+  # 通常実行の前に、環境変数を表示（デバッグ目的）
+  if [ $DEBUG_MODE -eq 1 ]; then
+    print_info "テスト実行コマンド情報:"
+    echo "- コマンド: npm run $TEST_CMD"
+    echo "- 環境変数: $ENV_VARS"
+  fi
+  
   # 通常実行
   if [ -n "$ENV_VARS" ] && [ "$TEST_TYPE" != "e2e" ]; then
     # e2eは専用コマンドがあるため除外
@@ -269,6 +312,13 @@ if [ $TEST_RESULT -eq 0 ]; then
   print_header "テスト実行が成功しました! 🎉"
 else
   print_header "テスト実行が失敗しました... 😢"
+  # デバッグモードの場合、詳細情報を表示
+  if [ $DEBUG_MODE -eq 1 ]; then
+    print_info "テスト失敗の詳細情報:"
+    echo "テスト種別: $TEST_TYPE"
+    echo "終了コード: $TEST_RESULT"
+    echo "ログファイルは ./test-results/ ディレクトリにあります"
+  fi
 fi
 
 exit $TEST_RESULT

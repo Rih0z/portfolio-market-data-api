@@ -536,3 +536,4 @@ describe('Portfolio Market Data API E2Eテスト', () => {
     });
   });
 });
+

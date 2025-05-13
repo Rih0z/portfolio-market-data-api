@@ -1,991 +1,527 @@
-# ポートフォリオマーケットデータAPI 統合ガイド
-
-この統合ガイドは、フロントエンド開発者向けにマーケットデータAPIの実装方法、特にGoogle認証とGoogle Drive連携機能の活用方法について説明します。
+# Portfolio Market Data API 技術仕様書
 
 ## 目次
 
-1. [API概要](#1-api概要)
-2. [認証フロー](#2-認証フロー)
-3. [マーケットデータの取得](#3-マーケットデータの取得)
-4. [Google Drive連携](#4-google-drive連携)
-5. [エラーハンドリング](#5-エラーハンドリング)
-6. [React用カスタムフック](#6-react用カスタムフック)
-7. [実装例](#7-実装例)
-8. [ベストプラクティス](#8-ベストプラクティス)
+1. [概要](#1-概要)
+2. [システムアーキテクチャ](#2-システムアーキテクチャ)
+3. [コンポーネントと機能モジュール](#3-コンポーネントと機能モジュール)
+4. [データフロー](#4-データフロー)
+5. [外部サービス連携](#5-外部サービス連携)
+6. [マーケットデータ取得](#6-マーケットデータ取得)
+7. [エラーハンドリングとフォールバック](#7-エラーハンドリングとフォールバック)
+8. [キャッシュ戦略](#8-キャッシュ戦略)
+9. [監視とアラート](#9-監視とアラート)
+10. [セキュリティ実装](#10-セキュリティ実装)
+11. [運用管理機能](#11-運用管理機能)
 
-## 1. API概要
+## 1. 概要
 
-ポートフォリオマーケットデータAPIは、以下の機能を提供します：
+Portfolio Market Data APIは、投資ポートフォリオ管理アプリケーション向けの金融市場データ提供サービスです。米国株式、日本株式、投資信託、為替レートなどのデータを複数のソースから取得し、統一されたインターフェースを通じて提供します。
 
-- 米国株、日本株、投資信託、為替レートのリアルタイムデータ取得
-- Google OAuth 2.0認証と安全なセッション管理
-- ポートフォリオデータのGoogle Drive保存・読込・一覧機能
-- データキャッシング機能と使用量制限
+### 1.1 主要機能
 
-### 1.1 API構成
+- 複数のデータソースからの金融市場データ取得
+- データの検証とクレンジング
+- 強力なフォールバックメカニズム
+- キャッシュによるパフォーマンス最適化
+- Google OAuth認証とGoogle Drive連携
+- 使用量制限と予算管理
+- 管理者向け監視・管理ツール
 
-API構成は以下のモジュールから成り立っています：
+### 1.2 技術スタック
+
+- **プラットフォーム**: AWS Lambda (サーバーレス)
+- **データストア**: Amazon DynamoDB
+- **通知サービス**: Amazon SNS
+- **予算管理**: Amazon Budgets
+- **認証**: Google OAuth 2.0
+- **外部連携**: Google Drive API
+- **通信**: RESTful API (JSON)
+- **ランタイム**: Node.js
+
+## 2. システムアーキテクチャ
+
+### 2.1 全体構成
 
 ```
-フロントエンド → API Gateway → Lambda関数 → 外部データソース/Google API
-                                   ↓    ↑
-                              DynamoDB (キャッシュとセッション)
+                  ┌───────────┐
+                  │  API      │
+                  │  Gateway  │
+                  └─────┬─────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────┐
+│            Lambda Functions             │
+├─────────────┬───────────┬───────────────┤
+│ Market Data │   Auth    │  Drive I/F    │
+│   Module    │  Module   │   Module      │
+└──────┬──────┴─────┬─────┴───────┬───────┘
+       │            │             │
+       ▼            ▼             ▼
+┌──────────┐  ┌───────────┐ ┌────────────┐
+│ External │  │ DynamoDB  │ │  Google    │
+│  APIs    │  │ (Cache/   │ │  Drive API │
+│          │  │  Session) │ │            │
+└──────────┘  └───────────┘ └────────────┘
 ```
 
-### 1.2 主要なエンドポイント
+### 2.2 コンポーネント間の関係
+
+- **API Gateway**: リクエストの受付、ルーティング、認証ヘッダーの検証
+- **Lambda Functions**: ビジネスロジックとデータ処理
+- **DynamoDB**: キャッシュデータとセッション情報の保存
+- **External APIs**: 金融市場データの取得源
+- **Google APIs**: 認証とGoogleドライブ連携
+
+### 2.3 デプロイ環境
+
+システムは複数の環境にデプロイ可能:
+
+- **開発環境** (dev): 開発者向けテスト環境
+- **テスト環境** (test): 自動テスト用環境
+- **本番環境** (prod): エンドユーザー向け環境
+
+環境固有の設定は環境変数を通じて管理され、`envConfig.js`でロードされる。
+
+## 3. コンポーネントと機能モジュール
+
+### 3.1 設定モジュール
+
+- **constants.js**: システム全体で使用される定数定義
+  - データタイプ
+  - キャッシュ時間
+  - データソース優先順位
+  - エラーコード
+- **envConfig.js**: 環境変数の管理と型変換
+
+### 3.2 マーケットデータモジュール
+
+- **marketData.js**: メインAPI関数
+- **sources/**: 各データソースの実装
+  - **yahooFinance.js**: Yahoo Finance API
+  - **marketDataProviders.js**: スクレイピングベースのプロバイダー
+  - **fundDataService.js**: 投資信託データ取得
+  - **exchangeRate.js**: 為替レート取得
+  - **enhancedMarketDataService.js**: フォールバック対応の統合サービス
+
+### 3.3 認証モジュール
+
+- **auth/**: Google認証関連Lambda関数
+  - **googleLogin.js**: Google認証コードの処理
+  - **getSession.js**: セッション検証
+  - **logout.js**: ログアウト処理
+- **googleAuthService.js**: Google認証サービス
+
+### 3.4 Google Drive連携モジュール
+
+- **drive/**: Google Drive連携Lambda関数
+  - **saveFile.js**: ファイル保存
+  - **loadFile.js**: ファイル読み込み
+  - **listFiles.js**: ファイル一覧取得
+
+### 3.5 インフラサービス
+
+- **cache.js**: キャッシュ管理
+- **usage.js**: API使用量追跡
+- **alerts.js**: アラート通知
+- **fallbackDataStore.js**: フォールバックデータ管理
+- **matrics.js**: データソース性能測定
+
+### 3.6 ユーティリティ
+
+- **awsConfig.js**: AWS SDKの設定
+- **budgetCheck.js**: AWS予算チェック
+- **dataFetchWithFallback.js**: フォールバック機能付きデータ取得
+- **dataValidation.js**: データ検証
+- **retry.js**: 再試行ロジック
+- **scrapingBlacklist.js**: 失敗した銘柄の管理
+- **responseUtils.js**: レスポンス形式の標準化
+
+### 3.7 管理者向けAPI
+
+- **admin/**: 管理者向けLambda関数
+  - **getStatus.js**: システム状態取得
+  - **getBudgetStatus.js**: 予算状況取得
+  - **resetUsage.js**: 使用量リセット
+  - **manageFallbacks.js**: フォールバックデータ管理
+
+## 4. データフロー
+
+### 4.1 マーケットデータリクエスト
+
+1. クライアントからのリクエスト（シンボル、データタイプを指定）
+2. DynamoDBキャッシュの検索
+3. キャッシュヒットした場合はキャッシュデータを返却
+4. キャッシュミスした場合:
+   1. 優先順位の高いデータソースからデータ取得を試行
+   2. データ検証
+   3. DynamoDBへのキャッシュ保存
+   4. クライアントへのレスポンス返却
+5. すべてのデータソースが失敗した場合:
+   1. フォールバックデータの検索
+   2. クライアントへのフォールバックデータ返却
+
+### 4.2 認証フロー
+
+1. Google OAuth認証:
+   1. フロントエンドでGoogleログインを実行
+   2. GoogleからのAuthorizationコードをバックエンドに送信
+   3. バックエンドでコードを交換してアクセストークンを取得
+   4. ユーザー情報を取得してセッションを作成
+   5. セッションIDをHTTP Cookieに保存
+
+2. セッション検証:
+   1. クライアントからのリクエストにCookieが含まれる
+   2. セッションIDをDynamoDBで検索
+   3. セッションの有効性を確認
+   4. 有効期限の確認
+
+### 4.3 Google Drive連携
+
+1. ファイル保存:
+   1. ポートフォリオデータをリクエストで受信
+   2. セッションからアクセストークンを取得
+   3. Google Drive APIを使用してフォルダ作成またはアクセス
+   4. JSONファイルとしてデータを保存
+   5. ファイルメタデータをレスポンスとして返却
+
+2. ファイル一覧取得:
+   1. セッションからアクセストークンを取得
+   2. Google Drive APIで指定フォルダ内のファイル一覧を取得
+   3. ファイルメタデータをレスポンスとして返却
+
+3. ファイル読み込み:
+   1. ファイルIDをリクエストで受信
+   2. セッションからアクセストークンを取得
+   3. Google Drive APIでファイルコンテンツを取得
+   4. JSONデータをパースしてレスポンスとして返却
+
+## 5. 外部サービス連携
+
+### 5.1 金融データソース
+
+#### 5.1.1 米国株式データソース（優先順位順）
+
+1. **Yahoo Finance API** (RapidAPI): 高速でリアルタイムのデータ
+2. **Yahoo Finance Web** (スクレイピング): 基本的な株価データ
+3. **MarketWatch** (スクレイピング): 追加のフォールバックオプション
+
+#### 5.1.2 日本株式データソース（優先順位順）
+
+1. **Yahoo Finance Japan** (スクレイピング): 日本株の主要ソース
+2. **Minkabu** (スクレイピング): 代替データソース
+3. **Kabutan** (スクレイピング): 追加のフォールバックオプション
+
+#### 5.1.3 投資信託データソース
+
+1. **MorningStar CSV**: CSV形式のデータダウンロード
+2. フォールバックデータ
+
+#### 5.1.4 為替レートデータソース（優先順位順）
+
+1. **exchangerate-host API**: リアルタイム為替レート
+2. **動的計算**: 内部アルゴリズムによる推定レート
+3. **ハードコード値**: 緊急時のフォールバック
+
+### 5.2 Google APIs
+
+#### 5.2.1 Google OAuth 2.0
+
+使用スコープ:
+- `email`: ユーザーのメールアドレス取得
+- `profile`: ユーザーのプロフィール情報取得
+- `https://www.googleapis.com/auth/drive.file`: アプリで作成したファイルのみアクセス
+
+#### 5.2.2 Google Drive API
+
+- ファイル作成・読み込み
+- フォルダ管理
+- メタデータ取得
+
+### 5.3 AWS サービス
+
+- **DynamoDB**: キャッシュ、セッション、使用量データの保存
+- **SNS**: 管理者へのアラート通知
+- **Budget**: AWS予算監視とコスト制御
+- **Lambda**: すべてのビジネスロジックの実行
+- **API Gateway**: API管理とアクセス制御
+
+## 6. マーケットデータ取得
+
+### 6.1 データタイプ
+
+| データタイプ | 説明 | キャッシュ時間 | バッチサイズ |
+|------------|------|--------------|------------|
+| `us-stock` | 米国株式 | 3600秒 (1時間) | 20 |
+| `jp-stock` | 日本株式 | 3600秒 (1時間) | 10 |
+| `mutual-fund` | 投資信託 | 10800秒 (3時間) | 10 |
+| `exchange-rate` | 為替レート | 21600秒 (6時間) | 1 |
+
+### 6.2 データ取得API
 
 ```
-# マーケットデータ取得
-/api/market-data
-
-# Google認証
-/auth/google/login  # ログイン処理
-/auth/session       # セッション情報取得
-/auth/logout        # ログアウト処理
-
-# Google Drive連携
-/drive/save         # ポートフォリオデータ保存
-/drive/load         # ポートフォリオデータ読込
-/drive/files        # ファイル一覧取得
+GET /market-data
 ```
 
-## 2. 認証フロー
+#### リクエストパラメータ
 
-### 2.1 認証フローの概要
+| パラメータ | 必須 | 説明 |
+|-----------|-----|------|
+| `type` | ○ | データタイプ (`us-stock`, `jp-stock`, `mutual-fund`, `exchange-rate`) |
+| `symbols` | ○ | 銘柄コード（複数はカンマ区切り。例: `AAPL,MSFT,GOOGL`） |
+| `refresh` | × | `true`の場合、キャッシュを無視して新しいデータを取得 |
+| `base` | △ | 為替レートのベース通貨（`type=exchange-rate`の場合のみ必須） |
+| `target` | △ | 為替レートの対象通貨（`type=exchange-rate`の場合のみ必須） |
 
-1. フロントエンドでGoogleログインボタンを表示
-2. ユーザーがボタンをクリックすると、Googleの認証画面が表示される
-3. 認証後、GoogleからAuthorizationコードが返される
-4. そのコードをバックエンドに送信
-5. バックエンドでコードを使ってアクセストークンを取得
-6. セッションを作成し、セキュアなCookieに保存
-7. ユーザー情報をフロントエンドに返す
+#### レスポンス例（米国株）
 
-### 2.2 Google OAuth設定
-
-1. Google Cloud Consoleで認証情報を設定
-2. 必要スコープ: `email`, `profile`, `https://www.googleapis.com/auth/drive.file`
-3. リダイレクトURIを設定（例: `https://yourdomain.com/auth/callback` または `http://localhost:3000/auth/callback`）
-
-### 2.3 ログイン実装
-
-```javascript
-// Google認証ボタンの実装（React + @react-oauth/google）
-import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
-
-const LoginPage = () => {
-  const handleGoogleLoginSuccess = async (credentialResponse) => {
-    try {
-      const response = await axios.post(
-        'https://[api-id].execute-api.region.amazonaws.com/[stage]/auth/google/login',
-        {
-          code: credentialResponse.code,
-          redirectUri: window.location.origin + '/auth/callback'
-        },
-        { withCredentials: true } // Cookieを送受信するために必要
-      );
-      
-      if (response.data.success) {
-        // ユーザー情報をステートに保存
-        setUser(response.data.user);
-        setIsAuthenticated(true);
-        // ダッシュボードなどにリダイレクト
-        navigate('/dashboard');
-      }
-    } catch (error) {
-      console.error('認証エラー:', error);
+```json
+{
+  "success": true,
+  "data": {
+    "AAPL": {
+      "ticker": "AAPL",
+      "price": 178.45,
+      "change": 2.34,
+      "changePercent": 1.33,
+      "name": "Apple Inc.",
+      "currency": "USD",
+      "lastUpdated": "2025-05-13T12:34:56Z",
+      "source": "Yahoo Finance API",
+      "isStock": true,
+      "isMutualFund": false
+    },
+    "MSFT": {
+      "ticker": "MSFT",
+      "price": 415.23,
+      "change": -1.45,
+      "changePercent": -0.35,
+      "name": "Microsoft Corporation",
+      "currency": "USD",
+      "lastUpdated": "2025-05-13T12:34:56Z", 
+      "source": "Yahoo Finance API",
+      "isStock": true,
+      "isMutualFund": false
     }
-  };
-  
-  return (
-    <div className="login-container">
-      <h1>ポートフォリオマネージャー</h1>
-      <GoogleOAuthProvider clientId="YOUR_GOOGLE_CLIENT_ID">
-        <GoogleLogin
-          flow="auth-code" // 重要: コードフローを指定
-          onSuccess={handleGoogleLoginSuccess}
-          onError={() => console.error('ログイン失敗')}
-          useOneTap
-          shape="pill"
-          text="continue_with"
-        />
-      </GoogleOAuthProvider>
-    </div>
-  );
-};
-```
-
-### 2.4 セッション確認
-
-```javascript
-// ページロード時やルート変更時にセッションを確認
-const checkSession = async () => {
-  try {
-    const response = await axios.get(
-      'https://[api-id].execute-api.region.amazonaws.com/[stage]/auth/session',
-      { withCredentials: true } // Cookieを送信するために必要
-    );
-    
-    if (response.data.success && response.data.isAuthenticated) {
-      setUser(response.data.user);
-      setIsAuthenticated(true);
-      return true;
-    } else {
-      setUser(null);
-      setIsAuthenticated(false);
-      return false;
+  },
+  "lastUpdated": "2025-05-13T12:35:00Z",
+  "processingTime": "123ms",
+  "usage": {
+    "daily": {
+      "count": 152,
+      "limit": 5000,
+      "percentage": 3
+    },
+    "monthly": {
+      "count": 1254,
+      "limit": 100000,
+      "percentage": 1
     }
-  } catch (error) {
-    console.error('セッション確認エラー:', error);
-    setUser(null);
-    setIsAuthenticated(false);
-    return false;
   }
-};
+}
 ```
 
-### 2.5 ログアウト
-
-```javascript
-const handleLogout = async () => {
-  try {
-    await axios.post(
-      'https://[api-id].execute-api.region.amazonaws.com/[stage]/auth/logout',
-      {},
-      { withCredentials: true } // Cookieを送信するために必要
-    );
-    
-    setUser(null);
-    setIsAuthenticated(false);
-    navigate('/login');
-  } catch (error) {
-    console.error('ログアウトエラー:', error);
-  }
-};
-```
-
-## 3. マーケットデータの取得
-
-### 3.1 基本的なデータ取得
-
-```javascript
-const fetchMarketData = async (type, symbols) => {
-  try {
-    const response = await axios.get(
-      'https://[api-id].execute-api.region.amazonaws.com/[stage]/api/market-data',
-      {
-        params: {
-          type, // 'us-stock', 'jp-stock', 'mutual-fund', 'exchange-rate'
-          symbols: Array.isArray(symbols) ? symbols.join(',') : symbols
-        }
-      }
-    );
-    
-    if (response.data.success) {
-      return response.data.data;
-    } else {
-      console.error('APIエラー:', response.data.error);
-      return null;
-    }
-  } catch (error) {
-    console.error('API呼び出しエラー:', error);
-    return null;
-  }
-};
-
-// 使用例
-const getAppleStock = async () => {
-  const data = await fetchMarketData('us-stock', 'AAPL');
-  console.log(data);
-};
-
-const getMultipleStocks = async () => {
-  const data = await fetchMarketData('us-stock', ['AAPL', 'MSFT', 'GOOGL']);
-  console.log(data);
-};
-
-const getExchangeRate = async () => {
-  const data = await fetchMarketData('exchange-rate', 'USD-JPY');
-  console.log(data);
-};
-```
-
-### 3.2 リアルタイム更新
-
-```javascript
-const subscribeToMarketData = (type, symbols, callback, intervalMs = 60000) => {
-  let intervalId = null;
-  
-  const fetchAndUpdate = async () => {
-    const data = await fetchMarketData(type, symbols);
-    if (data) {
-      callback(data);
-    }
-  };
-  
-  // 初回実行
-  fetchAndUpdate();
-  
-  // 定期的に更新
-  intervalId = setInterval(fetchAndUpdate, intervalMs);
-  
-  // クリーンアップ関数を返す
-  return () => {
-    if (intervalId) {
-      clearInterval(intervalId);
-    }
-  };
-};
-
-// React Hooksでの使用例
-useEffect(() => {
-  const cleanup = subscribeToMarketData(
-    'us-stock',
-    ['AAPL', 'MSFT', 'GOOGL'],
-    (data) => setStockData(data),
-    30000 // 30秒ごとに更新
-  );
-  
-  // クリーンアップ関数を返す
-  return cleanup;
-}, []);
-```
-
-## 4. Google Drive連携
-
-### 4.1 ポートフォリオデータの保存
-
-```javascript
-const savePortfolioToGoogleDrive = async (portfolioData) => {
-  try {
-    const response = await axios.post(
-      'https://[api-id].execute-api.region.amazonaws.com/[stage]/drive/save',
-      { portfolioData },
-      { withCredentials: true } // Cookieを送信するために必要
-    );
-    
-    if (response.data.success) {
-      console.log('保存成功:', response.data.file);
-      return response.data.file;
-    } else {
-      console.error('保存エラー:', response.data.error);
-      return null;
-    }
-  } catch (error) {
-    console.error('Drive保存エラー:', error);
-    
-    // 認証エラーの場合はログイン画面にリダイレクト
-    if (error.response && error.response.status === 401) {
-      redirectToLogin();
-    }
-    
-    return null;
-  }
-};
-```
-
-### 4.2 ポートフォリオデータの読み込み
-
-```javascript
-const loadPortfolioFromGoogleDrive = async (fileId) => {
-  try {
-    const response = await axios.get(
-      'https://[api-id].execute-api.region.amazonaws.com/[stage]/drive/load',
-      {
-        params: { fileId },
-        withCredentials: true // Cookieを送信するために必要
-      }
-    );
-    
-    if (response.data.success) {
-      console.log('読み込み成功:', response.data.file);
-      return response.data.data; // ポートフォリオデータ
-    } else {
-      console.error('読み込みエラー:', response.data.error);
-      return null;
-    }
-  } catch (error) {
-    console.error('Drive読み込みエラー:', error);
-    
-    // 認証エラーの場合はログイン画面にリダイレクト
-    if (error.response && error.response.status === 401) {
-      redirectToLogin();
-    }
-    
-    return null;
-  }
-};
-```
-
-### 4.3 ファイル一覧の取得
-
-```javascript
-const listGoogleDriveFiles = async () => {
-  try {
-    const response = await axios.get(
-      'https://[api-id].execute-api.region.amazonaws.com/[stage]/drive/files',
-      { withCredentials: true } // Cookieを送信するために必要
-    );
-    
-    if (response.data.success) {
-      console.log('ファイル一覧取得成功:', response.data.files);
-      return response.data.files;
-    } else {
-      console.error('ファイル一覧取得エラー:', response.data.error);
-      return [];
-    }
-  } catch (error) {
-    console.error('Driveファイル一覧取得エラー:', error);
-    
-    // 認証エラーの場合はログイン画面にリダイレクト
-    if (error.response && error.response.status === 401) {
-      redirectToLogin();
-    }
-    
-    return [];
-  }
-};
-```
-
-## 5. エラーハンドリング
-
-### 5.1 共通エラーコード
-
-| エラーコード | 説明 | HTTP ステータス |
-|-------------|------|---------------|
-| `INVALID_PARAMS` | パラメータが無効 | 400 |
-| `LIMIT_EXCEEDED` | 使用量制限超過 | 429 |
-| `SOURCE_ERROR` | データソースエラー | 502 |
-| `NOT_FOUND` | リソースが見つからない | 404 |
-| `SERVER_ERROR` | サーバー内部エラー | 500 |
-| `AUTH_ERROR` | 認証エラー | 401 |
-| `NO_SESSION` | セッションなし | 401 |
-| `INVALID_SESSION` | 無効なセッション | 401 |
-| `TOKEN_REFRESH_ERROR` | トークン更新エラー | 401 |
-| `DRIVE_ERROR` | Google Driveエラー | 500 |
-
-### 5.2 包括的なエラーハンドリング
-
-```javascript
-const apiRequest = async (url, method = 'get', data = null, params = null) => {
-  try {
-    const config = {
-      withCredentials: true,
-      params
-    };
-    
-    let response;
-    if (method.toLowerCase() === 'get') {
-      response = await axios.get(url, config);
-    } else if (method.toLowerCase() === 'post') {
-      response = await axios.post(url, data, config);
-    } else if (method.toLowerCase() === 'put') {
-      response = await axios.put(url, data, config);
-    } else if (method.toLowerCase() === 'delete') {
-      response = await axios.delete(url, config);
-    }
-    
-    return response.data;
-  } catch (error) {
-    // 認証エラー
-    if (error.response && error.response.status === 401) {
-      console.error('認証エラー - ログインが必要です');
-      redirectToLogin();
-      return { success: false, error: 'ログインが必要です' };
-    }
-    
-    // レート制限エラー
-    if (error.response && error.response.status === 429) {
-      console.warn('API使用量制限に達しました');
-      
-      // フォールバック処理
-      return { 
-        success: false, 
-        error: 'API使用量制限に達しました',
-        isRateLimited: true
-      };
-    }
-    
-    // その他のエラー
-    console.error('APIエラー:', error);
-    return { 
-      success: false, 
-      error: error.response?.data?.error?.message || error.message,
-      status: error.response?.status
-    };
-  }
-};
-```
-
-## 6. React用カスタムフック
-
-### 6.1 認証フック
-
-```javascript
-import { useState, useEffect, createContext, useContext } from 'react';
-import axios from 'axios';
-
-// 認証コンテキストの作成
-const AuthContext = createContext();
-
-export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [loading, setLoading] = useState(true);
-  
-  // セッション確認
-  const checkSession = async () => {
-    try {
-      setLoading(true);
-      const response = await axios.get(
-        'https://[api-id].execute-api.region.amazonaws.com/[stage]/auth/session',
-        { withCredentials: true }
-      );
-      
-      if (response.data.success && response.data.isAuthenticated) {
-        setUser(response.data.user);
-        setIsAuthenticated(true);
-      } else {
-        setUser(null);
-        setIsAuthenticated(false);
-      }
-    } catch (error) {
-      console.error('セッション確認エラー:', error);
-      setUser(null);
-      setIsAuthenticated(false);
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  // ログイン処理
-  const login = async (credentialResponse) => {
-    try {
-      setLoading(true);
-      const response = await axios.post(
-        'https://[api-id].execute-api.region.amazonaws.com/[stage]/auth/google/login',
-        {
-          code: credentialResponse.code,
-          redirectUri: window.location.origin + '/auth/callback'
-        },
-        { withCredentials: true }
-      );
-      
-      if (response.data.success) {
-        setUser(response.data.user);
-        setIsAuthenticated(true);
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error('ログインエラー:', error);
-      return false;
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  // ログアウト処理
-  const logout = async () => {
-    try {
-      setLoading(true);
-      await axios.post(
-        'https://[api-id].execute-api.region.amazonaws.com/[stage]/auth/logout',
-        {},
-        { withCredentials: true }
-      );
-      
-      setUser(null);
-      setIsAuthenticated(false);
-    } catch (error) {
-      console.error('ログアウトエラー:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  // 初回マウント時にセッション確認
-  useEffect(() => {
-    checkSession();
-  }, []);
-  
-  return (
-    <AuthContext.Provider
-      value={{
-        user,
-        isAuthenticated,
-        loading,
-        login,
-        logout,
-        checkSession
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
-  );
-};
-
-// カスタムフック
-export const useAuth = () => useContext(AuthContext);
-```
-
-### 6.2 マーケットデータフック
-
-```javascript
-import { useState, useEffect } from 'react';
-import axios from 'axios';
-
-export const useMarketData = (type, symbols, refreshInterval = 0) => {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  
-  const fetchData = async () => {
-    if (!symbols) return;
-    
-    try {
-      setLoading(true);
-      
-      const apiUrl = process.env.REACT_APP_API_URL || 'https://[api-id].execute-api.region.amazonaws.com/[stage]';
-      
-      const response = await axios.get(`${apiUrl}/api/market-data`, {
-        params: {
-          type,
-          symbols: Array.isArray(symbols) ? symbols.join(',') : symbols
-        }
-      });
-      
-      if (response.data.success) {
-        setData(response.data.data);
-        setError(null);
-      } else {
-        setError(response.data.error || '不明なエラー');
-      }
-    } catch (err) {
-      setError(err.message || 'データ取得エラー');
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  useEffect(() => {
-    let intervalId = null;
-    
-    fetchData();
-    
-    if (refreshInterval > 0) {
-      intervalId = setInterval(fetchData, refreshInterval);
-    }
-    
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [type, symbols, refreshInterval]);
-  
-  return {
-    data,
-    loading,
-    error,
-    refetch: fetchData
-  };
-};
-```
-
-### 6.3 Google Drive連携フック
-
-```javascript
-import { useState } from 'react';
-import axios from 'axios';
-import { useAuth } from './useAuth';
-
-export const useGoogleDrive = () => {
-  const { isAuthenticated } = useAuth();
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  
-  const apiUrl = process.env.REACT_APP_API_URL || 'https://[api-id].execute-api.region.amazonaws.com/[stage]';
-  
-  // ファイル一覧取得
-  const listFiles = async () => {
-    if (!isAuthenticated) {
-      setError('認証が必要です');
-      return null;
-    }
-    
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const response = await axios.get(
-        `${apiUrl}/drive/files`,
-        { withCredentials: true }
-      );
-      
-      if (response.data.success) {
-        return response.data.files;
-      } else {
-        setError(response.data.error?.message || '不明なエラー');
-        return null;
-      }
-    } catch (error) {
-      setError(error.message || 'ファイル一覧取得エラー');
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  // ファイル保存
-  const saveFile = async (portfolioData) => {
-    if (!isAuthenticated) {
-      setError('認証が必要です');
-      return null;
-    }
-    
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const response = await axios.post(
-        `${apiUrl}/drive/save`,
-        { portfolioData },
-        { withCredentials: true }
-      );
-      
-      if (response.data.success) {
-        return response.data.file;
-      } else {
-        setError(response.data.error?.message || '不明なエラー');
-        return null;
-      }
-    } catch (error) {
-      setError(error.message || 'ファイル保存エラー');
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  // ファイル読み込み
-  const loadFile = async (fileId) => {
-    if (!isAuthenticated) {
-      setError('認証が必要です');
-      return null;
-    }
-    
-    try {
-      setLoading(true);
-      setError(null);
-      
-      const response = await axios.get(
-        `${apiUrl}/drive/load`,
-        {
-          params: { fileId },
-          withCredentials: true
-        }
-      );
-      
-      if (response.data.success) {
-        return response.data.data;
-      } else {
-        setError(response.data.error?.message || '不明なエラー');
-        return null;
-      }
-    } catch (error) {
-      setError(error.message || 'ファイル読み込みエラー');
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  return {
-    listFiles,
-    saveFile,
-    loadFile,
-    loading,
-    error
-  };
-};
-```
-
-## 7. 実装例
-
-### 7.1 Google認証ボタンのコンポーネント
-
-```jsx
-import React from 'react';
-import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
-import { useAuth } from '../hooks/useAuth';
-import { useNavigate } from 'react-router-dom';
-
-const LoginButton = () => {
-  const { login } = useAuth();
-  const navigate = useNavigate();
-  
-  const handleGoogleLoginSuccess = async (credentialResponse) => {
-    const success = await login(credentialResponse);
-    if (success) {
-      navigate('/dashboard');
-    }
-  };
-  
-  return (
-    <GoogleOAuthProvider clientId={process.env.REACT_APP_GOOGLE_CLIENT_ID}>
-      <GoogleLogin
-        flow="auth-code"
-        onSuccess={handleGoogleLoginSuccess}
-        onError={() => console.error('ログイン失敗')}
-        useOneTap
-        shape="pill"
-        text="signin_with"
-      />
-    </GoogleOAuthProvider>
-  );
-};
-
-export default LoginButton;
-```
-
-### 7.2 ポートフォリオ保存コンポーネント
-
-```jsx
-import React, { useState } from 'react';
-import { useGoogleDrive } from '../hooks/useGoogleDrive';
-import { useAuth } from '../hooks/useAuth';
-
-const SavePortfolioButton = ({ portfolioData }) => {
-  const { isAuthenticated, user } = useAuth();
-  const { saveFile, loading, error } = useGoogleDrive();
-  const [saveStatus, setSaveStatus] = useState(null);
-  
-  const handleSave = async () => {
-    if (!isAuthenticated) {
-      setSaveStatus({
-        success: false,
-        message: 'Google Driveに保存するにはログインしてください'
-      });
-      return;
-    }
-    
-    if (!portfolioData) {
-      setSaveStatus({
-        success: false,
-        message: '保存するデータがありません'
-      });
-      return;
-    }
-    
-    // タイムスタンプとユーザー情報を追加
-    const dataToSave = {
-      ...portfolioData,
-      lastSaved: new Date().toISOString(),
-      savedBy: user ? {
-        email: user.email,
-        name: user.name
-      } : 'unknown'
-    };
-    
-    const result = await saveFile(dataToSave);
-    
-    if (result) {
-      setSaveStatus({
-        success: true,
-        message: 'ポートフォリオデータをGoogle Driveに保存しました',
-        file: result
-      });
-    } else {
-      setSaveStatus({
-        success: false,
-        message: error || 'Google Driveへの保存に失敗しました'
-      });
-    }
-  };
-  
-  return (
-    <div className="save-portfolio">
-      <button
-        onClick={handleSave}
-        disabled={loading || !isAuthenticated}
-        className={`btn ${isAuthenticated ? 'btn-primary' : 'btn-secondary'}`}
-      >
-        {loading ? '保存中...' : 'Google Driveに保存'}
-      </button>
-      
-      {saveStatus && (
-        <div className={`save-status ${saveStatus.success ? 'success' : 'error'}`}>
-          <p>{saveStatus.message}</p>
-          {saveStatus.success && saveStatus.file && (
-            <a
-              href={saveStatus.file.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="view-file"
-            >
-              保存したファイルを表示
-            </a>
-          )}
-        </div>
-      )}
-      
-      {!isAuthenticated && (
-        <p className="login-prompt">
-          Google Driveに保存するには、ログインしてください。
-        </p>
-      )}
-    </div>
-  );
-};
-
-export default SavePortfolioButton;
-```
-
-### 7.3 Google Driveファイル一覧コンポーネント
-
-```jsx
-import React, { useEffect, useState } from 'react';
-import { useGoogleDrive } from '../hooks/useGoogleDrive';
-import { useAuth } from '../hooks/useAuth';
-
-const GoogleDriveFiles = ({ onFileSelect }) => {
-  const { isAuthenticated } = useAuth();
-  const { listFiles, loadFile, loading, error } = useGoogleDrive();
-  const [files, setFiles] = useState([]);
-  
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchFiles();
-    }
-  }, [isAuthenticated]);
-  
-  const fetchFiles = async () => {
-    const filesList = await listFiles();
-    if (filesList) {
-      setFiles(filesList);
-    }
-  };
-  
-  const handleFileSelect = async (fileId) => {
-    const data = await loadFile(fileId);
-    if (data && onFileSelect) {
-      onFileSelect(data);
-    }
-  };
-  
-  if (!isAuthenticated) {
-    return <p>ファイル一覧を表示するにはログインしてください</p>;
-  }
-  
-  if (loading) {
-    return <p>ファイル一覧を読み込み中...</p>;
-  }
-  
-  if (error) {
-    return <p>エラー: {error}</p>;
-  }
-  
-  return (
-    <div className="drive-files">
-      <h2>Google Driveのポートフォリオデータ</h2>
-      {files.length === 0 ? (
-        <p>保存されたファイルがありません</p>
-      ) : (
-        <ul className="file-list">
-          {files.map(file => (
-            <li key={file.id} className="file-item">
-              <div className="file-info">
-                <span className="file-name">{file.name}</span>
-                <span className="file-date">
-                  {new Date(file.createdAt).toLocaleString()}
-                </span>
-              </div>
-              <div className="file-actions">
-                <button
-                  onClick={() => handleFileSelect(file.id)}
-                  className="btn btn-primary"
-                >
-                  読み込む
-                </button>
-                <a
-                  href={file.webViewLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn btn-secondary"
-                >
-                  表示
-                </a>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-      <button onClick={fetchFiles} className="btn btn-refresh">
-        更新
-      </button>
-    </div>
-  );
-};
-
-export default GoogleDriveFiles;
-```
-
-## 8. ベストプラクティス
-
-### 8.1 セキュリティのベストプラクティス
-
-1. **CORS設定の適切な管理**
-   - `withCredentials: true` は常に設定する
-   - フロントエンドのオリジンをバックエンドで許可する
-
-2. **トークン・クレデンシャル管理**
-   - APIキーやGoogle Clientシークレットは絶対にフロントエンドに保存しない
-   - Google Client IDだけはフロントエンドに必要
-
-3. **エラーハンドリング**
-   - ユーザーに表示するエラーメッセージは適切に抽象化する
-   - デバッグ情報は開発環境でのみ表示する
-
-### 8.2 パフォーマンスのベストプラクティス
-
-1. **バッチ処理**
-   - 複数銘柄のデータは一度のリクエストで取得する
-   - 例: `symbols: 'AAPL,MSFT,GOOGL'`
-
-2. **キャッシュの活用**
-   - 頻繁に変化しないデータはローカルストレージに保存
-   - `refresh` パラメータは必要な場合のみ `true` に設定
-
-3. **ポーリング間隔の最適化**
-   - マーケットデータの更新頻度に応じて適切な間隔を設定
-   - 米国株・日本株: 1分〜5分
-   - 為替レート: 30秒〜1分
-   - 投資信託: 1時間〜1日
-
-### 8.3 UXのベストプラクティス
-
-1. **ローディング状態の表示**
-   - データ取得中はスケルトンUIやローディングインジケーターを表示
-
-2. **エラー状態の処理**
-   - エラー発生時は適切なフォールバックUIを表示
-   - 再試行ボタンを提供
-
-3. **認証状態の管理**
-   - ログイン状態を明確に表示
-   - 認証が必要な機能は事前に説明
-
-### 8.4 開発フローのベストプラクティス
-
-1. **環境変数の管理**
-   - `.env.development` と `.env.production` を使い分ける
-   - API URLやGoogle Client IDは環境変数で管理
-
-2. **エラーロギング**
-   - 本番環境ではSentry.ioなどのエラー追跡サービスを導入
-
-3. **バージョン管理**
-   - API URLにはバージョン番号を含める
-   - APIの破壊的変更を追跡する
-
-以上がポートフォリオマーケットデータAPI統合ガイドです。このガイドを参考に、フロントエンド側での効率的な実装を行ってください。不明点がある場合は、APIドキュメントや管理者にお問い合わせください。
+### 6.3 データの検証と異常検出
 
+システムはデータの検証を行い、以下の異常を検出します：
+
+1. **価格変動閾値**: 前回値からの価格変動が20%を超える場合に異常フラグを立てる
+2. **ソース間差異**: 複数ソースから取得したデータの差が10%を超える場合に異常フラグを立てる
+3. **空データ**: 主要フィールドが空の場合に異常とみなす
+
+異常検出時のアクション：
+- 警告レベルに応じたアラート発信
+- フォールバックデータの使用
+- 異常データのログ記録
+
+## 7. エラーハンドリングとフォールバック
+
+### 7.1 エラーコード
+
+| エラーコード | HTTPステータス | 説明 |
+|------------|--------------|------|
+| `INVALID_PARAMS` | 400 | パラメータが無効 |
+| `LIMIT_EXCEEDED` | 429 | 使用量制限を超過 |
+| `SOURCE_ERROR` | 502 | データソースエラー |
+| `NOT_FOUND` | 404 | リソースが見つからない |
+| `SERVER_ERROR` | 500 | サーバー内部エラー |
+| `AUTH_ERROR` | 401 | 認証エラー |
+| `NO_SESSION` | 401 | セッションなし |
+| `DRIVE_ERROR` | 500 | Google Driveエラー |
+| `DATA_SOURCE_ERROR` | 502 | データソース接続エラー |
+| `BLACKLISTED` | 403 | ブラックリスト登録済みリソース |
+| `DATA_VALIDATION_ERROR` | 400 | データ検証エラー |
+
+### 7.2 フォールバックメカニズム
+
+システムは複数レベルのフォールバックを実装しています：
+
+1. **データソースレベル**: 複数のデータソースを順次試行
+2. **キャッシュレベル**: データ取得失敗時にキャッシュデータを利用
+3. **フォールバックデータレベル**: GitHubリポジトリから取得した固定データ
+4. **デフォルト値レベル**: すべての方法が失敗した場合の最終手段
+
+### 7.3 再試行メカニズム
+
+`retry.js`モジュールによる指数バックオフ再試行：
+
+- 最大再試行回数のカスタマイズ
+- 基本遅延時間と最大遅延時間の設定
+- 再試行判定関数によるエラータイプに基づく再試行判断
+
+### 7.4 スクレイピングブラックリスト
+
+失敗回数の多い銘柄を一時的にブラックリスト化：
+
+- デフォルトで3回連続失敗でブラックリスト登録
+- デフォルトで7日間のクールダウン期間
+- ブラックリスト中の銘柄はスクレイピングをスキップしフォールバックデータを使用
+
+## 8. キャッシュ戦略
+
+### 8.1 キャッシュ実装
+
+- **ストレージ**: Amazon DynamoDB
+- **キー構造**: `${dataType}:${symbol}`
+- **TTL**: データタイプごとに異なる有効期限（constants.jsで定義）
+
+### 8.2 動的キャッシュ時間
+
+ボラティリティに基づく動的キャッシュ時間の調整：
+
+- **高ボラティリティ**: 標準時間の50%
+- **中ボラティリティ**: 標準時間の100%
+- **低ボラティリティ**: 標準時間の200%
+
+### 8.3 キャッシュ予熱
+
+`preWarmCache.js`によるキャッシュの事前準備：
+
+- 人気銘柄（`PREWARM_SYMBOLS`で定義）のデータを定期的に取得
+- 期限切れデータの自動クリーンアップ
+- スクレイピングブラックリストの自動クリーンアップ
+
+### 8.4 差分キャッシュ
+
+最新データを効率的に保存する差分キャッシュ機能：
+
+- ベースデータと差分データを分けて保存
+- 取得時に動的に合成
+- ストレージ使用量の最適化
+
+## 9. 監視とアラート
+
+### 9.1 アラートシステム
+
+`alerts.js`による管理者通知システム：
+
+- Amazon SNSを使用したメール通知
+- 重要度に基づくアラートレベル分け
+- スロットリング機能によるアラート洪水の防止
+
+### 9.2 予算モニタリング
+
+`budgetCheck.js`によるAWS予算監視：
+
+- 無料枠使用率のリアルタイム監視
+- 閾値（50%, 80%, 90%, 95%, 99%）に達した際のアラート
+- 予算使用率に基づく機能制限（オプション）
+
+### 9.3 データソースメトリクス
+
+`matrics.js`によるデータソース性能測定：
+
+- 成功率の追跡
+- 応答時間の測定
+- エラータイプの分析
+- 優先順位の動的調整
+
+### 9.4 API使用量
+
+`usage.js`によるAPI使用量の監視：
+
+- 日次・月次の使用量追跡
+- ユーザー/IPアドレス別の使用量
+- データタイプ別の使用量
+- 制限超過時のアクション設定
+
+## 10. セキュリティ実装
+
+### 10.1 認証と認可
+
+- **Google OAuth 2.0**: ユーザー認証
+- **セッション管理**: DynamoDBによるセキュアなセッション保存
+- **HttpOnly Cookie**: クライアント側JavaScriptからのアクセス防止
+- **API Key認証**: 管理者APIへのアクセス制限
+
+### 10.2 データ保護
+
+- **HTTPS**: すべての通信の暗号化
+- **Secure Cookie**: HTTPS接続のみでCookieを送信
+- **SameSite=Strict**: CSRF攻撃の防止
+
+### 10.3 スクレイピング対策
+
+- **ランダムなUser-Agent**: ブロッキング回避
+- **レート制限尊守**: 各ソースごとの適切な遅延設定
+- **バックオフ戦略**: 失敗時の指数バックオフ
+- **ブラックリスト**: 一時的なスクレイピング停止
+
+### 10.4 予算保護
+
+- **使用量制限**: APIアクセス回数の制限
+- **予算閾値**: AWS予算使用率に基づく制限
+- **アラート**: 予算使用率のリアルタイム通知
+
+## 11. 運用管理機能
+
+### 11.1 管理者API
+
+- **getStatus.js**: システム状態取得
+  - キャッシュ統計
+  - API使用統計
+  - 設定情報
+
+- **getBudgetStatus.js**: AWS予算情報
+  - 現在の使用率
+  - 予測使用率
+  - 警告レベル
+
+- **resetUsage.js**: API使用量リセット
+  - 日次カウンター
+  - 月次カウンター
+  - 全カウンター
+
+- **manageFallbacks.js**: フォールバックデータ管理
+  - フォールバックデータ取得
+  - GitHub連携
+  - 失敗銘柄統計
+
+### 11.2 ログ管理
+
+`logger.js`によるログレベル設定:
+
+- DEBUG: 開発環境のみ
+- INFO: 通常の操作ログ
+- WARN: 潜在的な問題
+- ERROR: エラー情報
+- CRITICAL: 重大なシステムエラー
+
+### 11.3 デプロイと環境設定
+
+`envConfig.js`による環境別設定:
+
+- 開発環境 (development)
+- テスト環境 (test)
+- 本番環境 (production)
+
+環境変数による設定:
+- エンドポイント設定
+- キャッシュ時間
+- レート制限設定
+- 通知設定
+- API制限
+
+---
+
+このドキュメントは、Portfolio Market Data APIの技術仕様の概要を説明しています。詳細な実装や最新の変更については、ソースコードのコメントを参照してください。

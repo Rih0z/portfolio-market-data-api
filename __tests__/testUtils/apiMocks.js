@@ -5,6 +5,7 @@
  * 修正: エラーハンドリングとAPIキー設定強化、モック用ノックの安定性向上
  * @updated 2025-05-14 修正: デバッグログ追加、nockのクリーンアップロジック改善
  * @updated 2025-05-15 修正: フォールバックレスポンス機能の強化、未処理リクエスト対応
+ * @updated 2025-05-15 修正: エラーハンドリングテストとログアウト後セッション用モックを改善
  */
 const nock = require('nock');
 
@@ -27,6 +28,56 @@ const TEST_DATA = {
       { symbol: 'AAPL', shares: 10, cost: 150.0 },
       { symbol: '7203', shares: 100, cost: 2000 }
     ]
+  }
+};
+
+// セッション状態の追跡（ログイン/ログアウト状態の管理用）
+const sessionState = {
+  // 有効なセッションクッキーを追跡
+  activeSessions: new Set(['test-session-id', 'complete-flow-session-id']),
+  
+  // ログアウト状態のセッションを追跡
+  loggedOutSessions: new Set(),
+  
+  // セッションを追加
+  addSession(sessionId) {
+    this.activeSessions.add(sessionId);
+    this.loggedOutSessions.delete(sessionId);
+  },
+  
+  // セッションを無効化（ログアウト）
+  invalidateSession(sessionId) {
+    this.activeSessions.delete(sessionId);
+    this.loggedOutSessions.add(sessionId);
+  },
+  
+  // セッションが有効かチェック
+  isSessionValid(cookie) {
+    if (!cookie) return false;
+    
+    // クッキー文字列からセッションIDを抽出
+    const sessionMatch = cookie.match(/session=([^;]+)/);
+    if (!sessionMatch) return false;
+    
+    const sessionId = sessionMatch[1];
+    return this.activeSessions.has(sessionId) && !this.loggedOutSessions.has(sessionId);
+  },
+  
+  // セッションIDがログアウト済みかチェック
+  isSessionLoggedOut(cookie) {
+    if (!cookie) return false;
+    
+    // Max-Age=0 または空のセッションはログアウト済みと判断
+    if (cookie.includes('Max-Age=0') || cookie.includes('session=;')) {
+      return true;
+    }
+    
+    // クッキー文字列からセッションIDを抽出
+    const sessionMatch = cookie.match(/session=([^;]+)/);
+    if (!sessionMatch) return false;
+    
+    const sessionId = sessionMatch[1];
+    return this.loggedOutSessions.has(sessionId);
   }
 };
 
@@ -237,9 +288,48 @@ const mockApiRequest = (url, method = 'GET', response = {}, statusCode = 200, he
       mockScope = mockScope[normalizedMethod](urlObj.pathname + urlObj.search);
     }
     
+    // ヘッダーを指定してモック (修正: ヘッダーでの条件付きレスポンス)
+    if (options.headers) {
+      mockScope = mockScope.matchHeader(Object.keys(options.headers)[0], val => {
+        return val && val.includes(Object.values(options.headers)[0]);
+      });
+    }
+    
+    // モックレスポンスを設定
     mockScope.reply(function(uri, requestBody) {
       // リクエストのデバッグ情報
       console.log(`モックがリクエストを受信: ${method.toUpperCase()} ${uri}`);
+      
+      // 追加された特別な処理: セッション状態に基づくレスポンスの動的生成
+      if (uri.includes('/auth/session')) {
+        const cookie = this.req.headers.cookie || '';
+        
+        // セッションがログアウト済みまたは無効な場合
+        if (sessionState.isSessionLoggedOut(cookie) || !sessionState.isSessionValid(cookie)) {
+          console.log('無効なセッションを検出しました:', cookie);
+          return [
+            401, 
+            {
+              success: false,
+              error: {
+                code: 'NO_SESSION',
+                message: '認証されていません'
+              }
+            }, 
+            {}
+          ];
+        }
+      } else if (uri.includes('/auth/logout')) {
+        // ログアウト時にセッションを無効化
+        const cookie = this.req.headers.cookie || '';
+        const sessionId = cookie.match(/session=([^;]+)/);
+        if (sessionId && sessionId[1]) {
+          sessionState.invalidateSession(sessionId[1]);
+          console.log(`セッションをログアウト状態に設定: ${sessionId[1]}`);
+        }
+      }
+      
+      // 通常のレスポンス処理
       return [statusCode, response, headers];
     });
     
@@ -257,6 +347,10 @@ const resetApiMocks = () => {
   try {
     // 既存のモックをすべてクリア
     nock.cleanAll();
+    
+    // セッション状態をリセット
+    sessionState.activeSessions = new Set(['test-session-id', 'complete-flow-session-id']);
+    sessionState.loggedOutSessions = new Set();
     
     // 未解決のモックをチェック
     const pendingMocks = nock.pendingMocks();
@@ -349,7 +443,7 @@ const setupFallbackResponses = () => {
       ];
     });
   
-  // セッション取得APIのフォールバック
+  // セッション取得APIのフォールバック - 修正: セッション状態に基づいて応答
   nock(/.*/)
     .persist()
     .get(/\/auth\/session.*/)
@@ -357,9 +451,24 @@ const setupFallbackResponses = () => {
       console.log(`フォールバック: セッション取得リクエスト: ${uri}`);
       // リクエストのCookieをチェック
       const cookies = this.req.headers.cookie;
-      const hasSession = cookies && cookies.includes('session=');
       
-      if (hasSession) {
+      // セッションクッキーがログアウト状態か確認
+      if (sessionState.isSessionLoggedOut(cookies)) {
+        return [
+          401,
+          {
+            success: false,
+            mockFallback: true,
+            error: {
+              code: 'NO_SESSION',
+              message: '認証されていません'
+            }
+          }
+        ];
+      }
+      
+      // セッションが有効か確認
+      if (sessionState.isSessionValid(cookies)) {
         return [
           200,
           {
@@ -390,6 +499,25 @@ const setupFallbackResponses = () => {
       }
     });
   
+  // エラーハンドリングテスト用のフォールバック - 修正: 明示的なエラーレスポンス
+  nock(/.*/)
+    .persist()
+    .get(/\/api\/market-data.*/)
+    .query({ type: 'invalid-type' })
+    .reply(function(uri, requestBody) {
+      console.log(`フォールバック: 無効なパラメータリクエスト: ${uri}`);
+      return [
+        400,
+        {
+          success: false,
+          error: {
+            code: 'INVALID_PARAMS',
+            message: 'Invalid market data type'
+          }
+        }
+      ];
+    });
+  
   // 最後に設定する - セッション認証関連のフォールバック
   
   // 認証なしのドライブファイル一覧APIのフォールバック
@@ -400,7 +528,7 @@ const setupFallbackResponses = () => {
     .reply(function(uri, requestBody) {
       // リクエストのCookieをチェック
       const cookies = this.req.headers.cookie;
-      const hasValidSession = cookies && (cookies.includes('session=test-session-id') || cookies.includes('session=complete-flow-session-id'));
+      const hasValidSession = cookies && sessionState.isSessionValid(cookies);
       
       console.log(`認証ドライブファイル一覧リクエスト: ${uri}, Cookie: ${cookies}`);
       
@@ -463,6 +591,29 @@ const setupFallbackResponses = () => {
     .persist()
     .post(/.*/)
     .reply(function(uri, requestBody) {
+      // ログアウトエンドポイントの特別処理
+      if (uri.includes('/auth/logout')) {
+        const cookies = this.req.headers.cookie;
+        if (cookies) {
+          const sessionMatch = cookies.match(/session=([^;]+)/);
+          if (sessionMatch && sessionMatch[1]) {
+            sessionState.invalidateSession(sessionMatch[1]);
+          }
+        }
+        
+        return [
+          200,
+          {
+            success: true,
+            mockFallback: true,
+            message: 'ログアウトしました'
+          },
+          {
+            'set-cookie': ['session=; Max-Age=0; HttpOnly; Secure']
+          }
+        ];
+      }
+      
       console.log(`フォールバック: 未処理のPOST ${uri}`);
       return [
         200,
@@ -486,6 +637,6 @@ module.exports = {
   enableApiLogging,
   getRecordedApis,
   setupFallbackResponses,
-  TEST_DATA
+  TEST_DATA,
+  sessionState
 };
-

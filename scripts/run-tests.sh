@@ -1,16 +1,6 @@
 #!/bin/bash
 # 
-# ファイルパス: scripts/run-tests.sh
-# 
 # Portfolio Market Data APIテスト実行スクリプト
-# 
-# @author Koki Riho
-# @created 2025-05-12
-# @updated 2025-05-12
-# @updated 2025-05-13 - nvm対応とカバレッジオプションの追加
-# @updated 2025-05-14 - 強制実行フラグを追加、デバッグモードの追加
-# @updated 2025-05-14 - カバレッジなしとモック組み合わせ時の問題修正
-#
 
 # 色の設定
 GREEN='\033[0;32m'
@@ -363,4 +353,3 @@ else
 fi
 
 exit $TEST_RESULT
-

@@ -6,6 +6,7 @@
  * 
  * @author Portfolio Manager Team
  * @updated Koki - 2025-05-12 - ビジュアルレポート機能の追加
+ * @updated 2025-05-13 - レポート成功状態の判定ロジック修正
  */
 const fs = require('fs');
 const path = require('path');
@@ -110,7 +111,8 @@ class CustomReporter {
       startTime: this.startTime.toISOString(),
       endTime: endTime.toISOString(),
       duration: `${duration}ms`,
-      success: results.success,
+      // 修正: 失敗テスト数に基づいてsuccessフラグを設定
+      success: results.numFailedTests === 0,
       testResults: this.results,
       testSuites: Object.values(this.testSuites),
       errors: this.errorLogs
@@ -158,7 +160,8 @@ ${err.error.join('\n')}
     this.generateLogFile(summary);
 
     // コンソールにも要約を出力
-    console.log(`テスト実行完了:
+    const successStatus = results.numFailedTests === 0 ? '成功' : '失敗';
+    console.log(`テスト実行完了 (${successStatus}):
 - 合計テスト数: ${results.numTotalTests}
 - 成功: ${results.numPassedTests}
 - 失敗: ${results.numFailedTests}
@@ -211,8 +214,8 @@ ${err.error.join('\n')}
     
     // 修正状況データ
     const fixStatusData = [
-      { name: '修正済み', value: 8 },
-      { name: '未修正', value: summary.numFailedTests - 8 }
+      { name: '修正済み', value: this.errorLogs.length > 0 ? 8 : 0 },
+      { name: '未修正', value: Math.max(0, summary.numFailedTests - 8) }
     ];
     
     // 合格率と失敗率の計算（新規追加）
@@ -234,6 +237,9 @@ ${err.error.join('\n')}
     const fixRate = summary.numFailedTests > 0 
       ? (8 / summary.numFailedTests * 100).toFixed(1) 
       : 100;
+
+    // 全体的なテスト成功判定を更新
+    const overallTestSuccess = summary.numFailedTests === 0;
 
     // HTMLテンプレート
     const htmlContent = `<!DOCTYPE html>
@@ -270,7 +276,7 @@ ${err.error.join('\n')}
         }
         
         header {
-            background-color: var(--primary);
+            background-color: ${overallTestSuccess ? 'var(--success)' : 'var(--primary)'};
             color: white;
             padding: 1rem 0;
             margin-bottom: 2rem;
@@ -534,6 +540,27 @@ ${err.error.join('\n')}
             transition: box-shadow 0.3s ease;
         }
         
+        /* 追加: 成功ステータスバナー */
+        .status-banner {
+            padding: 0.5rem 1rem;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 1rem;
+            border-radius: 4px;
+        }
+        
+        .status-success {
+            background-color: rgba(76, 175, 80, 0.2);
+            color: var(--success);
+            border: 1px solid var(--success);
+        }
+        
+        .status-failure {
+            background-color: rgba(244, 67, 54, 0.2);
+            color: var(--danger);
+            border: 1px solid var(--danger);
+        }
+        
         @media (max-width: 768px) {
             .charts-row {
                 flex-direction: column;
@@ -554,6 +581,11 @@ ${err.error.join('\n')}
     </header>
     
     <div class="container">
+        <!-- テスト状態バナーを追加 -->
+        <div class="status-banner ${overallTestSuccess ? 'status-success' : 'status-failure'}">
+            テスト結果: ${overallTestSuccess ? '全テスト成功 ✓' : 'テスト失敗 ✗'}
+        </div>
+        
         <div class="summary-stats">
             <div class="stat-box total-box">
                 <h3>テスト総数</h3>
@@ -599,6 +631,7 @@ ${err.error.join('\n')}
                 </div>
             </div>
             
+            ${errorTypeData.length > 0 ? `
             <div class="card">
                 <div class="card-header">エラータイプ分析</div>
                 <div class="chart-container">
@@ -620,6 +653,7 @@ ${err.error.join('\n')}
                     </div>
                 </div>
             </div>
+            ` : ''}
         </div>
         
         <div id="details" class="tab-content">
@@ -861,6 +895,8 @@ ${err.error.join('\n')}
             }
         });
         
+        // エラータイプグラフの描画（エラーがある場合のみ）
+        ${errorTypeData.length > 0 ? `
         const ctx3 = document.getElementById('errorTypeChart').getContext('2d');
         new Chart(ctx3, {
             type: 'pie',
@@ -999,6 +1035,7 @@ ${err.error.join('\n')}
                 }
             }
         });
+        ` : ''}
     </script>
 </body>
 </html>

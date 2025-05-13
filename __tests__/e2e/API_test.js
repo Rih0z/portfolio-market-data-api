@@ -7,18 +7,19 @@
  * @author Koki Riho
  * @created 2025-05-18
  * @updated 2025-05-12 修正: モック活用とテスト条件分岐を改善、テスト安定性の向上
+ * @updated 2025-05-13 修正: apiServerAvailable判定の修正、モックセットアップの強化
  */
 
 const axios = require('axios');
 const { setupTestEnvironment, teardownTestEnvironment } = require('../testUtils/environment');
 const { isApiServerRunning } = require('../testUtils/apiServer');
-const { mockApiRequest } = require('../testUtils/apiMocks');
+const { mockApiRequest, mockExternalApis } = require('../testUtils/apiMocks');
 
 // APIエンドポイント（テスト環境用）
 const API_BASE_URL = process.env.API_TEST_URL || 'http://localhost:3000/dev';
 
-// モック利用の判定フラグ
-const USE_MOCKS = process.env.USE_API_MOCKS === 'true';
+// モック利用の判定フラグ - 環境変数がない場合でもデフォルトで動作するように改善
+const USE_MOCKS = process.env.USE_API_MOCKS === 'true' || false;
 
 // テストデータ
 const TEST_DATA = {
@@ -45,8 +46,8 @@ const TEST_DATA = {
 // テスト用クッキーの保存
 let sessionCookie = '';
 
-// APIサーバー実行状態フラグ
-let apiServerAvailable = false;
+// APIサーバー実行状態フラグ - デフォルトでmock使用時はtrueに設定
+let apiServerAvailable = USE_MOCKS;
 
 // 条件付きテスト関数 - APIサーバーが実行されていない場合はスキップ
 const conditionalTest = (name, fn) => {
@@ -81,7 +82,18 @@ describe('Portfolio Market Data API E2Eテスト', () => {
       console.warn(`❌ API server is not running at ${API_BASE_URL}`);
       console.warn(`Please start the API server with 'npm run dev' or set USE_API_MOCKS=true`);
       console.warn('E2E tests will be skipped until the API server is running or mocks are enabled.');
-      apiServerAvailable = false || isApiServerRunning();
+      apiServerAvailable = USE_MOCKS || isApiServerRunning();
+      
+      if (USE_MOCKS) {
+        // モックが有効でも上記で失敗した場合は、再度明示的にモックをセットアップ
+        try {
+          setupMockResponses();
+          console.log(`✅ Fallback: Using mock API responses`);
+          apiServerAvailable = true;
+        } catch (mockError) {
+          console.error(`❌ Failed to setup mock responses: ${mockError.message}`);
+        }
+      }
     }
   });
   
@@ -92,6 +104,9 @@ describe('Portfolio Market Data API E2Eテスト', () => {
   
   // モックAPIレスポンスのセットアップ
   const setupMockResponses = () => {
+    // 安全性のため先に全ての外部APIをモック
+    mockExternalApis();
+    
     // 米国株データAPI
     mockApiRequest(`${API_BASE_URL}/api/market-data?type=us-stock&symbols=${TEST_DATA.usStockSymbol}`, 'GET', {
       success: true,
@@ -234,6 +249,14 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         message: '認証されていません'
       }
     }, 401);
+    
+    // ヘルスチェックAPI (追加)
+    mockApiRequest(`${API_BASE_URL}/health`, 'GET', {
+      success: true,
+      status: 'ok',
+      version: '1.0.0',
+      timestamp: new Date().toISOString()
+    });
   };
   
   describe('マーケットデータAPI', () => {
@@ -500,6 +523,16 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         expect(error.response.data.success).toBe(false);
         expect(error.response.data.error.code).toBe('NO_SESSION');
       }
+    });
+  });
+  
+  // 追加: 基本的なヘルスチェックテスト
+  describe('API基本機能', () => {
+    conditionalTest('ヘルスチェックエンドポイント', async () => {
+      const response = await axios.get(`${API_BASE_URL}/health`);
+      expect(response.status).toBe(200);
+      expect(response.data.success).toBe(true);
+      // APIがレスポンスを返せていることが重要
     });
   });
 });

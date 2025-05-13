@@ -39,6 +39,12 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@aws-sdk/client-budgets": "^3.808.0",
+    "@aws-sdk/client-dynamodb": "^3.808.0",
+    "@aws-sdk/client-sns": "^3.808.0",
+    "@aws-sdk/client-sts": "^3.808.0",
+    "@aws-sdk/lib-dynamodb": "^3.808.0",
+    "@aws-sdk/util-dynamodb": "^3.808.0",
     "aws-sdk": "^2.1570.0",
     "axios": "^1.6.2",
     "cheerio": "^1.0.0-rc.12",
@@ -47,9 +53,6 @@
     "googleapis": "^148.0.0"
   },
   "devDependencies": {
-    "@aws-sdk/client-dynamodb": "^3.808.0",
-    "@aws-sdk/lib-dynamodb": "^3.808.0",
-    "@aws-sdk/util-dynamodb": "^3.808.0",
     "aws-sdk-mock": "^5.8.0",
     "chart.js": "^3.9.1",
     "cross-env": "^7.0.3",

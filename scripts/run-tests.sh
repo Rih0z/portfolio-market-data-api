@@ -3,11 +3,12 @@
 # ファイルパス: scripts/run-tests.sh (更新版)
 # 
 # Portfolio Market Data APIテスト実行スクリプト
-# 修正: 新しいテストファイル対応およびレポート詳細化
+# 修正: 新しいテストファイル対応およびレポート詳細化、カバレッジ強制対応追加
 #
 # @author Koki Riho
 # @updated 2025-05-15 - 新しいテスト種別の追加、詳細レポート生成オプションの強化
 # @updated 2025-05-16 - カバレッジチャートの自動生成機能追加、テストカバレッジ目標の段階追跡
+# @updated 2025-05-17 - カバレッジオプションが確実に有効になるように修正、強制カバレッジオプション追加
 #
 
 # 色の設定
@@ -61,6 +62,7 @@ show_help() {
   echo "  --chart                     カバレッジをチャートで生成（ビジュアルレポートに追加）"
   echo "  --junit                     JUnit形式のレポートを生成（CI環境用）"
   echo "  --nvm                       nvmを使用してNode.js 18に切り替え"
+  echo "  --force-coverage            カバレッジ計測を強制的に有効化（--no-coverageより優先）"
   echo ""
   echo "テスト種別:"
   echo "  unit                単体テストのみ実行"
@@ -82,12 +84,13 @@ show_help() {
   echo "  final               最終段階の目標 (70-80%) - 完全なテストカバレッジ時"
   echo ""
   echo "使用例:"
-  echo "  $0 unit             単体テストのみ実行"
+  echo "  $0 unit             単体テストのみ実行（カバレッジあり）"
   echo "  $0 -c all           環境クリーンアップ後、すべてのテストを実行"
   echo "  $0 -a -v e2e        APIサーバー自動起動でE2Eテストを実行し、結果をビジュアル表示"
   echo "  $0 -m -w unit       モックを使用し、監視モードで単体テストを実行"
   echo "  $0 quick            単体テストと統合テストを高速実行（モック使用）"
   echo "  $0 -n integration   カバレッジチェック無効で統合テストを実行"
+  echo "  $0 --force-coverage integration  カバレッジを強制的に有効化して統合テストを実行"
   echo "  $0 -f -m e2e        テストを強制実行モードで実行（モック使用）"
   echo "  $0 -d e2e           デバッグモードでE2Eテストを実行（詳細ログ表示）"
   echo "  $0 -i e2e           カバレッジエラーを無視してテスト成功を正確に表示"
@@ -112,6 +115,7 @@ IGNORE_COVERAGE_ERRORS=0
 HTML_COVERAGE=0
 GENERATE_CHART=0
 JUNIT_REPORT=0
+FORCE_COVERAGE=0
 SPECIFIC_PATTERN=""
 TEST_TYPE=""
 COVERAGE_TARGET="initial"
@@ -181,6 +185,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --nvm)
       USE_NVM=1
+      shift
+      ;;
+    --force-coverage)
+      FORCE_COVERAGE=1
       shift
       ;;
     unit|unit:services|unit:utils|unit:function|integration|integration:auth|integration:market|integration:drive|e2e|all|quick|specific)
@@ -317,6 +325,7 @@ if [ $GENERATE_CHART -eq 1 ]; then
   ENV_VARS="$ENV_VARS GENERATE_COVERAGE_CHART=true"
   print_info "カバレッジチャートを生成します"
   VISUAL=1  # チャート生成時は自動的にビジュアルレポートを表示
+  FORCE_COVERAGE=1  # チャート生成時は常にカバレッジを有効化
 fi
 
 # テストコマンドの構築
@@ -383,17 +392,32 @@ case $TEST_TYPE in
 esac
 
 # カバレッジオプションの追加
-if [ $NO_COVERAGE -eq 1 ]; then
-  print_info "カバレッジチェックが無効化されています"
-  JEST_ARGS="$JEST_ARGS --no-coverage"
-else
+if [ $FORCE_COVERAGE -eq 1 ]; then
+  print_info "カバレッジ計測を強制的に有効化しています"
+  # 明示的にカバレッジを有効化
   if [ $HTML_COVERAGE -eq 1 ]; then
     print_info "HTMLカバレッジレポートを生成します"
     JEST_ARGS="$JEST_ARGS --coverage --coverageReporters=lcov"
   else
-    # デフォルトのカバレッジ設定
     JEST_ARGS="$JEST_ARGS --coverage"
   fi
+  # カバレッジ関連の環境変数を設定
+  ENV_VARS="$ENV_VARS COLLECT_COVERAGE=true"
+  NO_COVERAGE=0
+elif [ $NO_COVERAGE -eq 1 ]; then
+  print_info "カバレッジチェックが無効化されています"
+  JEST_ARGS="$JEST_ARGS --no-coverage"
+else
+  print_info "カバレッジ計測を有効化しています"
+  # デフォルトでもカバレッジを有効化
+  if [ $HTML_COVERAGE -eq 1 ]; then
+    print_info "HTMLカバレッジレポートを生成します"
+    JEST_ARGS="$JEST_ARGS --coverage --coverageReporters=lcov"
+  else
+    JEST_ARGS="$JEST_ARGS --coverage"
+  fi
+  # カバレッジ関連の環境変数を設定
+  ENV_VARS="$ENV_VARS COLLECT_COVERAGE=true"
 fi
 
 # JUnitレポート設定
@@ -437,6 +461,20 @@ fi
 # テスト結果
 TEST_RESULT=$?
 
+# カバレッジ関連ファイルのチェック
+if [ $NO_COVERAGE -ne 1 ] || [ $FORCE_COVERAGE -eq 1 ]; then
+  # カバレッジ結果ファイルの存在チェック
+  if [ ! -f "./test-results/detailed-results.json" ]; then
+    print_warning "カバレッジ結果ファイルが見つかりません。Jest実行中にエラーが発生した可能性があります。"
+  else
+    # coverageMapプロパティの存在チェック
+    if ! grep -q "coverageMap" ./test-results/detailed-results.json; then
+      print_warning "カバレッジデータが結果ファイルに含まれていません。"
+      print_info "Jest設定でcollectCoverageオプションが有効になっていることを確認してください。"
+    fi
+  fi
+fi
+
 # カバレッジエラーを無視するモードが有効な場合
 if [ $IGNORE_COVERAGE_ERRORS -eq 1 ] && [ -f "./test-results/detailed-results.json" ]; then
   # JSON結果ファイルを読み込んでテスト自体の成功/失敗を確認
@@ -460,6 +498,11 @@ if [ $GENERATE_CHART -eq 1 ] && [ $NO_COVERAGE -ne 1 ] && [ -f "./test-results/d
     print_success "カバレッジチャートが生成されました"
   else
     print_warning "カバレッジチャートの生成に失敗しました"
+    # エラーの詳細を確認
+    if [ $DEBUG_MODE -eq 1 ]; then
+      print_info "チャート生成スクリプトを手動で実行してエラーを確認します..."
+      NODE_ENV=production node --trace-warnings ./scripts/generate-coverage-chart.js
+    fi
   fi
 fi
 
@@ -648,6 +691,7 @@ else
   echo "- ビジュアルレポートを表示: ./scripts/run-tests.sh -v $TEST_TYPE"
   echo "- モックモードでテストを再実行: ./scripts/run-tests.sh -m $TEST_TYPE"
   echo "- カバレッジエラーを無視してテスト: ./scripts/run-tests.sh -i $TEST_TYPE"
+  echo "- カバレッジの問題が原因の場合は強制的に有効化: ./scripts/run-tests.sh --force-coverage $TEST_TYPE"
 fi
 
 # テスト後のクリーンアップ提案

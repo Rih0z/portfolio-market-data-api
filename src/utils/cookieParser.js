@@ -4,7 +4,7 @@
  * @file src/utils/cookieParser.js
  * @author Koki Riho
  * @created 2025-05-12
- * @updated 2025-05-13 バグ修正: エラー処理と型チェックを改善
+ * @updated 2025-05-14 バグ修正: Cookie解析ロジックを全面的に書き直し
  */
 'use strict';
 
@@ -25,40 +25,45 @@ const parseCookies = (cookieInput = '') => {
     cookieString = cookieInput;
   }
   
-  // 空文字列または文字列でない場合は空オブジェクトを返す
-  if (!cookieString || typeof cookieString !== 'string') {
+  // 空文字列の場合は空オブジェクトを返す
+  if (cookieString === undefined || cookieString === null) {
     return {};
   }
   
-  const cookies = {};
+  // Cookieの処理
+  const result = {};
   
-  // セミコロンでCookieを分割
-  const cookiePairs = cookieString.split(';');
-  
-  for (const pair of cookiePairs) {
-    const trimmedPair = pair.trim();
-    if (!trimmedPair) continue;
+  // パターン1: 文字列型の入力
+  if (typeof cookieString === 'string') {
+    if (cookieString.trim() === '') {
+      return {};
+    }
     
-    // 最初の=の位置を見つける (セミコロンを含む値にも対応)
-    const firstEqualIndex = trimmedPair.indexOf('=');
+    // セミコロンで分割
+    const pairs = cookieString.split(';');
     
-    // =が見つからなかった場合はスキップ
-    if (firstEqualIndex === -1) continue;
-    
-    const name = trimmedPair.substring(0, firstEqualIndex).trim();
-    let value = trimmedPair.substring(firstEqualIndex + 1).trim();
-    
-    // 値が空でも受け入れる
-    try {
-      // URIデコードを試みる
-      cookies[name] = decodeURIComponent(value);
-    } catch (error) {
-      // デコードに失敗した場合はそのまま使用
-      cookies[name] = value;
+    for (const pair of pairs) {
+      const trimmedPair = pair.trim();
+      if (!trimmedPair) continue;
+      
+      // 最初の=で分割
+      const eqIdx = trimmedPair.indexOf('=');
+      if (eqIdx === -1) continue;
+      
+      const key = trimmedPair.substring(0, eqIdx).trim();
+      const value = trimmedPair.substring(eqIdx + 1).trim();
+      
+      if (key) {
+        try {
+          result[key] = decodeURIComponent(value);
+        } catch (e) {
+          result[key] = value;
+        }
+      }
     }
   }
   
-  return cookies;
+  return result;
 };
 
 /**
@@ -80,7 +85,10 @@ const createSessionCookie = (sessionId, maxAge = 604800, secure = true, sameSite
  * @returns {string} - Cookie文字列
  */
 const createClearSessionCookie = (secure = true) => {
-  const secureFlag = secure ? '; Secure' : '';
+  // 開発環境では secure フラグを省略
+  const isDevEnv = process.env.NODE_ENV === 'development';
+  const secureFlag = (secure && !isDevEnv) ? '; Secure' : '';
+  
   return `session=; HttpOnly${secureFlag}; SameSite=Strict; Max-Age=0; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
 };
 

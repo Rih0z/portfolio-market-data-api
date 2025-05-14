@@ -6,7 +6,7 @@
  * @created 2025-05-12
  * @updated 2025-05-13 バグ修正: parseCookies関数の使用方法を修正
  * @updated 2025-05-14 バグ修正: テストモックに対応するよう修正
- * @updated 2025-05-15 バグ修正: テストのモック呼び出し形式を正確に修正
+ * @updated 2025-05-15 バグ修正: リダイレクトテスト対応のため実装修正
  */
 'use strict';
 
@@ -34,11 +34,6 @@ module.exports.handler = async (event) => {
       }
     });
     
-    // テスト対応: モック関数呼び出し検知のため
-    if (typeof event._formatErrorResponse === 'function') {
-      event._formatErrorResponse(errorResponse);
-    }
-    
     return errorResponse;
   }
 
@@ -46,42 +41,54 @@ module.exports.handler = async (event) => {
     // Cookie ヘッダーを作成
     const clearCookie = createClearSessionCookie();
     
-    // テスト用の変数
+    // リダイレクトURLチェックを一番最初に行う
+    if (event.queryStringParameters && event.queryStringParameters.redirect) {
+      // リダイレクトURLが指定されている場合
+      const redirectUrl = event.queryStringParameters.redirect;
+      
+      // セッション無効化を先に行う（必要であれば）
+      let cookieString = '';
+      if (event.headers && event.headers.Cookie) {
+        cookieString = event.headers.Cookie;
+      }
+      
+      // Cookie解析とセッション無効化
+      const cookieObj = { Cookie: cookieString };
+      const cookies = parseCookies(cookieObj);
+      const sessionId = cookies.session;
+      
+      if (sessionId) {
+        try {
+          await invalidateSession(sessionId);
+        } catch (error) {
+          logger.error('Session invalidation error:', error);
+        }
+      }
+      
+      // 重要: テスト互換性のため、responseUtils.formatRedirectResponseを直接使用
+      // 代わりにモジュールからインポートした関数を使用する
+      return responseUtils.formatRedirectResponse(
+        redirectUrl,
+        302,
+        { 'Set-Cookie': clearCookie }
+      );
+    }
+    
+    // 通常のログアウト処理（リダイレクトなし）
+    
+    // ***テスト対応: Cookieオブジェクトを直接作成***
     let cookieString = '';
     if (event.headers && event.headers.Cookie) {
       cookieString = event.headers.Cookie;
     }
     
-    // リダイレクトURLがクエリパラメータにある場合は処理（早めに確認）
-    let redirectUrl = null;
-    if (event.queryStringParameters && event.queryStringParameters.redirect) {
-      redirectUrl = event.queryStringParameters.redirect;
-      
-      // *** 重要な修正: テストが期待する形式で事前にモック関数を呼び出す ***
-      if (typeof event._formatRedirectResponse === 'function') {
-        event._formatRedirectResponse(
-          redirectUrl, 
-          302, 
-          { 'Set-Cookie': clearCookie }
-        );
-      }
-    }
-    
-    // Cookieを解析 - テスト環境での入力形式に対応
-    const cookies = parseCookies(event);
+    const cookieObj = { Cookie: cookieString };
+    const cookies = parseCookies(cookieObj);
     const sessionId = cookies.session;
     
     // セッションがある場合は無効化
     if (sessionId) {
       try {
-        // *** 重要な修正: テストが期待する正確な形式でモックを呼ぶ ***
-        if (typeof event._testInvalidateSession === 'function') {
-          event._testInvalidateSession({
-            Cookie: `session=${sessionId}`
-          });
-        }
-        
-        // 実際のセッション無効化処理
         await invalidateSession(sessionId);
         
         // ログ出力 - テスト対応
@@ -105,17 +112,6 @@ module.exports.handler = async (event) => {
       logger.debug('Session ID:', sessionId);
     }
     
-    // リダイレクトURLがある場合はリダイレクトレスポンスを返す
-    if (redirectUrl) {
-      const redirectResponse = formatRedirectResponse(
-        redirectUrl,
-        302,
-        { 'Set-Cookie': clearCookie }
-      );
-      
-      return redirectResponse;
-    }
-    
     // 通常のレスポンスを返す
     const successResponse = await formatResponse({
       message: sessionId ? 'ログアウトしました' : 'すでにログアウトしています',
@@ -123,11 +119,6 @@ module.exports.handler = async (event) => {
         'Set-Cookie': clearCookie
       }
     });
-    
-    // テスト対応: モック関数呼び出し検知のため
-    if (typeof event._formatResponse === 'function') {
-      event._formatResponse(successResponse);
-    }
     
     return successResponse;
   } catch (error) {
@@ -145,11 +136,7 @@ module.exports.handler = async (event) => {
       }
     });
     
-    // テスト対応: モック関数呼び出し検知のため
-    if (typeof event._formatErrorResponse === 'function') {
-      event._formatErrorResponse(errorResponse);
-    }
-    
     return errorResponse;
   }
 };
+

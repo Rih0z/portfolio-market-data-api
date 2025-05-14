@@ -5,7 +5,7 @@
  * @author Portfolio Manager Team
  * @created 2025-05-12
  * @updated 2025-05-13 バグ修正: parseCookies関数の使用方法を修正
- * @updated 2025-05-14 バグ修正: セッション無効化とCookie処理を修正
+ * @updated 2025-05-14 バグ修正: テストに合わせてモック関数の呼び出し方法を改善
  */
 'use strict';
 
@@ -19,6 +19,8 @@ const { parseCookies, createClearSessionCookie } = require('../../utils/cookiePa
  * @returns {Object} - API Gatewayレスポンス
  */
 module.exports.handler = async (event) => {
+  const testLogger = event._testLogger || console;
+  
   // POSTリクエスト以外はエラーを返す
   if (event.httpMethod !== 'POST') {
     return formatErrorResponseSync({
@@ -32,9 +34,19 @@ module.exports.handler = async (event) => {
   }
 
   try {
-    // Cookieからセッションを取得 - イベントオブジェクト全体を渡す
+    // Cookie解析処理 - より明示的なデバッグ情報を含める
+    if (event._testMode) {
+      testLogger.debug('Event for cookie parsing:', JSON.stringify(event, null, 2));
+    }
+    
+    // Cookieからセッションを取得
     const cookies = parseCookies(event);
     const sessionId = cookies.session;
+    
+    if (event._testMode) {
+      testLogger.debug('Parsed cookies:', JSON.stringify(cookies));
+      testLogger.debug('Session ID:', sessionId);
+    }
     
     // リダイレクトURLがクエリパラメータにある場合は処理
     let redirectUrl = null;
@@ -48,10 +60,13 @@ module.exports.handler = async (event) => {
     // セッションがある場合は無効化
     if (sessionId) {
       try {
+        // セッション無効化を実行
         await invalidateSession(sessionId);
-        console.info('Session invalidated', sessionId);
+        
+        // ロギング - テスト用に明示的なフォーマットを使用
+        testLogger.info('Session invalidated', sessionId);
       } catch (error) {
-        console.error('Session invalidation error:', error);
+        testLogger.error('Session invalidation error:', error);
         // エラーが発生しても処理を継続
       }
     }
@@ -63,7 +78,7 @@ module.exports.handler = async (event) => {
       });
     }
     
-    // レスポンスを整形（Cookieを削除）- テストが期待する形式に合わせる
+    // 通常のレスポンスを返す - テストが期待する形式に合わせる
     return formatResponseSync({
       statusCode: 200,
       body: {
@@ -75,7 +90,7 @@ module.exports.handler = async (event) => {
       }
     });
   } catch (error) {
-    console.error('ログアウトエラー:', error);
+    testLogger.error('ログアウトエラー:', error);
     
     // エラーの場合でもCookieは削除
     return formatErrorResponseSync({

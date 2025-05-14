@@ -28,9 +28,23 @@ const parseCookies = (cookieInput = '') => {
   if (typeof cookieInput === 'object') {
     // イベントオブジェクトからCookieヘッダーを抽出
     try {
+      // イベントオブジェクトの場合の処理
+      // APIGatewayイベントの形式を想定
       const headers = cookieInput.headers || {};
-      cookieString = headers.Cookie || headers.cookie || '';
+      
+      // テスト環境対応：headers が直接 Cookie プロパティを持つ場合と、
+      // headers.Cookie または headers.cookie の形式の両方に対応
+      if (typeof headers === 'object') {
+        cookieString = headers.Cookie || headers.cookie || '';
+      } else if (typeof headers === 'string') {
+        cookieString = headers;
+      }
+      
+      // ここでデバッグ用にログを出力（テスト環境では不要）
+      // console.log('Cookie string from headers:', cookieString);
     } catch (e) {
+      // エラーが発生した場合は空のオブジェクトを返す
+      console.error('Cookie parse error:', e);
       return cookies;
     }
   } else if (typeof cookieInput === 'string') {
@@ -44,23 +58,25 @@ const parseCookies = (cookieInput = '') => {
     return cookies;
   }
   
-  // Cookie文字列を解析
-  // 修正: セミコロンで単純に分割するのではなく、適切な方法で解析する
-  const cookiePairs = cookieString.split(';');
+  // セミコロンで分割して各Cookie部分を取得
+  const cookieParts = cookieString.split(';');
   
-  for (const pair of cookiePairs) {
-    const trimmedPair = pair.trim();
-    if (!trimmedPair) continue;
+  // デバッグ情報
+  // console.log('Cookie parts:', cookieParts);
+  
+  for (const part of cookieParts) {
+    const trimmedPart = part.trim();
+    if (!trimmedPart) continue;
     
     // 最初の等号の位置を取得
-    const equalPos = trimmedPair.indexOf('=');
+    const equalPos = trimmedPart.indexOf('=');
     
     // 等号がない場合はスキップ
     if (equalPos === -1) continue;
     
-    // キーと値を分離（最初の等号でのみ分割）
-    const key = trimmedPair.substring(0, equalPos).trim();
-    let value = trimmedPair.substring(equalPos + 1).trim();
+    // キーと値を分離
+    const key = trimmedPart.substring(0, equalPos).trim();
+    let value = trimmedPart.substring(equalPos + 1).trim();
     
     // キーが空でない場合のみ追加
     if (key) {
@@ -73,6 +89,9 @@ const parseCookies = (cookieInput = '') => {
       
       // 値にセミコロンが含まれる場合でも正しく処理
       cookies[key] = value;
+      
+      // デバッグ情報
+      // console.log(`Parsed cookie: ${key} = ${value}`);
     }
   }
   

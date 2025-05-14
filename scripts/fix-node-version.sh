@@ -6,6 +6,7 @@
 #
 # @author Fix Script
 # @created 2025-05-13
+# @updated 2025-05-13 - nvm検出方法の改善
 #
 
 # 色の設定
@@ -29,17 +30,16 @@ if [[ "$NODE_VERSION" == v18.* ]]; then
   exit 0
 fi
 
-# nvmの存在確認
-if command -v nvm >/dev/null 2>&1; then
-  echo -e "${BLUE}nvmが見つかりました。Node.js 18に切り替えます...${NC}"
+# nvmのロードを試みる（環境に関わらず）
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+# nvmが使用可能かテスト
+if type nvm >/dev/null 2>&1; then
+  echo -e "${BLUE}nvmが見つかりました。Node.js 18に切り替えを試みます...${NC}"
   
-  # nvmを使用
-  export NVM_DIR="$HOME/.nvm"
-  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-  
-  # Node.js 18がインストールされているか確認
-  if nvm ls | grep -q "v18"; then
-    nvm use 18
+  # 直接 nvm use 18 を試す
+  if nvm use 18 >/dev/null 2>&1; then
     echo -e "${GREEN}✓ Node.js $(node -v) に切り替えました${NC}"
   else
     echo -e "${YELLOW}Node.js 18がインストールされていません。インストールします...${NC}"

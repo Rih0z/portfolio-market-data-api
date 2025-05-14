@@ -4,7 +4,7 @@
  * @file src/utils/cookieParser.js
  * @author Koki Riho
  * @created 2025-05-12
- * @updated 2025-05-14 バグ修正: Cookie解析ロジックを全面的に書き直し
+ * @updated 2025-05-14 バグ修正: Cookie解析ロジックを最適化
  */
 'use strict';
 
@@ -14,56 +14,67 @@
  * @returns {Object} - パースされたCookieオブジェクト
  */
 const parseCookies = (cookieInput = '') => {
-  // cookieInputがオブジェクトの場合、ヘッダーからCookie文字列を抽出
+  // パースした結果を格納するオブジェクト
+  const cookies = {};
+  
+  // cookieInputが無効な場合は空のオブジェクトを返す
+  if (cookieInput === null || cookieInput === undefined) {
+    return cookies;
+  }
+  
+  // cookieStringを取得
   let cookieString = '';
   
-  if (typeof cookieInput === 'object' && cookieInput !== null) {
+  if (typeof cookieInput === 'object') {
     // イベントオブジェクトからCookieヘッダーを抽出
-    const headers = cookieInput.headers || {};
-    cookieString = headers.Cookie || headers.cookie || '';
+    try {
+      const headers = cookieInput.headers || {};
+      cookieString = headers.Cookie || headers.cookie || '';
+    } catch (e) {
+      return cookies;
+    }
   } else if (typeof cookieInput === 'string') {
     cookieString = cookieInput;
+  } else {
+    return cookies;
   }
   
-  // 空文字列の場合は空オブジェクトを返す
-  if (cookieString === undefined || cookieString === null) {
-    return {};
+  // 空の文字列の場合は空のオブジェクトを返す
+  if (!cookieString) {
+    return cookies;
   }
   
-  // Cookieの処理
-  const result = {};
+  // セミコロンで分割して各Cookie部分を取得
+  const parts = cookieString.split(';');
   
-  // パターン1: 文字列型の入力
-  if (typeof cookieString === 'string') {
-    if (cookieString.trim() === '') {
-      return {};
-    }
+  for (const part of parts) {
+    const trimmedPart = part.trim();
+    if (!trimmedPart) continue;
     
-    // セミコロンで分割
-    const pairs = cookieString.split(';');
+    // 最初の等号の位置を取得
+    const equalPos = trimmedPart.indexOf('=');
     
-    for (const pair of pairs) {
-      const trimmedPair = pair.trim();
-      if (!trimmedPair) continue;
-      
-      // 最初の=で分割
-      const eqIdx = trimmedPair.indexOf('=');
-      if (eqIdx === -1) continue;
-      
-      const key = trimmedPair.substring(0, eqIdx).trim();
-      const value = trimmedPair.substring(eqIdx + 1).trim();
-      
-      if (key) {
-        try {
-          result[key] = decodeURIComponent(value);
-        } catch (e) {
-          result[key] = value;
-        }
+    // 等号がない場合はスキップ
+    if (equalPos === -1) continue;
+    
+    // キーと値を分離
+    const key = trimmedPart.substring(0, equalPos).trim();
+    let value = trimmedPart.substring(equalPos + 1).trim();
+    
+    // キーが空でない場合のみ追加
+    if (key) {
+      try {
+        // URLエンコードされた値をデコード
+        value = decodeURIComponent(value);
+      } catch (e) {
+        // デコードエラーの場合は元の値を使用
       }
+      
+      cookies[key] = value;
     }
   }
   
-  return result;
+  return cookies;
 };
 
 /**

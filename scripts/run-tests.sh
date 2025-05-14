@@ -11,6 +11,10 @@
 # @updated 2025-05-17 - カバレッジオプションが確実に有効になるように修正、強制カバレッジオプション追加
 #
 
+# 便利なサンプルコマンド
+# JEST_COVERAGE=true ./scripts/run-tests.sh integration  # カバレッジを強制的に有効化して統合テストを実行
+# USE_API_MOCKS=true ./scripts/run-tests.sh e2e          # モックを使用してE2Eテストを実行
+
 # 色の設定
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -210,15 +214,44 @@ if [[ ! "$COVERAGE_TARGET" =~ ^(initial|mid|final)$ ]]; then
   exit 1
 fi
 
-# デバッグモードが指定されている場合、詳細情報を表示
+# Jest configuration のデバッグ情報を追加
+debug_jest_config() {
+  print_info "Jest設定のデバッグ情報を表示します..."
+  
+  # Jest のバージョンを確認
+  JEST_VERSION=$(npx jest --version 2>/dev/null || echo "Jest not found")
+  echo "Jest バージョン: $JEST_VERSION"
+  
+  # Jest設定ファイルを探す
+  if [ -f "jest.config.js" ]; then
+    echo "jest.config.js が見つかりました"
+    echo "設定内容:"
+    cat jest.config.js | grep -E "coverage|collectCoverage" || echo "カバレッジ設定が見つかりません"
+  elif [ -f "jest.config.json" ]; then
+    echo "jest.config.json が見つかりました"
+    cat jest.config.json | grep -E "coverage|collectCoverage" || echo "カバレッジ設定が見つかりません"
+  else
+    # package.jsonのJest設定を確認
+    if [ -f "package.json" ]; then
+      echo "package.json の Jest 設定を確認:"
+      cat package.json | grep -A 20 '"jest":' | grep -E "coverage|collectCoverage" || echo "カバレッジ設定が見つかりません"
+    fi
+  fi
+  
+  # .env.localファイルの確認
+  if [ -f ".env.local" ]; then
+    echo ".env.local ファイルをチェックしています（カバレッジ設定の上書きがないか）:"
+    cat .env.local | grep -E "JEST|COVERAGE|collectCoverage|jest" || echo "カバレッジ関連の設定は見つかりません"
+  fi
+  
+  # 関連するnodeモジュールをチェック
+  echo "インストールされている関連パッケージ:"
+  npm list | grep -E "jest|istanbul|coverage" || echo "カバレッジ関連パッケージが見つかりません"
+}
+
+# デバッグモードの場合は、Jest設定も表示
 if [ $DEBUG_MODE -eq 1 ]; then
-  print_info "デバッグモードが有効です"
-  print_info "実行環境情報:"
-  echo "- Node.js Version: $(node -v 2>/dev/null || echo 'Not found')"
-  echo "- npm Version: $(npm -v 2>/dev/null || echo 'Not found')"
-  echo "- Current directory: $(pwd)"
-  echo "- Available environment variables:"
-  env | grep -E "NODE_ENV|API_|TEST_|MOCK|E2E|DYNAMODB" | sort
+  debug_jest_config
 fi
 
 # nvmが指定されている場合、Node.js 18に切り替え
@@ -247,6 +280,37 @@ if [ $USE_NVM -eq 1 ]; then
     print_success "Node.js $(node -v) に切り替えました"
   fi
 fi
+
+# 環境変数が既に設定されているかチェック
+check_env_vars() {
+  # 環境変数から直接実行された場合
+  if [ -n "$JEST_COVERAGE" ] || [ -n "$USE_API_MOCKS" ] || [ -n "$COLLECT_COVERAGE" ]; then
+    print_info "コマンドラインから環境変数が設定されています："
+    
+    if [ -n "$JEST_COVERAGE" ]; then
+      echo "- JEST_COVERAGE=$JEST_COVERAGE"
+      # 既に設定されている場合は明示的に環境変数に追加
+      ENV_VARS="$ENV_VARS JEST_COVERAGE=$JEST_COVERAGE"
+    fi
+    
+    if [ -n "$USE_API_MOCKS" ]; then
+      echo "- USE_API_MOCKS=$USE_API_MOCKS"
+      ENV_VARS="$ENV_VARS USE_API_MOCKS=$USE_API_MOCKS"
+      MOCK=1
+    fi
+    
+    if [ -n "$COLLECT_COVERAGE" ]; then
+      echo "- COLLECT_COVERAGE=$COLLECT_COVERAGE"
+      ENV_VARS="$ENV_VARS COLLECT_COVERAGE=$COLLECT_COVERAGE"
+      if [ "$COLLECT_COVERAGE" = "true" ]; then
+        FORCE_COVERAGE=1
+      fi
+    fi
+  fi
+}
+
+# 環境変数をチェック
+check_env_vars
 
 # テスト種別が指定されていない場合はエラー
 if [ -z "$TEST_TYPE" ]; then
@@ -453,9 +517,11 @@ fi
 
 # テストの実行
 if [ -n "$ENV_VARS" ]; then
-  eval "npx cross-env $ENV_VARS $JEST_CMD"
+  # JESTのカバレッジ設定を強制的に有効化（.env.localの設定より優先）
+  eval "npx cross-env JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true $ENV_VARS $JEST_CMD"
 else
-  npx $JEST_CMD
+  # JESTのカバレッジ設定を強制的に有効化
+  eval "npx cross-env JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true $JEST_CMD"
 fi
 
 # テスト結果

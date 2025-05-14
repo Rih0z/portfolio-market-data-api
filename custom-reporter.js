@@ -6,7 +6,7 @@
  * 
  * @author Portfolio Manager Team
  * @created 2025-05-12
- * @updated 2025-05-16 - チャート生成サポートとカバレッジ目標ステータス表示を追加
+ * @updated 2025-05-17 - カバレッジデータをファイルから直接読み込む機能を追加
  */
 
 const fs = require('fs');
@@ -80,6 +80,9 @@ class CustomReporter {
     // カバレッジ情報を含める
     if (results.coverageMap) {
       this.results.coverageMap = results.coverageMap;
+    } else {
+      // カバレッジマップがない場合は、ファイルから直接読み込む
+      this.loadCoverageFromFile();
     }
     
     // テスト結果ディレクトリを作成
@@ -102,6 +105,202 @@ class CustomReporter {
     
     // 結果サマリーを表示
     this.printSummary(results);
+  }
+  
+  /**
+   * カバレッジ情報をファイルから読み込む
+   */
+  loadCoverageFromFile() {
+    try {
+      console.log('\n🔍 カバレッジ情報をファイルから読み込みます...');
+      
+      // カバレッジデータファイルのパス
+      const coveragePath = path.resolve('./coverage/coverage-final.json');
+      
+      // ファイルが存在するか確認
+      if (!fs.existsSync(coveragePath)) {
+        console.warn('⚠ カバレッジデータファイルが見つかりません:', coveragePath);
+        
+        // 別の可能性のあるファイルを探す
+        const alternateFiles = [
+          './coverage/lcov.info',
+          './coverage/coverage-summary.json',
+          './coverage/clover.xml'
+        ];
+        
+        let foundAlternate = false;
+        for (const file of alternateFiles) {
+          const filePath = path.resolve(file);
+          if (fs.existsSync(filePath)) {
+            console.log(`✓ 代替カバレッジファイルが見つかりました: ${file}`);
+            foundAlternate = true;
+            
+            // summaryファイルからの読み込みを試みる
+            if (file === './coverage/coverage-summary.json') {
+              try {
+                const summaryData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+                // 簡易的なカバレッジマップを構築
+                this.createSimpleCoverageMap(summaryData);
+                console.log('✓ カバレッジサマリーからデータを読み込みました');
+                return;
+              } catch (e) {
+                console.warn(`⚠ サマリーファイルの解析に失敗しました: ${e.message}`);
+              }
+            }
+            break;
+          }
+        }
+        
+        if (!foundAlternate) {
+          console.warn('⚠ 代替カバレッジファイルも見つかりません。');
+          console.warn('⚠ Jest実行時に --coverage オプションが指定されているか確認してください。');
+        }
+        
+        return;
+      }
+      
+      // カバレッジデータを読み込む
+      const coverageData = JSON.parse(fs.readFileSync(coveragePath, 'utf8'));
+      
+      // カバレッジマップを作成
+      this.createCoverageMapFromData(coverageData);
+      console.log('✓ カバレッジデータをファイルから読み込みました');
+    } catch (error) {
+      console.warn(`⚠ カバレッジデータの読み込みに失敗しました: ${error.message}`);
+    }
+  }
+  
+  /**
+   * カバレッジデータからカバレッジマップを作成
+   * @param {Object} coverageData 
+   */
+  createCoverageMapFromData(coverageData) {
+    // 簡易的なカバレッジマップを構築
+    const fileCoverageInfo = [];
+    let totalStatements = { covered: 0, total: 0, pct: 0 };
+    let totalBranches = { covered: 0, total: 0, pct: 0 };
+    let totalFunctions = { covered: 0, total: 0, pct: 0 };
+    let totalLines = { covered: 0, total: 0, pct: 0 };
+    
+    // 各ファイルのカバレッジデータを処理
+    for (const [filePath, fileData] of Object.entries(coverageData)) {
+      // ステートメント
+      const statementCovered = Object.values(fileData.s).filter(v => v > 0).length;
+      const statementTotal = Object.keys(fileData.s).length;
+      const statementPct = statementTotal ? (statementCovered / statementTotal) * 100 : 0;
+      
+      // ブランチ
+      const branchData = fileData.b || {};
+      let branchCovered = 0;
+      let branchTotal = 0;
+      
+      for (const counts of Object.values(branchData)) {
+        branchTotal += counts.length;
+        branchCovered += counts.filter(c => c > 0).length;
+      }
+      
+      const branchPct = branchTotal ? (branchCovered / branchTotal) * 100 : 0;
+      
+      // 関数
+      const functionCovered = Object.values(fileData.f).filter(v => v > 0).length;
+      const functionTotal = Object.keys(fileData.f).length;
+      const functionPct = functionTotal ? (functionCovered / functionTotal) * 100 : 0;
+      
+      // 行
+      const lineCovered = Object.values(fileData.l || {}).filter(v => v > 0).length;
+      const lineTotal = Object.keys(fileData.l || {}).length;
+      const linePct = lineTotal ? (lineCovered / lineTotal) * 100 : 0;
+      
+      // ファイル情報を追加
+      fileCoverageInfo.push({
+        filename: filePath,
+        statements: { covered: statementCovered, total: statementTotal, pct: statementPct },
+        branches: { covered: branchCovered, total: branchTotal, pct: branchPct },
+        functions: { covered: functionCovered, total: functionTotal, pct: functionPct },
+        lines: { covered: lineCovered, total: lineTotal, pct: linePct }
+      });
+      
+      // 合計に加算
+      totalStatements.covered += statementCovered;
+      totalStatements.total += statementTotal;
+      
+      totalBranches.covered += branchCovered;
+      totalBranches.total += branchTotal;
+      
+      totalFunctions.covered += functionCovered;
+      totalFunctions.total += functionTotal;
+      
+      totalLines.covered += lineCovered;
+      totalLines.total += lineTotal;
+    }
+    
+    // パーセンテージを計算
+    totalStatements.pct = totalStatements.total ? (totalStatements.covered / totalStatements.total) * 100 : 0;
+    totalBranches.pct = totalBranches.total ? (totalBranches.covered / totalBranches.total) * 100 : 0;
+    totalFunctions.pct = totalFunctions.total ? (totalFunctions.covered / totalFunctions.total) * 100 : 0;
+    totalLines.pct = totalLines.total ? (totalLines.covered / totalLines.total) * 100 : 0;
+    
+    // カバレッジマップを設定
+    this.results.coverageMap = {
+      getFileCoverageInfo: () => fileCoverageInfo,
+      getCoverageSummary: () => ({
+        toJSON: () => ({
+          statements: totalStatements,
+          branches: totalBranches,
+          functions: totalFunctions,
+          lines: totalLines
+        })
+      }),
+      total: {
+        statements: totalStatements,
+        branches: totalBranches,
+        functions: totalFunctions,
+        lines: totalLines
+      }
+    };
+  }
+  
+  /**
+   * サマリーデータから簡易的なカバレッジマップを作成
+   * @param {Object} summaryData 
+   */
+  createSimpleCoverageMap(summaryData) {
+    const fileCoverageInfo = [];
+    
+    // totalデータを取得
+    const total = summaryData.total || {};
+    
+    // ファイルデータを処理
+    for (const [filePath, fileData] of Object.entries(summaryData)) {
+      if (filePath === 'total') continue;
+      
+      fileCoverageInfo.push({
+        filename: filePath,
+        statements: fileData.statements || { covered: 0, total: 0, pct: 0 },
+        branches: fileData.branches || { covered: 0, total: 0, pct: 0 },
+        functions: fileData.functions || { covered: 0, total: 0, pct: 0 },
+        lines: fileData.lines || { covered: 0, total: 0, pct: 0 }
+      });
+    }
+    
+    // カバレッジマップを設定
+    this.results.coverageMap = {
+      getFileCoverageInfo: () => fileCoverageInfo,
+      getCoverageSummary: () => ({
+        toJSON: () => ({
+          statements: total.statements || { covered: 0, total: 0, pct: 0 },
+          branches: total.branches || { covered: 0, total: 0, pct: 0 },
+          functions: total.functions || { covered: 0, total: 0, pct: 0 },
+          lines: total.lines || { covered: 0, total: 0, pct: 0 }
+        })
+      }),
+      total: {
+        statements: total.statements || { covered: 0, total: 0, pct: 0 },
+        branches: total.branches || { covered: 0, total: 0, pct: 0 },
+        functions: total.functions || { covered: 0, total: 0, pct: 0 },
+        lines: total.lines || { covered: 0, total: 0, pct: 0 }
+      }
+    };
   }
   
   /**
@@ -166,6 +365,9 @@ class CustomReporter {
       } catch (error) {
         md += `カバレッジ情報の取得に失敗しました: ${error.message}\n\n`;
       }
+    } else {
+      md += `## カバレッジ\n\n`;
+      md += `カバレッジ情報が利用できません。テスト実行時に--coverageオプションを付けてください。\n\n`;
     }
     
     // エラーがある場合はエラーサマリーを追加
@@ -204,7 +406,12 @@ class CustomReporter {
     try {
       // カバレッジ情報取得
       let coverageData = [];
-      let total = { statements: { pct: 0, covered: 0, total: 0 }, branches: { pct: 0, covered: 0, total: 0 }, functions: { pct: 0, covered: 0, total: 0 }, lines: { pct: 0, covered: 0, total: 0 } };
+      let total = { 
+        statements: { pct: 0, covered: 0, total: 0 }, 
+        branches: { pct: 0, covered: 0, total: 0 }, 
+        functions: { pct: 0, covered: 0, total: 0 }, 
+        lines: { pct: 0, covered: 0, total: 0 } 
+      };
       let fileCoverage = [];
       const targetLevel = process.env.COVERAGE_TARGET || 'initial';
       const targetThresholds = this.getCoverageThresholds(targetLevel);
@@ -215,10 +422,10 @@ class CustomReporter {
         fileCoverage.sort((a, b) => a.filename.localeCompare(b.filename));
         
         coverageData = [
-          { name: 'ステートメント', pct: total.statements.pct, target: targetThresholds.statements },
-          { name: 'ブランチ', pct: total.branches.pct, target: targetThresholds.branches },
-          { name: 'ファンクション', pct: total.functions.pct, target: targetThresholds.functions },
-          { name: '行', pct: total.lines.pct, target: targetThresholds.lines }
+          { name: 'ステートメント', value: total.statements.pct, target: targetThresholds.statements },
+          { name: 'ブランチ', value: total.branches.pct, target: targetThresholds.branches },
+          { name: 'ファンクション', value: total.functions.pct, target: targetThresholds.functions },
+          { name: '行', value: total.lines.pct, target: targetThresholds.lines }
         ];
       }
       
@@ -574,6 +781,14 @@ class CustomReporter {
           text-align: center;
           color: #00cc00;
         }
+        .coverage-warning {
+          padding: 15px;
+          border: 1px dashed #ff6600;
+          margin-bottom: 20px;
+          background-color: rgba(255, 102, 0, 0.1);
+          border-radius: 3px;
+          text-align: center;
+        }
         @keyframes blink {
           0% { opacity: 1; }
           50% { opacity: 0.3; }
@@ -905,8 +1120,9 @@ class CustomReporter {
                 ` : `
                 <div class="card coverage-card">
                   <div class="card-title">コードカバレッジ分析</div>
-                  <div style="padding: 30px; text-align: center;">
-                    カバレッジ情報が利用できません。テスト実行時に--coverageオプションを付けてください。
+                  <div class="coverage-warning">
+                    <p>カバレッジ情報が利用できません。テスト実行時に以下のコマンドを使用してください：</p>
+                    <pre style="margin-top: 10px; background: #000; padding: 10px; border-radius: 3px;">JEST_COVERAGE=true ./scripts/run-tests.sh ${process.argv.slice(2).join(' ')}</pre>
                   </div>
                 </div>
                 `}
@@ -1108,9 +1324,9 @@ class CustomReporter {
     console.log('----------------------------------------');
     
     // カバレッジ情報
-    if (results.coverageMap) {
+    if (this.results.coverageMap) {
       try {
-        const total = results.coverageMap.getCoverageSummary().toJSON();
+        const total = this.results.coverageMap.getCoverageSummary().toJSON();
         
         console.log(`${blue}カバレッジ情報:${reset}`);
         console.log(`ステートメント: ${total.statements.pct.toFixed(2)}% (${total.statements.covered}/${total.statements.total})`);
@@ -1153,6 +1369,10 @@ class CustomReporter {
       } catch (error) {
         console.log(`${red}カバレッジ情報の取得に失敗しました: ${error.message}${reset}`);
       }
+    } else {
+      console.log(`${yellow}⚠ カバレッジデータが結果ファイルに含まれていません。${reset}`);
+      console.log(`${blue}次回のテスト実行時には以下のコマンドを使用してください：${reset}`);
+      console.log(`${yellow}JEST_COVERAGE=true ./scripts/run-tests.sh ${process.argv.slice(2).join(' ')}${reset}`);
     }
     
     console.log('========================================');

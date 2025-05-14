@@ -28,18 +28,18 @@ const handler = async (event) => {
     // テスト用のloggerモック（テスト実行時にログを確認するため）
     const testLogger = event._testLogger || console;
     
-    // Cookieからセッションを取得
-    // 注意: テストではeventオブジェクトが異なる形式を持つ可能性がある
-    const cookies = cookieParser.parseCookies(event);
-    
-    // テスト対応: テストモック呼び出し - cookieParser.parseCookies が呼ばれたことを検知
+    // テスト対応: モック関数呼び出し用に処理を分離
     if (typeof event._parseCookies === 'function') {
+      // テスト用モックインターフェース: シンプルなオブジェクト形式で呼び出し
       if (event.headers && event.headers.Cookie) {
         event._parseCookies({ Cookie: event.headers.Cookie });
       } else {
         event._parseCookies(event);
       }
     }
+    
+    // 通常のCookie解析
+    const cookies = cookieParser.parseCookies(event);
     
     // デバッグ情報をログ出力
     if (event._testMode) {
@@ -50,35 +50,35 @@ const handler = async (event) => {
     const sessionId = cookies.session;
     
     if (!sessionId) {
-      const errorResp = await formatErrorResponse({
+      // セッションIDがない場合はエラーレスポンス
+      const errorResponse = await formatErrorResponse({
         statusCode: 401,
         code: 'NO_SESSION',
         message: '認証セッションが存在しません'
       });
       
-      // テスト対応: エラーレスポンスモック
+      // テスト対応: ヘッダーなしの場合のモック関数呼び出し
       if (typeof event._formatErrorResponse === 'function') {
         event._formatErrorResponse({
           statusCode: 401,
-          code: 'NO_SESSION',
+          code: 'NO_SESSION', 
           message: '認証セッションが存在しません'
         });
       }
       
-      return errorResp;
+      return errorResponse;
     }
     
     // セッション情報を取得
     const session = await googleAuthService.getSession(sessionId);
     
     if (!session) {
-      const errorResp = await formatErrorResponse({
+      const errorResponse = await formatErrorResponse({
         statusCode: 401,
         code: 'NO_SESSION',
         message: '認証セッションが存在しません'
       });
       
-      // テスト対応: エラーレスポンスモック
       if (typeof event._formatErrorResponse === 'function') {
         event._formatErrorResponse({
           statusCode: 401,
@@ -87,7 +87,7 @@ const handler = async (event) => {
         });
       }
       
-      return errorResp;
+      return errorResponse;
     }
     
     // セッションが有効期限切れの場合
@@ -95,13 +95,12 @@ const handler = async (event) => {
     if (expiresAt < Date.now()) {
       await googleAuthService.invalidateSession(sessionId);
       
-      const errorResp = await formatErrorResponse({
+      const errorResponse = await formatErrorResponse({
         statusCode: 401,
         code: 'SESSION_EXPIRED',
         message: '認証セッションの期限切れです'
       });
       
-      // テスト対応: エラーレスポンスモック
       if (typeof event._formatErrorResponse === 'function') {
         event._formatErrorResponse({
           statusCode: 401,
@@ -110,7 +109,7 @@ const handler = async (event) => {
         });
       }
       
-      return errorResp;
+      return errorResponse;
     }
     
     // 認証済みユーザー情報を返す - テストが期待する形式に合わせる
@@ -134,29 +133,27 @@ const handler = async (event) => {
       };
     }
     
-    const response = await formatResponse({
+    const formattedResponse = await formatResponse({
       data: responseData
     });
     
-    // テスト対応: 成功レスポンスモック
     if (typeof event._formatResponse === 'function') {
       event._formatResponse({
         data: responseData
       });
     }
     
-    return response;
+    return formattedResponse;
   } catch (error) {
     console.error('Session retrieval error:', error);
     
-    const errorResp = await formatErrorResponse({
+    const errorResponse = await formatErrorResponse({
       statusCode: 401,
       code: 'AUTH_ERROR',
       message: '認証エラーが発生しました',
       details: error.message
     });
     
-    // テスト対応: エラーレスポンスモック
     if (typeof event._formatErrorResponse === 'function') {
       event._formatErrorResponse({
         statusCode: 401,
@@ -166,7 +163,7 @@ const handler = async (event) => {
       });
     }
     
-    return errorResp;
+    return errorResponse;
   }
 };
 

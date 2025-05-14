@@ -200,402 +200,811 @@ class CustomReporter {
    * @param {string} outputDir 出力ディレクトリ
    */
   generateVisualReport(outputDir) {
-    // レポートのスタイルとスクリプト
-    const styles = `
-      body {
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        line-height: 1.6;
-        color: #333;
-        max-width: 1200px;
-        margin: 0 auto;
-        padding: 20px;
-        background-color: #f9f9f9;
-      }
-      h1, h2, h3 {
-        color: #333;
-      }
-      .header {
-        background-color: #4285F4;
-        color: white;
-        padding: 20px;
-        border-radius: 5px;
-        margin-bottom: 20px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-      }
-      .header h1 {
-        color: white;
-        margin: 0;
-      }
-      .datetime {
-        font-size: 0.9em;
-        color: rgba(255, 255, 255, 0.8);
-      }
-      .summary-cards {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 20px;
-        margin-bottom: 30px;
-      }
-      .card {
-        flex: 1;
-        min-width: 200px;
-        padding: 20px;
-        border-radius: 5px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        text-align: center;
-        background-color: white;
-      }
-      .card h3 {
-        margin-top: 0;
-        color: #666;
-        font-weight: normal;
-      }
-      .card .number {
-        font-size: 2.5em;
-        font-weight: bold;
-      }
-      .success { color: #34A853; }
-      .failure { color: #EA4335; }
-      .pending { color: #FBBC05; }
-      .total { color: #4285F4; }
+    // Portfolio Wise ダッシュボードスタイルを適用したレポートを生成
+    try {
+      // カバレッジ情報取得
+      let coverageData = [];
+      let total = { statements: { pct: 0, covered: 0, total: 0 }, branches: { pct: 0, covered: 0, total: 0 }, functions: { pct: 0, covered: 0, total: 0 }, lines: { pct: 0, covered: 0, total: 0 } };
+      let fileCoverage = [];
+      const targetLevel = process.env.COVERAGE_TARGET || 'initial';
+      const targetThresholds = this.getCoverageThresholds(targetLevel);
       
-      .coverage-summary {
-        margin-bottom: 30px;
-      }
-      .progress-container {
-        margin-bottom: 10px;
-      }
-      .progress-label {
-        display: flex;
-        justify-content: space-between;
-        margin-bottom: 5px;
-      }
-      .progress-bar {
-        height: 20px;
-        border-radius: 10px;
-        background-color: #f0f0f0;
-        overflow: hidden;
-      }
-      .progress-fill {
-        height: 100%;
-        border-radius: 10px;
-        transition: width 0.5s ease;
-      }
-      .target-marker {
-        position: relative;
-        top: -20px;
-        width: 2px;
-        height: 20px;
-        background-color: #333;
-      }
-      .target-label {
-        position: relative;
-        top: -20px;
-        font-size: 0.8em;
-        color: #333;
-      }
-      
-      .statements-fill { background-color: #4285F4; }
-      .branches-fill { background-color: #34A853; }
-      .functions-fill { background-color: #FBBC05; }
-      .lines-fill { background-color: #EA4335; }
-      
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-bottom: 30px;
-        background-color: white;
-      }
-      th, td {
-        border: 1px solid #ddd;
-        padding: 8px 12px;
-        text-align: left;
-      }
-      th {
-        background-color: #f2f2f2;
-        font-weight: bold;
-      }
-      tr:nth-child(even) {
-        background-color: #f9f9f9;
-      }
-      .numeric {
-        text-align: right;
-      }
-      
-      .error-panel {
-        background-color: #fff;
-        border-left: 5px solid #EA4335;
-        padding: 15px;
-        margin-bottom: 20px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-      }
-      .error-title {
-        font-size: 1.1em;
-        font-weight: bold;
-        margin-bottom: 10px;
-      }
-      .error-location {
-        font-family: monospace;
-        color: #666;
-        margin-bottom: 10px;
-      }
-      .error-message {
-        font-family: monospace;
-        white-space: pre-wrap;
-        background-color: #f5f5f5;
-        padding: 10px;
-        border-radius: 3px;
-        overflow-x: auto;
-      }
-      
-      .footer {
-        margin-top: 50px;
-        text-align: center;
-        color: #666;
-        font-size: 0.9em;
-      }
-      
-      @media (max-width: 768px) {
-        .summary-cards {
-          flex-direction: column;
-        }
-      }
-      
-      .status-passed { color: #34A853; }
-      .status-failed { color: #EA4335; }
-      .status-pending { color: #FBBC05; }
-    `;
-    
-    // レポートの基本構造
-    let html = `<!DOCTYPE html>
-    <html lang="ja">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Portfolio Market Data API テスト結果</title>
-      <style>${styles}</style>
-    </head>
-    <body>
-      <div class="header">
-        <h1>テスト結果レポート</h1>
-        <div class="datetime">${new Date().toLocaleString('ja-JP')}</div>
-      </div>
-      
-      <div class="summary-cards">
-        <div class="card">
-          <h3>合計テスト</h3>
-          <div class="number total">${this.results.numTotalTests}</div>
-        </div>
-        <div class="card">
-          <h3>成功</h3>
-          <div class="number success">${this.results.numPassedTests}</div>
-        </div>
-        <div class="card">
-          <h3>失敗</h3>
-          <div class="number failure">${this.results.numFailedTests}</div>
-        </div>
-        <div class="card">
-          <h3>スキップ</h3>
-          <div class="number pending">${this.results.numPendingTests}</div>
-        </div>
-        <div class="card">
-          <h3>実行時間</h3>
-          <div class="number">${((this.endTime - this.startTime) / 1000).toFixed(2)}秒</div>
-        </div>
-      </div>
-    `;
-    
-    // カバレッジ情報を追加
-    if (this.results.coverageMap) {
-      try {
-        const total = this.results.coverageMap.getCoverageSummary().toJSON();
-        const targetLevel = process.env.COVERAGE_TARGET || 'initial';
-        const targetThresholds = this.getCoverageThresholds(targetLevel);
-        
-        html += `
-        <h2>カバレッジサマリー</h2>
-        <p>目標段階: <strong>${this.getTargetLevelName(targetLevel)}</strong></p>
-        
-        <div class="coverage-summary">
-          <div class="progress-container">
-            <div class="progress-label">
-              <span>ステートメント (${total.statements.covered}/${total.statements.total})</span>
-              <span>${total.statements.pct.toFixed(2)}% ${this.getStatusEmoji(total.statements.pct, targetThresholds.statements)}</span>
-            </div>
-            <div class="progress-bar">
-              <div class="progress-fill statements-fill" style="width: ${total.statements.pct}%"></div>
-            </div>
-            <div class="target-marker" style="margin-left: ${targetThresholds.statements}%"></div>
-            <div class="target-label" style="margin-left: ${targetThresholds.statements - 3}%">目標: ${targetThresholds.statements}%</div>
-          </div>
-          
-          <div class="progress-container">
-            <div class="progress-label">
-              <span>ブランチ (${total.branches.covered}/${total.branches.total})</span>
-              <span>${total.branches.pct.toFixed(2)}% ${this.getStatusEmoji(total.branches.pct, targetThresholds.branches)}</span>
-            </div>
-            <div class="progress-bar">
-              <div class="progress-fill branches-fill" style="width: ${total.branches.pct}%"></div>
-            </div>
-            <div class="target-marker" style="margin-left: ${targetThresholds.branches}%"></div>
-            <div class="target-label" style="margin-left: ${targetThresholds.branches - 3}%">目標: ${targetThresholds.branches}%</div>
-          </div>
-          
-          <div class="progress-container">
-            <div class="progress-label">
-              <span>関数 (${total.functions.covered}/${total.functions.total})</span>
-              <span>${total.functions.pct.toFixed(2)}% ${this.getStatusEmoji(total.functions.pct, targetThresholds.functions)}</span>
-            </div>
-            <div class="progress-bar">
-              <div class="progress-fill functions-fill" style="width: ${total.functions.pct}%"></div>
-            </div>
-            <div class="target-marker" style="margin-left: ${targetThresholds.functions}%"></div>
-            <div class="target-label" style="margin-left: ${targetThresholds.functions - 3}%">目標: ${targetThresholds.functions}%</div>
-          </div>
-          
-          <div class="progress-container">
-            <div class="progress-label">
-              <span>行 (${total.lines.covered}/${total.lines.total})</span>
-              <span>${total.lines.pct.toFixed(2)}% ${this.getStatusEmoji(total.lines.pct, targetThresholds.lines)}</span>
-            </div>
-            <div class="progress-bar">
-              <div class="progress-fill lines-fill" style="width: ${total.lines.pct}%"></div>
-            </div>
-            <div class="target-marker" style="margin-left: ${targetThresholds.lines}%"></div>
-            <div class="target-label" style="margin-left: ${targetThresholds.lines - 3}%">目標: ${targetThresholds.lines}%</div>
-          </div>
-        </div>
-        
-        <h2>ファイルごとのカバレッジ</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>ファイル</th>
-              <th class="numeric">ステートメント</th>
-              <th class="numeric">ブランチ</th>
-              <th class="numeric">関数</th>
-              <th class="numeric">行</th>
-            </tr>
-          </thead>
-          <tbody>
-        `;
-        
-        const fileCoverage = this.results.coverageMap.getFileCoverageInfo();
+      if (this.results.coverageMap) {
+        total = this.results.coverageMap.getCoverageSummary().toJSON();
+        fileCoverage = this.results.coverageMap.getFileCoverageInfo();
         fileCoverage.sort((a, b) => a.filename.localeCompare(b.filename));
         
-        fileCoverage.forEach(file => {
-          const filename = path.relative(process.cwd(), file.filename);
-          html += `
-            <tr>
-              <td>${filename}</td>
-              <td class="numeric">${file.statements.pct.toFixed(2)}%</td>
-              <td class="numeric">${file.branches.pct.toFixed(2)}%</td>
-              <td class="numeric">${file.functions.pct.toFixed(2)}%</td>
-              <td class="numeric">${file.lines.pct.toFixed(2)}%</td>
-            </tr>
-          `;
-        });
-        
-        html += `
-          </tbody>
-        </table>
-        `;
-      } catch (error) {
-        html += `<p>カバレッジ情報の取得に失敗しました: ${error.message}</p>`;
+        coverageData = [
+          { name: 'ステートメント', pct: total.statements.pct, target: targetThresholds.statements },
+          { name: 'ブランチ', pct: total.branches.pct, target: targetThresholds.branches },
+          { name: 'ファンクション', pct: total.functions.pct, target: targetThresholds.functions },
+          { name: '行', pct: total.lines.pct, target: targetThresholds.lines }
+        ];
       }
-    }
-    
-    // テスト結果の詳細を追加
-    html += `<h2>テスト結果詳細</h2>`;
-    
-    this.results.testResults.forEach(fileResult => {
-      const relativePath = path.relative(process.cwd(), fileResult.testFilePath);
       
-      html += `
-        <h3>${relativePath}</h3>
-        <table>
-          <thead>
-            <tr>
-              <th>テスト</th>
-              <th>ステータス</th>
-              <th class="numeric">時間</th>
-            </tr>
-          </thead>
-          <tbody>
-      `;
-      
-      fileResult.testResults.forEach(test => {
-        const statusClass = 
-          test.status === 'passed' ? 'status-passed' :
-          test.status === 'failed' ? 'status-failed' :
-          'status-pending';
-        
-        const statusText = 
-          test.status === 'passed' ? '✓ 成功' :
-          test.status === 'failed' ? '✗ 失敗' :
-          '◯ スキップ';
-        
-        html += `
-          <tr>
-            <td>${test.title}</td>
-            <td class="${statusClass}">${statusText}</td>
-            <td class="numeric">${(test.duration / 1000).toFixed(3)}秒</td>
-          </tr>
-        `;
-      });
-      
-      html += `
-          </tbody>
-        </table>
-      `;
-    });
-    
-    // エラーがある場合はエラー詳細を追加
-    if (this.results.numFailedTests > 0) {
-      html += `<h2>エラー詳細</h2>`;
-      
+      // エラー情報取得
       const failedTests = this.results.testResults.flatMap(fileResult =>
         fileResult.testResults
           .filter(test => test.status === 'failed')
           .map(test => ({
+            id: Math.floor(Math.random() * 1000), // 一意のIDを生成
             testFilePath: fileResult.testFilePath,
             title: test.title,
-            failureMessages: test.failureMessages
+            file: path.relative(process.cwd(), fileResult.testFilePath),
+            failureMessages: test.failureMessages,
+            message: test.failureMessages.join('\n')
           }))
       );
-      
-      failedTests.forEach((test, index) => {
-        const relativePath = path.relative(process.cwd(), test.testFilePath);
-        html += `
-          <div class="error-panel">
-            <div class="error-title">${index + 1}. ${test.title}</div>
-            <div class="error-location">ファイル: ${relativePath}</div>
-            <div class="error-message">${test.failureMessages.join('\n').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+
+      // CSS定義
+      const styles = `
+        * {
+          margin: 0;
+          padding: 0;
+          box-sizing: border-box;
+        }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+          background-color: #1a1a1a;
+          color: #e6e6e6;
+          font-size: 14px;
+          line-height: 1.5;
+        }
+        .container {
+          width: 100%;
+          max-width: 1400px;
+          margin: 0 auto;
+        }
+        .header {
+          position: relative;
+          padding: 20px;
+          border-bottom: 1px solid #ff6600;
+          background-color: #000;
+          overflow: hidden;
+        }
+        .header-content {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          position: relative;
+          z-index: 2;
+        }
+        .header-title {
+          display: flex;
+          align-items: center;
+        }
+        .header-title h1 {
+          font-size: 24px;
+          font-weight: bold;
+          color: #ff6600;
+          margin-right: 10px;
+        }
+        .header-title span {
+          font-size: 20px;
+        }
+        .header-info {
+          display: flex;
+          align-items: center;
+        }
+        .header-status {
+          background-color: #0d0d0d;
+          padding: 5px 15px;
+          border-radius: 3px;
+          margin-right: 15px;
+        }
+        .header-date {
+          text-align: right;
+        }
+        .hexagon-pattern {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          opacity: 0.1;
+          pointer-events: none;
+        }
+        .hexagon {
+          position: absolute;
+          border: 1px solid #00ffff;
+          width: 100px;
+          height: 116px;
+          clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+        }
+        .tabs {
+          display: flex;
+          border-bottom: 1px solid #333;
+        }
+        .tab {
+          padding: 10px 15px;
+          font-weight: bold;
+          cursor: pointer;
+          background: transparent;
+          border: none;
+          color: #e6e6e6;
+          font-family: inherit;
+          font-size: 14px;
+        }
+        .tab.active {
+          border-bottom: 2px solid #00ffff;
+          color: #00ffff;
+        }
+        .tab.error-tab.active {
+          border-bottom-color: #ff3333;
+          color: #ff3333;
+        }
+        .main-content {
+          padding: 20px;
+        }
+        .terminal {
+          background-color: #0d0d0d;
+          border: 1px solid #ff6600;
+          padding: 15px;
+          border-radius: 3px;
+          margin-bottom: 20px;
+        }
+        .terminal-header {
+          display: flex;
+          align-items: center;
+          margin-bottom: 10px;
+        }
+        .status-indicator {
+          width: 12px;
+          height: 12px;
+          border-radius: 50%;
+          margin-right: 10px;
+        }
+        .status-success {
+          background-color: #00cc00;
+        }
+        .status-warning {
+          background-color: #ff3333;
+          animation: blink 1s infinite;
+        }
+        .terminal-output {
+          font-size: 12px;
+          line-height: 1.4;
+        }
+        .terminal-label {
+          color: #00ffff;
+        }
+        .warning-text {
+          color: #ff3333;
+          font-weight: bold;
+        }
+        .success-text {
+          color: #00cc00;
+        }
+        .dashboard-grid {
+          display: grid;
+          grid-template-columns: 1fr 2fr;
+          gap: 20px;
+        }
+        .card {
+          background-color: #0d0d0d;
+          border-radius: 3px;
+          padding: 15px;
+        }
+        .card-title {
+          font-weight: bold;
+          margin-bottom: 15px;
+        }
+        .summary-card {
+          border: 1px solid #00ffff;
+        }
+        .summary-card .card-title {
+          color: #00ffff;
+        }
+        .coverage-card {
+          border: 1px solid #7cfc00;
+        }
+        .coverage-card .card-title {
+          color: #7cfc00;
+        }
+        .chart-container {
+          height: 250px;
+          width: 100%;
+          margin-bottom: 20px;
+        }
+        .stat-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 10px;
+          margin-top: 15px;
+        }
+        .stat-box {
+          text-align: center;
+          padding: 10px;
+          border-radius: 3px;
+        }
+        .stat-box-success {
+          background-color: rgba(0, 204, 0, 0.2);
+          border: 1px solid #00cc00;
+        }
+        .stat-box-failure {
+          background-color: rgba(255, 51, 51, 0.2);
+          border: 1px solid #ff3333;
+        }
+        .stat-box-pending {
+          background-color: rgba(255, 102, 0, 0.2);
+          border: 1px solid #ff6600;
+        }
+        .stat-box-number {
+          font-size: 24px;
+          font-weight: bold;
+          margin-bottom: 5px;
+        }
+        .stat-box-success .stat-box-number {
+          color: #00cc00;
+        }
+        .stat-box-failure .stat-box-number {
+          color: #ff3333;
+        }
+        .stat-box-pending .stat-box-number {
+          color: #ff6600;
+        }
+        .error-container {
+          background-color: #0d0d0d;
+          border: 1px solid #ff3333;
+          border-radius: 3px;
+          padding: 15px;
+        }
+        .error-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 15px;
+        }
+        .error-title {
+          display: flex;
+          align-items: center;
+        }
+        .error-title-text {
+          font-weight: bold;
+          color: #ff3333;
+          margin-left: 10px;
+        }
+        .copy-button {
+          background-color: rgba(0, 255, 255, 0.2);
+          color: #00ffff;
+          border: none;
+          border-radius: 3px;
+          padding: 5px 10px;
+          font-size: 12px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+        }
+        .copy-button svg {
+          margin-right: 5px;
+        }
+        .error-list {
+          display: flex;
+          flex-direction: column;
+          gap: 20px;
+        }
+        .error-item {
+          background-color: rgba(255, 51, 51, 0.1);
+          border: 1px solid #ff3333;
+          border-radius: 3px;
+          padding: 15px;
+        }
+        .error-item-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          margin-bottom: 10px;
+        }
+        .error-item-title {
+          font-weight: bold;
+          margin-top: 5px;
+        }
+        .error-item-id {
+          font-weight: bold;
+          color: #ff3333;
+          margin-bottom: 5px;
+        }
+        .error-item-file {
+          font-size: 12px;
+          margin-top: 10px;
+        }
+        .error-item-file span {
+          color: #00ffff;
+        }
+        .error-item-message {
+          margin-top: 10px;
+          padding: 15px;
+          background-color: rgba(0, 0, 0, 0.3);
+          font-family: monospace;
+          font-size: 12px;
+          border-radius: 3px;
+          overflow-x: auto;
+          white-space: pre-wrap;
+        }
+        .footer {
+          margin-top: 20px;
+          padding-top: 15px;
+          border-top: 1px solid #ff6600;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          font-size: 12px;
+        }
+        .footer-center {
+          color: #ff6600;
+        }
+        .tab-content {
+          display: none;
+        }
+        .tab-content.active {
+          display: block;
+        }
+        .coverage-info {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 10px;
+        }
+        .legend {
+          display: flex;
+          font-size: 12px;
+        }
+        .legend-item {
+          display: flex;
+          align-items: center;
+          margin-right: 10px;
+        }
+        .legend-color {
+          width: 12px;
+          height: 12px;
+          margin-right: 5px;
+        }
+        .legend-current {
+          background-color: #7cfc00;
+        }
+        .legend-target {
+          background-color: rgba(0, 255, 255, 0.5);
+        }
+        .target-level {
+          color: #00ffff;
+          font-weight: bold;
+        }
+        .no-errors {
+          padding: 30px;
+          text-align: center;
+          color: #00cc00;
+        }
+        @keyframes blink {
+          0% { opacity: 1; }
+          50% { opacity: 0.3; }
+          100% { opacity: 1; }
+        }
+        @media (max-width: 768px) {
+          .dashboard-grid {
+            grid-template-columns: 1fr;
+          }
+          .header-content {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+          .header-info {
+            margin-top: 10px;
+          }
+        }
+      `;
+
+      // チャート用のスクリプト
+      const scripts = `
+        // タブ切り替え機能
+        document.addEventListener('DOMContentLoaded', function() {
+          const tabs = document.querySelectorAll('.tab');
+          const tabContents = document.querySelectorAll('.tab-content');
+          
+          tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+              // タブのアクティブ状態を切り替え
+              tabs.forEach(t => t.classList.remove('active'));
+              tab.classList.add('active');
+              
+              // コンテンツの表示を切り替え
+              const target = tab.getAttribute('data-target');
+              tabContents.forEach(content => {
+                content.classList.remove('active');
+                if (content.id === target) {
+                  content.classList.add('active');
+                }
+              });
+            });
+          });
+
+          // グラフ描画 - テスト結果のパイチャート
+          const pieCtx = document.getElementById('test-results-chart').getContext('2d');
+          const testResultsChart = new Chart(pieCtx, {
+            type: 'doughnut',
+            data: {
+              labels: ['成功', '失敗', '保留'],
+              datasets: [{
+                data: [${this.results.numPassedTests}, ${this.results.numFailedTests}, ${this.results.numPendingTests}],
+                backgroundColor: ['#00cc00', '#ff3333', '#ff6600'],
+                borderWidth: 0,
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              cutout: '50%',
+              plugins: {
+                legend: {
+                  position: 'bottom',
+                  labels: {
+                    color: '#e6e6e6',
+                    padding: 10,
+                    usePointStyle: true,
+                    pointStyle: 'circle'
+                  }
+                },
+                tooltip: {
+                  callbacks: {
+                    label: function(context) {
+                      const label = context.label || '';
+                      const value = context.raw || 0;
+                      const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                      const percentage = ((value / total) * 100).toFixed(1);
+                      return \`\${label}: \${value}件 (\${percentage}%)\`;
+                    }
+                  }
+                }
+              }
+            }
+          });
+
+          // カバレッジの棒グラフ描画
+          ${this.results.coverageMap ? `
+          const coverageCtx = document.getElementById('coverage-chart').getContext('2d');
+          const coverageChart = new Chart(coverageCtx, {
+            type: 'bar',
+            data: {
+              labels: ['ステートメント', 'ブランチ', 'ファンクション', '行'],
+              datasets: [
+                {
+                  label: '現在のカバレッジ',
+                  data: [
+                    ${total.statements.pct.toFixed(1)}, 
+                    ${total.branches.pct.toFixed(1)}, 
+                    ${total.functions.pct.toFixed(1)}, 
+                    ${total.lines.pct.toFixed(1)}
+                  ],
+                  backgroundColor: [
+                    ${total.statements.pct >= targetThresholds.statements ? "'#00cc00'" : "'#ff3333'"},
+                    ${total.branches.pct >= targetThresholds.branches ? "'#00cc00'" : "'#ff3333'"},
+                    ${total.functions.pct >= targetThresholds.functions ? "'#00cc00'" : "'#ff3333'"},
+                    ${total.lines.pct >= targetThresholds.lines ? "'#00cc00'" : "'#ff3333'"}
+                  ]
+                },
+                {
+                  label: '目標値',
+                  data: [
+                    ${targetThresholds.statements}, 
+                    ${targetThresholds.branches}, 
+                    ${targetThresholds.functions}, 
+                    ${targetThresholds.lines}
+                  ],
+                  backgroundColor: 'rgba(0, 255, 255, 0.5)'
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              scales: {
+                y: {
+                  beginAtZero: true,
+                  max: 100,
+                  grid: {
+                    color: '#333333'
+                  },
+                  ticks: {
+                    color: '#e6e6e6',
+                    callback: function(value) {
+                      return value + '%';
+                    }
+                  }
+                },
+                x: {
+                  grid: {
+                    color: '#333333'
+                  },
+                  ticks: {
+                    color: '#e6e6e6'
+                  }
+                }
+              },
+              plugins: {
+                legend: {
+                  position: 'top',
+                  labels: {
+                    color: '#e6e6e6'
+                  }
+                },
+                tooltip: {
+                  callbacks: {
+                    label: function(context) {
+                      return context.dataset.label + ': ' + context.raw + '%';
+                    }
+                  }
+                }
+              }
+            }
+          });
+          ` : ''}
+
+          // エラーログコピー機能
+          document.querySelectorAll('.copy-button').forEach(button => {
+            button.addEventListener('click', function() {
+              let textToCopy = '';
+              const type = this.getAttribute('data-type');
+              
+              if (type === 'all') {
+                const errorItems = document.querySelectorAll('.error-item');
+                errorItems.forEach(item => {
+                  const id = item.querySelector('.error-item-id').textContent;
+                  const title = item.querySelector('.error-item-title').textContent;
+                  const file = item.querySelector('.error-item-file').textContent.replace('ファイル:', '').trim();
+                  const message = item.querySelector('.error-item-message').textContent;
+                  
+                  textToCopy += \`\${id}\nタイトル: \${title}\n\${file}\nエラーメッセージ: \${message}\n\n\`;
+                });
+              } else {
+                const errorItem = this.closest('.error-item');
+                const id = errorItem.querySelector('.error-item-id').textContent;
+                const title = errorItem.querySelector('.error-item-title').textContent;
+                const file = errorItem.querySelector('.error-item-file').textContent.replace('ファイル:', '').trim();
+                const message = errorItem.querySelector('.error-item-message').textContent;
+                
+                textToCopy = \`\${id}\nタイトル: \${title}\n\${file}\nエラーメッセージ: \${message}\`;
+              }
+              
+              navigator.clipboard.writeText(textToCopy)
+                .then(() => {
+                  alert('エラーログをクリップボードにコピーしました');
+                })
+                .catch(err => {
+                  console.error('コピーに失敗しました:', err);
+                });
+            });
+          });
+        });
+      `;
+
+      // 六角形パターン生成
+      const generateHexagons = () => {
+        let hexagons = '';
+        for (let i = 0; i < 30; i++) {
+          const top = Math.floor(i / 5) * 90 - 50;
+          const left = (i % 5) * 100 - 50 + (Math.floor(i / 5) % 2) * 50;
+          hexagons += `<div class="hexagon" style="top: ${top}px; left: ${left}px;"></div>`;
+        }
+        return hexagons;
+      };
+
+      // カバレッジターゲットレベル名を取得
+      const getTargetLevelName = targetLevel => {
+        const names = {
+          initial: '初期段階 (20-30%)',
+          mid: '中間段階 (40-60%)',
+          final: '最終段階 (70-80%)'
+        };
+        return names[targetLevel] || names.initial;
+      };
+
+      // HTML構造構築
+      let html = `
+      <!DOCTYPE html>
+      <html lang="ja">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Portfolio Wise - テスト結果ダッシュボード</title>
+        <style>${styles}</style>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+      </head>
+      <body>
+        <div class="container">
+          <!-- ヘッダー -->
+          <header class="header">
+            <div class="header-content">
+              <div class="header-title">
+                <h1>Portfolio Wise</h1>
+                <span>開発チーム テスト システム</span>
+              </div>
+              <div class="header-info">
+                <div class="header-status">
+                  システム - ステータス: アクティブ
+                </div>
+                <div class="header-date">
+                  <div>実行日: ${new Date().toLocaleString('ja-JP').split(' ')[0]}</div>
+                  <div>カバレッジレベル: ${getTargetLevelName(targetLevel)}</div>
+                </div>
+              </div>
+            </div>
+            <div class="hexagon-pattern">
+              ${generateHexagons()}
+            </div>
+          </header>
+          
+          <!-- タブナビゲーション -->
+          <div class="tabs">
+            <button class="tab active" data-target="dashboard-tab">グラフダッシュボード</button>
+            <button class="tab error-tab" data-target="errors-tab">エラーログ</button>
           </div>
-        `;
-      });
+          
+          <div class="main-content">
+            <!-- コマンドターミナル (常に表示) -->
+            <div class="terminal">
+              <div class="terminal-header">
+                <div class="status-indicator ${this.results.numFailedTests > 0 ? 'status-warning' : 'status-success'}"></div>
+                <div class="terminal-title">システムステータス</div>
+              </div>
+              <div class="terminal-output">
+                <span class="terminal-label">実行開始:</span> ポートフォリオ市場データAPIテストスイート<br>
+                <span class="terminal-label">実行完了:</span> ${((this.endTime - this.startTime) / 1000).toFixed(2)} 秒<br>
+                <span class="terminal-label">テスト分析:</span> ${this.results.numTotalTests}件のテストを検証<br>
+                ${this.results.numFailedTests > 0 
+                  ? `<div class="warning-text">警告: ${this.results.numFailedTests}件のテストが要件を満たしていません。即時修正が必要です。</div>`
+                  : `<div class="success-text">ステータス良好: すべてのテストが要件を満たしています。</div>`
+                }
+              </div>
+            </div>
+            
+            <!-- ダッシュボードタブ -->
+            <div id="dashboard-tab" class="tab-content active">
+              <div class="dashboard-grid">
+                <!-- テスト結果サマリー -->
+                <div class="card summary-card">
+                  <div class="card-title">テスト結果サマリー</div>
+                  <div class="chart-container">
+                    <canvas id="test-results-chart"></canvas>
+                  </div>
+                  <div class="stat-grid">
+                    <div class="stat-box stat-box-success">
+                      <div class="stat-box-number">${this.results.numPassedTests}</div>
+                      <div class="stat-box-label">成功</div>
+                    </div>
+                    <div class="stat-box stat-box-failure">
+                      <div class="stat-box-number">${this.results.numFailedTests}</div>
+                      <div class="stat-box-label">失敗</div>
+                    </div>
+                    <div class="stat-box stat-box-pending">
+                      <div class="stat-box-number">${this.results.numPendingTests}</div>
+                      <div class="stat-box-label">保留</div>
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- カバレッジ分析 -->
+                ${this.results.coverageMap ? `
+                <div class="card coverage-card">
+                  <div class="card-title">コードカバレッジ分析</div>
+                  <div class="coverage-info">
+                    <div>目標段階: <span class="target-level">${getTargetLevelName(targetLevel)}</span></div>
+                    <div class="legend">
+                      <div class="legend-item">
+                        <div class="legend-color legend-current"></div>
+                        <span>現在値</span>
+                      </div>
+                      <div class="legend-item">
+                        <div class="legend-color legend-target"></div>
+                        <span>目標値</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="chart-container">
+                    <canvas id="coverage-chart"></canvas>
+                  </div>
+                </div>
+                ` : `
+                <div class="card coverage-card">
+                  <div class="card-title">コードカバレッジ分析</div>
+                  <div style="padding: 30px; text-align: center;">
+                    カバレッジ情報が利用できません。テスト実行時に--coverageオプションを付けてください。
+                  </div>
+                </div>
+                `}
+              </div>
+            </div>
+            
+            <!-- エラーログタブ -->
+            <div id="errors-tab" class="tab-content">
+              <div class="error-container">
+                <div class="error-header">
+                  <div class="error-title">
+                    <div class="status-indicator ${this.results.numFailedTests > 0 ? 'status-warning' : 'status-success'}"></div>
+                    <div class="error-title-text">エラーログ詳細</div>
+                  </div>
+                  ${this.results.numFailedTests > 0 ? `
+                  <button class="copy-button" data-type="all">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                      <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+                    </svg>
+                    全てコピー
+                  </button>
+                  ` : ''}
+                </div>
+                
+                ${this.results.numFailedTests > 0 ? `
+                <div class="error-list">
+                  ${failedTests.map(failure => `
+                  <div class="error-item">
+                    <div class="error-item-header">
+                      <div>
+                        <div class="error-item-id">エラーID: ${failure.id.toString().padStart(3, '0')}</div>
+                        <div class="error-item-title">${failure.title}</div>
+                      </div>
+                      <button class="copy-button" data-type="single">
+                        コピー
+                      </button>
+                    </div>
+                    <div class="error-item-file"><span>ファイル:</span> ${failure.file}</div>
+                    <div class="error-item-message">${failure.message.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+                  </div>
+                  `).join('')}
+                </div>
+                ` : `
+                <div class="no-errors">
+                  エラーはありません。すべてのテストが成功しています。
+                </div>
+                `}
+              </div>
+            </div>
+            
+            <!-- フッター -->
+            <footer class="footer">
+              <div class="footer-left">
+                目標達成率: ${coverageData.filter(item => item.pct >= item.target).length} / ${coverageData.length}
+              </div>
+              <div class="footer-center">
+                Portfolio Wise開発チーム - Quality Assurance System
+              </div>
+              <div class="footer-right">
+                Version 1.0.0
+              </div>
+            </footer>
+          </div>
+        </div>
+        
+        <script>${scripts}</script>
+      </body>
+      </html>
+      `;
+
+      // HTMLファイルに書き込み
+      fs.writeFileSync(path.join(outputDir, 'visual-report.html'), html);
+      
+    } catch (error) {
+      console.error('ビジュアルレポート生成中にエラーが発生しました:', error);
+      
+      // 最小限のエラーレポートを生成
+      const basicHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>テスト結果 - エラー</title>
+          <style>
+            body { font-family: sans-serif; margin: 20px; }
+            .error { color: red; }
+          </style>
+        </head>
+        <body>
+          <h1>テスト結果レポート生成エラー</h1>
+          <p class="error">${error.message}</p>
+          <p>詳細結果は ./test-results/detailed-results.json を確認してください。</p>
+        </body>
+        </html>
+      `;
+      
+      fs.writeFileSync(path.join(outputDir, 'visual-report.html'), basicHtml);
     }
-    
-    // フッターを追加
-    html += `
-      <div class="footer">
-        <p>Portfolio Market Data API テスト実行レポート - ${new Date().toISOString()}</p>
-      </div>
-    `;
-    
-    // チャートのプレースホルダーを追加（スクリプトで動的に生成される）
-    html += `<div class="coverage-charts"></div><!-- プレースホルダー -->`;
-    
-    // HTMLを閉じる
-    html += `
-    </body>
-    </html>
-    `;
-    
-    // HTMLファイルに書き込み
-    fs.writeFileSync(path.join(outputDir, 'visual-report.html'), html);
   }
   
   /**
@@ -763,4 +1172,3 @@ class CustomReporter {
 }
 
 module.exports = CustomReporter;
-

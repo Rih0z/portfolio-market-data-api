@@ -15,7 +15,7 @@ const googleAuthService = require('../../services/googleAuthService');
 const cookieParser = require('../../utils/cookieParser');
 
 // モジュールパス修正: response → responseUtils
-const { formatResponseSync, formatErrorResponseSync } = require('../../utils/responseUtils');
+const { formatResponse, formatErrorResponse } = require('../../utils/responseUtils');
 
 /**
  * セッション情報取得ハンドラー関数
@@ -41,7 +41,7 @@ const handler = async (event) => {
     const sessionId = cookies.session;
     
     if (!sessionId) {
-      return formatErrorResponseSync({
+      return formatErrorResponse({
         statusCode: 401,
         code: 'NO_SESSION',
         message: 'セッションが存在しません'
@@ -52,7 +52,7 @@ const handler = async (event) => {
     const session = await googleAuthService.getSession(sessionId);
     
     if (!session) {
-      return formatErrorResponseSync({
+      return formatErrorResponse({
         statusCode: 401,
         code: 'NO_SESSION',
         message: 'セッションが存在しません'
@@ -64,7 +64,7 @@ const handler = async (event) => {
     if (expiresAt < Date.now()) {
       await googleAuthService.invalidateSession(sessionId);
       
-      return formatErrorResponseSync({
+      return formatErrorResponse({
         statusCode: 401,
         code: 'SESSION_EXPIRED',
         message: 'セッションの有効期限が切れています'
@@ -83,7 +83,8 @@ const handler = async (event) => {
     };
     
     // デバッグモードの場合、追加情報を含める
-    if (event.queryStringParameters && event.queryStringParameters.debug === 'true') {
+    if (process.env.NODE_ENV === 'development' || process.env.DEBUG === 'true' || 
+        (event.queryStringParameters && event.queryStringParameters.debug === 'true')) {
       responseData.debug = {
         sessionId,
         expiresAt: session.expiresAt,
@@ -91,17 +92,13 @@ const handler = async (event) => {
       };
     }
     
-    return formatResponseSync({
-      statusCode: 200,
-      body: {
-        success: true,
-        data: responseData
-      }
+    return formatResponse({
+      data: responseData
     });
   } catch (error) {
     console.error('Session retrieval error:', error);
     
-    return formatErrorResponseSync({
+    return formatErrorResponse({
       statusCode: 401,
       code: 'AUTH_ERROR',
       message: 'セッション情報の取得中に認証エラーが発生しました',
@@ -113,4 +110,3 @@ const handler = async (event) => {
 module.exports = {
   handler
 };
-

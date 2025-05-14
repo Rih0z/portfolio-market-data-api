@@ -28,16 +28,21 @@ const parseCookies = (cookieInput = '') => {
   if (typeof cookieInput === 'object') {
     // イベントオブジェクトからCookieヘッダーを抽出
     try {
-      // イベントオブジェクトの場合の処理
-      // APIGatewayイベントの形式を想定
-      const headers = cookieInput.headers || {};
-      
-      // テスト環境対応：headers が直接 Cookie プロパティを持つ場合と、
-      // headers.Cookie または headers.cookie の形式の両方に対応
-      if (typeof headers === 'object') {
-        cookieString = headers.Cookie || headers.cookie || '';
-      } else if (typeof headers === 'string') {
-        cookieString = headers;
+      // まず、Cookieプロパティがオブジェクトに直接ある場合をチェック
+      if (cookieInput.Cookie || cookieInput.cookie) {
+        cookieString = cookieInput.Cookie || cookieInput.cookie;
+      } else {
+        // イベントオブジェクトの場合の処理
+        // APIGatewayイベントの形式を想定
+        const headers = cookieInput.headers || {};
+        
+        // テスト環境対応：headers が直接 Cookie プロパティを持つ場合と、
+        // headers.Cookie または headers.cookie の形式の両方に対応
+        if (typeof headers === 'object') {
+          cookieString = headers.Cookie || headers.cookie || '';
+        } else if (typeof headers === 'string') {
+          cookieString = headers;
+        }
       }
       
       // ここでデバッグ用にログを出力（テスト環境では不要）
@@ -129,4 +134,3 @@ module.exports = {
   createSessionCookie,
   createClearSessionCookie
 };
-

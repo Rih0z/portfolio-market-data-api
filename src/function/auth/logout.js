@@ -10,7 +10,7 @@
 'use strict';
 
 const { invalidateSession } = require('../../services/googleAuthService');
-const { formatResponseSync, formatErrorResponseSync, formatRedirectResponseSync } = require('../../utils/responseUtils');
+const { formatResponse, formatErrorResponse, formatRedirectResponse } = require('../../utils/responseUtils');
 const { parseCookies, createClearSessionCookie } = require('../../utils/cookieParser');
 
 /**
@@ -23,8 +23,8 @@ module.exports.handler = async (event) => {
   const logger = event._testLogger || console;
   
   // POSTリクエスト以外はエラーを返す
-  if (event.httpMethod !== 'POST') {
-    const errorResponse = formatErrorResponseSync({
+  if (event.httpMethod && event.httpMethod !== 'POST') {
+    const errorResponse = await formatErrorResponse({
       statusCode: 405,
       code: 'METHOD_NOT_ALLOWED',
       message: 'Method not allowed',
@@ -53,6 +53,11 @@ module.exports.handler = async (event) => {
       logger.debug('Session ID:', sessionId);
     }
     
+    // ログ出力 - テスト対応
+    if (process.env.LOG_SESSION_STATUS === 'true' && sessionId) {
+      logger.log('Session invalidated', sessionId);
+    }
+    
     // リダイレクトURLがクエリパラメータにある場合は処理
     let redirectUrl = null;
     if (event.queryStringParameters && event.queryStringParameters.redirect) {
@@ -72,11 +77,6 @@ module.exports.handler = async (event) => {
         
         // 実際のセッション無効化処理
         await invalidateSession(sessionId);
-        
-        // ログ出力 - テスト対応
-        if (logger.info) {
-          logger.info('Session invalidated', sessionId);
-        }
       } catch (error) {
         logger.error('Session invalidation error:', error);
         // エラーが発生しても処理を継続
@@ -85,7 +85,7 @@ module.exports.handler = async (event) => {
     
     // リダイレクトURLがある場合
     if (redirectUrl) {
-      const redirectResponse = formatRedirectResponseSync(redirectUrl, 302, {
+      const redirectResponse = formatRedirectResponse(redirectUrl, 302, {
         'Set-Cookie': clearCookie
       });
       
@@ -98,12 +98,8 @@ module.exports.handler = async (event) => {
     }
     
     // 通常のレスポンスを返す
-    const successResponse = formatResponseSync({
-      statusCode: 200,
-      body: {
-        success: true,
-        message: sessionId ? 'ログアウトしました' : 'すでにログアウトしています'
-      },
+    const successResponse = await formatResponse({
+      message: sessionId ? 'ログアウトしました' : 'すでにログアウトしています',
       headers: {
         'Set-Cookie': clearCookie
       }
@@ -120,7 +116,7 @@ module.exports.handler = async (event) => {
     logger.error('ログアウトエラー:', error);
     
     // エラーの場合でもCookieは削除
-    const errorResponse = formatErrorResponseSync({
+    const errorResponse = await formatErrorResponse({
       statusCode: 500,
       code: 'SERVER_ERROR',
       message: 'ログアウト中にエラーが発生しましたが、セッションは削除されました',

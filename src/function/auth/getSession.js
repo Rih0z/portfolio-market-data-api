@@ -9,15 +9,15 @@
  * @updated Koki - 2025-05-12 バグ修正: モジュールパスを修正
  * @updated Koki - 2025-05-13 バグ修正: parseCookies関数の使用方法を修正
  * @updated Koki - 2025-05-14 バグ修正: テストが期待する形式にレスポンスを修正
- * @updated Koki - 2025-05-15 バグ修正: ヘッダーなしケースのテスト互換性向上
+ * @updated Koki - 2025-05-15 バグ修正: モジュール参照を維持しテスト互換性を確保
  */
+'use strict';
 
 const googleAuthService = require('../../services/googleAuthService');
 const cookieParser = require('../../utils/cookieParser');
 
-// モジュールパス修正: response → responseUtils
+// モジュールパス修正: モジュール全体を参照
 const responseUtils = require('../../utils/responseUtils');
-const { formatResponse, formatErrorResponse } = responseUtils;
 
 /**
  * セッション情報取得ハンドラー関数
@@ -30,7 +30,7 @@ const handler = async (event) => {
     // テスト用のloggerモック（テスト実行時にログを確認するため）
     const testLogger = event._testLogger || console;
     
-    // 重要: 修正部分1 - ヘッダーがない場合を明示的に処理
+    // 重要: ヘッダーがない場合を明示的に処理
     if (!event.headers || !event.headers.Cookie) {
       const errorParams = {
         statusCode: 401,
@@ -38,11 +38,12 @@ const handler = async (event) => {
         message: '認証セッションが存在しません'
       };
       
-      // 重要: 修正部分2 - モック関数を明示的に呼び出す
+      // モック関数を呼び出す
       if (typeof event._formatErrorResponse === 'function') {
         event._formatErrorResponse(errorParams);
       }
       
+      // モジュール経由で関数を呼び出し（Jestのスパイ対応）
       return responseUtils.formatErrorResponse(errorParams);
     }
     
@@ -82,7 +83,7 @@ const handler = async (event) => {
     const session = await googleAuthService.getSession(sessionId);
     
     if (!session) {
-      const errorResponse = await formatErrorResponse({
+      const errorResponse = await responseUtils.formatErrorResponse({
         statusCode: 401,
         code: 'NO_SESSION',
         message: '認証セッションが存在しません'
@@ -96,7 +97,7 @@ const handler = async (event) => {
     if (expiresAt < Date.now()) {
       await googleAuthService.invalidateSession(sessionId);
       
-      const errorResponse = await formatErrorResponse({
+      const errorResponse = await responseUtils.formatErrorResponse({
         statusCode: 401,
         code: 'SESSION_EXPIRED',
         message: '認証セッションの期限切れです'
@@ -126,7 +127,8 @@ const handler = async (event) => {
       };
     }
     
-    const formattedResponse = await formatResponse({
+    // モジュール経由で関数を呼び出し
+    const formattedResponse = await responseUtils.formatResponse({
       data: responseData
     });
     
@@ -134,7 +136,7 @@ const handler = async (event) => {
   } catch (error) {
     console.error('Session retrieval error:', error);
     
-    const errorResponse = await formatErrorResponse({
+    const errorResponse = await responseUtils.formatErrorResponse({
       statusCode: 401,
       code: 'AUTH_ERROR',
       message: '認証エラーが発生しました',

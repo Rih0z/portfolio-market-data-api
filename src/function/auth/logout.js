@@ -6,13 +6,14 @@
  * @created 2025-05-12
  * @updated 2025-05-13 バグ修正: parseCookies関数の使用方法を修正
  * @updated 2025-05-14 バグ修正: テストモックに対応するよう修正
- * @updated 2025-05-15 バグ修正: リダイレクトテスト対応のため実装修正
+ * @updated 2025-05-15 バグ修正: テスト互換性確保のためモジュール参照を維持
  */
 'use strict';
 
 const { invalidateSession } = require('../../services/googleAuthService');
-const { formatResponse, formatErrorResponse, formatRedirectResponse } = require('../../utils/responseUtils');
-const { parseCookies, createClearSessionCookie } = require('../../utils/cookieParser');
+// 重要: モジュール全体を参照する
+const responseUtils = require('../../utils/responseUtils');
+const cookieParser = require('../../utils/cookieParser');
 
 /**
  * ログアウト処理ハンドラー
@@ -25,7 +26,7 @@ module.exports.handler = async (event) => {
   
   // POSTリクエスト以外はエラーを返す
   if (event.httpMethod && event.httpMethod !== 'POST') {
-    const errorResponse = await formatErrorResponse({
+    const errorResponse = await responseUtils.formatErrorResponse({
       statusCode: 405,
       code: 'METHOD_NOT_ALLOWED',
       message: 'Method not allowed',
@@ -39,11 +40,10 @@ module.exports.handler = async (event) => {
 
   try {
     // Cookie ヘッダーを作成
-    const clearCookie = createClearSessionCookie();
+    const clearCookie = cookieParser.createClearSessionCookie();
     
-    // リダイレクトURLチェックを一番最初に行う
+    // リダイレクトURLがクエリパラメータにある場合は処理（早めに確認）
     if (event.queryStringParameters && event.queryStringParameters.redirect) {
-      // リダイレクトURLが指定されている場合
       const redirectUrl = event.queryStringParameters.redirect;
       
       // セッション無効化を先に行う（必要であれば）
@@ -54,7 +54,7 @@ module.exports.handler = async (event) => {
       
       // Cookie解析とセッション無効化
       const cookieObj = { Cookie: cookieString };
-      const cookies = parseCookies(cookieObj);
+      const cookies = cookieParser.parseCookies(cookieObj);
       const sessionId = cookies.session;
       
       if (sessionId) {
@@ -65,8 +65,8 @@ module.exports.handler = async (event) => {
         }
       }
       
-      // 重要: テスト互換性のため、responseUtils.formatRedirectResponseを直接使用
-      // 代わりにモジュールからインポートした関数を使用する
+      // 重要: テストコードがJestでスパイしているresponseUtils.formatRedirectResponseを直接呼び出す
+      // これはJestの呼び出し経路のスパイタイプの制約に対応するため
       return responseUtils.formatRedirectResponse(
         redirectUrl,
         302,
@@ -76,14 +76,14 @@ module.exports.handler = async (event) => {
     
     // 通常のログアウト処理（リダイレクトなし）
     
-    // ***テスト対応: Cookieオブジェクトを直接作成***
+    // Cookieオブジェクトを直接作成
     let cookieString = '';
     if (event.headers && event.headers.Cookie) {
       cookieString = event.headers.Cookie;
     }
     
     const cookieObj = { Cookie: cookieString };
-    const cookies = parseCookies(cookieObj);
+    const cookies = cookieParser.parseCookies(cookieObj);
     const sessionId = cookies.session;
     
     // セッションがある場合は無効化
@@ -113,7 +113,7 @@ module.exports.handler = async (event) => {
     }
     
     // 通常のレスポンスを返す
-    const successResponse = await formatResponse({
+    const successResponse = await responseUtils.formatResponse({
       message: sessionId ? 'ログアウトしました' : 'すでにログアウトしています',
       headers: {
         'Set-Cookie': clearCookie
@@ -126,17 +126,16 @@ module.exports.handler = async (event) => {
     logger.error('ログアウトエラー:', error);
     
     // エラーの場合でもCookieは削除
-    const errorResponse = await formatErrorResponse({
+    const errorResponse = await responseUtils.formatErrorResponse({
       statusCode: 500,
       code: 'SERVER_ERROR',
       message: 'ログアウト中にエラーが発生しましたが、セッションは削除されました',
       details: error.message,
       headers: {
-        'Set-Cookie': createClearSessionCookie()
+        'Set-Cookie': cookieParser.createClearSessionCookie()
       }
     });
     
     return errorResponse;
   }
 };
-

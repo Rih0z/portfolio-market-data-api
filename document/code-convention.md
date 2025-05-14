@@ -331,6 +331,65 @@ function processData(data) {
 - 関連する機能はサービスにグループ化してください
 - データソースに対するアクセスは専用のモジュールに分離してください
 
+### 5.5 モジュール参照とインポート方法
+
+#### 5.5.1 モジュール参照の推奨パターン
+- モジュールは完全な参照として保持してください
+- テストやスパイが必要なモジュールでは、特に脱構造化代入を避けてください
+
+```javascript
+// 推奨: モジュール全体の参照を保持
+const responseUtils = require('../../utils/responseUtils');
+responseUtils.formatResponse({ data });
+
+// 非推奨: 脱構造化代入で関数を直接取り出す
+const { formatResponse } = require('../../utils/responseUtils');
+formatResponse({ data });
+```
+
+#### 5.5.2 脱構造化代入の適切な使用
+脱構造化代入は以下の場合にのみ使用してください：
+
+1. 外部から呼び出されない関数内部での一時的な利便性のため
+2. テスト対象でないユーティリティ関数において
+3. モジュール内部の参照が保持されている場合
+
+```javascript
+// 許容例: 内部関数での利便性のため
+function internalFunction() {
+  const { formatResponse, formatErrorResponse } = responseUtils;
+  // 内部処理...
+}
+
+// 推奨: 外部に露出する関数ではモジュール参照を維持
+module.exports.handler = async (event) => {
+  // ...
+  return responseUtils.formatResponse(data);
+};
+```
+
+#### 5.5.3 依存性注入パターン
+テストや拡張性を向上させるため、依存性注入パターンを検討してください：
+
+```javascript
+/**
+ * 依存性注入パターンを使用したハンドラー
+ * @param {Object} event - イベントオブジェクト
+ * @param {Object} [deps] - 依存モジュール（テスト用）
+ */
+const handler = async (event, deps = {}) => {
+  // デフォルトの依存関係
+  const dependencies = {
+    responseUtils: require('../../utils/responseUtils'),
+    cookieParser: require('../../utils/cookieParser'),
+    ...deps
+  };
+  
+  // 依存関係を使用した実装
+  // ...
+};
+```
+
 ## 6. プログラミング慣習
 
 ### 6.1 条件文と分岐
@@ -687,7 +746,7 @@ it('正常なレスポンスを返す', async () => {
 });
 ```
 
-### 8.5 モックとスタブの使用
+### 8.5 モックとスパイの使用
 
 #### 8.5.1 外部依存関係のモック
 
@@ -722,7 +781,61 @@ googleAuthService.exchangeCodeForTokens.mockResolvedValue({
 });
 ```
 
-#### 8.5.3 条件付きテスト
+#### 8.5.3 Jest.spyOnの適切な使用
+
+Jest.spyOnを使用する場合は以下の点に注意してください：
+
+1. モジュール全体の参照を保持する
+2. スパイは元のモジュール参照に対して設定する
+3. 呼び出しも同じモジュール参照を通して行う
+
+```javascript
+// 正しいスパイの使用例
+const responseUtils = require('../../utils/responseUtils');
+jest.spyOn(responseUtils, 'formatResponse')
+  .mockImplementation(() => ({ statusCode: 200 }));
+
+// 検証
+expect(responseUtils.formatResponse).toHaveBeenCalledWith(expect.any(Object));
+
+// 避けるべき使用例
+const { formatResponse } = require('../../utils/responseUtils');
+// 以下はスパイが機能しない可能性がある
+jest.spyOn(formatResponse); // エラー: formatResponseはモジュールではない
+```
+
+#### 8.5.4 依存性注入を活用したテストフレンドリーな設計
+
+```javascript
+// テスト対象の関数
+const handler = async (event, deps = {}) => {
+  // デフォルトの依存関係
+  const dependencies = {
+    responseUtils: require('../../utils/responseUtils'),
+    cookieParser: require('../../utils/cookieParser'),
+    ...deps
+  };
+  
+  // 依存関係を使用した実装
+  // ...
+};
+
+// テストコード
+it('依存関係をモックしてテスト', async () => {
+  // モックの設定
+  const mockResponseUtils = {
+    formatResponse: jest.fn().mockReturnValue({ statusCode: 200 })
+  };
+  
+  // テスト対象関数を呼び出し
+  await handler(testEvent, { responseUtils: mockResponseUtils });
+  
+  // 検証
+  expect(mockResponseUtils.formatResponse).toHaveBeenCalled();
+});
+```
+
+#### 8.5.5 条件付きテスト
 
 環境やAPIサーバーの状態に応じて条件付きでテストを実行する方法：
 
@@ -1006,6 +1119,40 @@ conditionalTest('無効なパラメータでのエラーハンドリング', asy
 }
 ```
 
+### 8.12 テストとモジュール参照の関係
+
+テストを実施する際は、次の点に特に注意してください：
+
+1. **モジュール参照とJest.spyOnの関係**:
+   - Jest.spyOnはモジュールオブジェクトの参照に対して機能します
+   - 脱構造化代入を使用すると参照が失われ、スパイが機能しなくなります
+
+   ```javascript
+   // 推奨（正しくスパイされる）
+   const responseUtils = require('../../utils/responseUtils');
+   jest.spyOn(responseUtils, 'formatResponse');
+   
+   // 非推奨（スパイが機能しない）
+   const { formatResponse } = require('../../utils/responseUtils');
+   ```
+
+2. **モジュールの一貫した参照方法**:
+   - テスト対象のコードとテストコードで同じモジュール参照パターンを使用します
+   - 実装では常にモジュール経由で関数を呼び出します
+
+   ```javascript
+   // 実装コード
+   const responseUtils = require('../../utils/responseUtils');
+   return responseUtils.formatResponse(data);
+   
+   // テストコード
+   expect(responseUtils.formatResponse).toHaveBeenCalledWith(data);
+   ```
+
+3. **依存性注入の活用**:
+   - モックしやすいように依存性注入パターンを採用します
+   - イベントオブジェクトにモックを埋め込むより明示的な依存関係管理を推奨します
+
 ## 9. セキュリティ
 
 ### 9.1 セキュアコーディング基準
@@ -1095,6 +1242,8 @@ module.exports = {
   - パフォーマンスへの配慮
   - セキュリティへの配慮
   - テストの網羅性
+  - モジュール参照の適切な使用
+  - テスト容易性の確保
 
 ## 付録: より詳細な JSDoc テンプレート
 

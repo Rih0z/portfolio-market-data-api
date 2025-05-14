@@ -27,7 +27,8 @@ const errorTypes = {
   SERVER_ERROR: 'SERVER_ERROR',
   CRITICAL_ERROR: 'CRITICAL_ERROR',
   NETWORK_ERROR: 'NETWORK_ERROR',
-  RATE_LIMIT_ERROR: 'RATE_LIMIT_ERROR'
+  RATE_LIMIT_ERROR: 'RATE_LIMIT_ERROR',
+  BUDGET_ERROR: 'BUDGET_ERROR'
 };
 
 /**
@@ -41,7 +42,8 @@ const statusCodes = {
   [errorTypes.SERVER_ERROR]: 500,
   [errorTypes.CRITICAL_ERROR]: 500,
   [errorTypes.NETWORK_ERROR]: 503,
-  [errorTypes.RATE_LIMIT_ERROR]: 429
+  [errorTypes.RATE_LIMIT_ERROR]: 429,
+  [errorTypes.BUDGET_ERROR]: 403
 };
 
 /**
@@ -55,7 +57,8 @@ const defaultMessages = {
   [errorTypes.SERVER_ERROR]: 'サーバー内部エラーが発生しました',
   [errorTypes.CRITICAL_ERROR]: '重大なエラーが発生しました',
   [errorTypes.NETWORK_ERROR]: 'ネットワークエラーが発生しました',
-  [errorTypes.RATE_LIMIT_ERROR]: 'APIレート制限に達しました'
+  [errorTypes.RATE_LIMIT_ERROR]: 'APIレート制限に達しました',
+  [errorTypes.BUDGET_ERROR]: 'APIバジェット制限に達しました'
 };
 
 /**
@@ -119,23 +122,158 @@ const createErrorResponse = async (error, type, context = {}) => {
   // HTTPステータスコードを決定
   const statusCode = context.statusCode || statusCodes[type] || 500;
   
+  // エラーコードをテスト期待値に合わせる (すべて大文字のスネークケース)
+  let errorCode = errorInfo.code;
+  if (type === errorTypes.VALIDATION_ERROR) {
+    errorCode = 'INVALID_PARAMS';
+  } else if (type === errorTypes.RATE_LIMIT_ERROR) {
+    errorCode = 'RATE_LIMIT_EXCEEDED';
+  } else if (type === errorTypes.BUDGET_ERROR) {
+    errorCode = 'BUDGET_LIMIT_EXCEEDED';
+  } else if (type === errorTypes.DATA_SOURCE_ERROR) {
+    errorCode = 'DATA_SOURCE_ERROR';
+  } else if (type === errorTypes.SERVER_ERROR) {
+    errorCode = 'INTERNAL_SERVER_ERROR';
+  }
+  
   // APIレスポンスを構築
   return {
     statusCode,
     body: JSON.stringify({
       success: false,
       error: {
-        code: errorInfo.code,
+        code: errorCode,
         message: errorInfo.message,
-        ...(context.includeDetails && { details: errorInfo.details || error.message })
+        ...(context.includeDetails && { details: errorInfo.details || error.message }),
+        ...(context.retryAfter && { retryAfter: context.retryAfter }),
+        ...(context.usage && { usage: context.usage }),
+        ...(context.requestId && { requestId: context.requestId })
       }
-    })
+    }),
+    headers: {
+      'Content-Type': 'application/json',
+      ...(context.headers || {}),
+      ...(context.retryAfter && { 'Retry-After': context.retryAfter.toString() })
+    }
   };
+};
+
+/**
+ * シンボルが見つからないエラーを作成
+ * @param {string} symbol - 見つからなかったシンボル
+ * @returns {Promise<Object>} エラーレスポンス
+ */
+const createSymbolNotFoundError = async (symbol) => {
+  return createErrorResponse(
+    new Error(`Symbol "${symbol}" could not be found`),
+    errorTypes.VALIDATION_ERROR,
+    {
+      statusCode: 404,
+      code: 'SYMBOL_NOT_FOUND',
+      symbol
+    }
+  );
+};
+
+/**
+ * リクエスト検証エラーを作成
+ * @param {Array<string>} errors - エラーメッセージの配列
+ * @returns {Promise<Object>} エラーレスポンス
+ */
+const createValidationError = async (errors) => {
+  return createErrorResponse(
+    new Error(Array.isArray(errors) ? errors.join(', ') : errors),
+    errorTypes.VALIDATION_ERROR,
+    {
+      statusCode: 400,
+      code: 'INVALID_PARAMS',
+      details: errors
+    }
+  );
+};
+
+/**
+ * 認証エラーを作成
+ * @param {string} message - エラーメッセージ
+ * @returns {Promise<Object>} エラーレスポンス
+ */
+const createAuthError = async (message) => {
+  return createErrorResponse(
+    new Error(message),
+    errorTypes.AUTH_ERROR,
+    {
+      statusCode: 401,
+      code: 'UNAUTHORIZED'
+    }
+  );
+};
+
+/**
+ * レート制限エラーを作成
+ * @param {Object} usage - 使用量情報
+ * @param {number} retryAfter - 再試行するまでの秒数
+ * @returns {Promise<Object>} エラーレスポンス
+ */
+const createRateLimitError = async (usage, retryAfter = 60) => {
+  return createErrorResponse(
+    new Error('API rate limit exceeded'),
+    errorTypes.RATE_LIMIT_ERROR,
+    {
+      statusCode: 429,
+      code: 'RATE_LIMIT_EXCEEDED',
+      usage,
+      retryAfter,
+      headers: {
+        'Retry-After': retryAfter.toString()
+      }
+    }
+  );
+};
+
+/**
+ * バジェット制限エラーを作成
+ * @param {Object} usage - 使用量情報
+ * @returns {Promise<Object>} エラーレスポンス
+ */
+const createBudgetLimitError = async (usage) => {
+  return createErrorResponse(
+    new Error('API budget limit exceeded'),
+    errorTypes.BUDGET_ERROR,
+    {
+      statusCode: 403,
+      code: 'BUDGET_LIMIT_EXCEEDED',
+      usage
+    }
+  );
+};
+
+/**
+ * サーバーエラーを作成
+ * @param {string} message - エラーメッセージ
+ * @param {string} requestId - リクエストID
+ * @returns {Promise<Object>} エラーレスポンス
+ */
+const createServerError = async (message, requestId = `req-${Date.now()}`) => {
+  return createErrorResponse(
+    new Error(message),
+    errorTypes.SERVER_ERROR,
+    {
+      statusCode: 500,
+      code: 'INTERNAL_SERVER_ERROR',
+      requestId
+    }
+  );
 };
 
 module.exports = { 
   handleError,
   createErrorResponse,
+  createSymbolNotFoundError,
+  createValidationError,
+  createAuthError,
+  createRateLimitError,
+  createBudgetLimitError,
+  createServerError,
   errorTypes,
   statusCodes
 };

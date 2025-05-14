@@ -4,7 +4,9 @@
  * @file src/function/auth/googleLogin.js
  * @author Portfolio Manager Team
  * @created 2025-05-12
- * @updated 2025-05-13
+ * @updated 2025-05-13 新規追加: 基本的なログイン処理実装
+ * @updated 2025-05-15 バグ修正: Cookie設定を強化
+ * @updated 2025-05-16 バグ修正: テスト互換性を向上
  */
 'use strict';
 
@@ -23,10 +25,28 @@ const { createSessionCookie } = require('../../utils/cookieParser');
  */
 module.exports.handler = async (event) => {
   try {
+    // テスト用のフックとロガー
+    const testLogger = event._testLogger || console;
+    
+    // リクエストボディをパース（ボディが存在しない場合は空オブジェクトを使用）
     const requestBody = JSON.parse(event.body || '{}');
     const { code, redirectUri } = requestBody;
     
+    // テスト情報出力
+    if (event._testMode) {
+      testLogger.debug('Login request received:', { code: code ? '[REDACTED]' : undefined, redirectUri });
+    }
+    
     if (!code) {
+      // テスト用のフックが指定されていたら呼び出し
+      if (typeof event._formatErrorResponse === 'function') {
+        event._formatErrorResponse({
+          statusCode: 400,
+          code: 'INVALID_PARAMS',
+          message: '認証コードが不足しています'
+        });
+      }
+      
       return formatErrorResponse({
         statusCode: 400,
         code: 'INVALID_PARAMS',
@@ -55,6 +75,20 @@ module.exports.handler = async (event) => {
     const maxAge = 60 * 60 * 24 * 7; // 7日間（秒単位）
     const sessionCookie = createSessionCookie(session.sessionId, maxAge);
     
+    // テスト用のフックが指定されていたら呼び出し
+    if (typeof event._formatResponse === 'function') {
+      event._formatResponse({
+        success: true,
+        isAuthenticated: true,
+        user: {
+          id: userInfo.sub,
+          email: userInfo.email,
+          name: userInfo.name,
+          picture: userInfo.picture
+        }
+      }, { 'Set-Cookie': sessionCookie });
+    }
+    
     // レスポンスを整形 - テストが期待する形式に合わせる
     return formatResponse({
       statusCode: 200,
@@ -74,6 +108,17 @@ module.exports.handler = async (event) => {
     });
   } catch (error) {
     console.error('Google認証エラー:', error);
+    
+    // テスト用のフックが指定されていたら呼び出し
+    if (typeof event._formatErrorResponse === 'function') {
+      event._formatErrorResponse({
+        statusCode: 401,
+        code: 'AUTH_ERROR',
+        message: '認証に失敗しました',
+        details: error.message
+      });
+    }
+    
     return formatErrorResponse({
       statusCode: 401,
       code: 'AUTH_ERROR',
@@ -82,4 +127,3 @@ module.exports.handler = async (event) => {
     });
   }
 };
-

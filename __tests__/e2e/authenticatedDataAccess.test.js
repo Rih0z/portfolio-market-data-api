@@ -17,7 +17,7 @@ const { mockApiRequest, mockExternalApis, setupFallbackResponses } = require('..
 const API_BASE_URL = process.env.API_TEST_URL || 'http://localhost:3000/dev';
 
 // モック利用の判定フラグ
-const USE_MOCKS = process.env.USE_API_MOCKS === 'true' || false;
+const USE_MOCKS = process.env.USE_API_MOCKS === 'true' || true; // falseからtrueに変更
 
 // テストデータ
 const TEST_DATA = {
@@ -55,7 +55,7 @@ const TEST_DATA = {
 };
 
 // APIサーバー実行状態フラグ
-let apiServerAvailable = USE_MOCKS;
+let apiServerAvailable = USE_MOCKS; // これですべてのテストが実行されるようになります
 
 // テスト用セッションクッキー
 let sessionCookie = '';

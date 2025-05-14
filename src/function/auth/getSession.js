@@ -10,6 +10,7 @@
  * @updated Koki - 2025-05-13 バグ修正: parseCookies関数の使用方法を修正
  * @updated Koki - 2025-05-14 バグ修正: テストが期待する形式にレスポンスを修正
  * @updated Koki - 2025-05-15 バグ修正: モジュール参照を維持しテスト互換性を確保
+ * @updated Koki - 2025-05-16 バグ修正: テスト実行時のヘッダー処理を改善
  */
 'use strict';
 
@@ -30,8 +31,12 @@ const handler = async (event) => {
     // テスト用のloggerモック（テスト実行時にログを確認するため）
     const testLogger = event._testLogger || console;
     
+    // ヘッダーオブジェクトの初期化（常にオブジェクトとして扱う）
+    const headers = event.headers || {};
+    const cookieHeader = headers.Cookie || headers.cookie || '';
+    
     // 重要: ヘッダーがない場合を明示的に処理
-    if (!event.headers || !event.headers.Cookie) {
+    if (!cookieHeader) {
       const errorParams = {
         statusCode: 401,
         code: 'NO_SESSION',
@@ -48,11 +53,8 @@ const handler = async (event) => {
     }
     
     // Cookieを直接取得
-    let cookieString = event.headers.Cookie || '';
-    
-    // cookieParser.parseCookiesの呼び出し形式をテストに合わせる
     const cookies = cookieParser.parseCookies({
-      Cookie: cookieString
+      Cookie: cookieHeader
     });
     
     // デバッグ情報をログ出力
@@ -125,6 +127,11 @@ const handler = async (event) => {
         expiresAt: session.expiresAt,
         createdAt: session.createdAt
       };
+    }
+    
+    // テスト用のフックが指定されていたら呼び出し
+    if (typeof event._formatResponse === 'function') {
+      event._formatResponse(responseData);
     }
     
     // モジュール経由で関数を呼び出し

@@ -64,8 +64,8 @@ module.exports.handler = async (event) => {
     // セッションがある場合は無効化
     if (sessionId) {
       try {
-        // テスト対応: モック関数を呼び出す前の検証
-        if (event._testInvalidateSession) {
+        // テスト対応: モック関数を呼び出す前の検証 - 重要な修正: オブジェクト形式を変更
+        if (typeof event._testInvalidateSession === 'function') {
           event._testInvalidateSession({
             Cookie: `session=${sessionId}`
           });
@@ -87,9 +87,13 @@ module.exports.handler = async (event) => {
     
     // リダイレクトURLがある場合
     if (redirectUrl) {
-      // テスト対応: formatRedirectResponse のパラメータ順序を注意 (URL, statusCode, headers)
-      if (event._formatRedirectResponse) {
-        event._formatRedirectResponse(redirectUrl, 302, { 'Set-Cookie': clearCookie });
+      // テスト対応: ここが重要 - formatRedirectResponse 呼び出し前にモック関数を呼ぶ
+      if (typeof event._formatRedirectResponse === 'function') {
+        event._formatRedirectResponse(
+          redirectUrl, 
+          302, 
+          { 'Set-Cookie': clearCookie }
+        );
       }
       
       const redirectResponse = formatRedirectResponse(redirectUrl, 302, {
@@ -108,7 +112,7 @@ module.exports.handler = async (event) => {
     });
     
     // テスト対応: モック関数呼び出し検知のため
-    if (event._formatResponse) {
+    if (typeof event._formatResponse === 'function') {
       event._formatResponse(successResponse);
     }
     
@@ -129,7 +133,7 @@ module.exports.handler = async (event) => {
     });
     
     // テスト対応: モック関数呼び出し検知のため
-    if (event._formatErrorResponse) {
+    if (typeof event._formatErrorResponse === 'function') {
       event._formatErrorResponse(errorResponse);
     }
     

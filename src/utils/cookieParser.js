@@ -63,14 +63,27 @@ const parseCookies = (cookieInput = '') => {
     return cookies;
   }
   
-  // セミコロンで分割して各Cookie部分を取得
-  const cookieParts = cookieString.split(/;\s*/);
+  // ここでCookieをパースする新しいロジック
+  // スペース付きセミコロンでCookieを分割します（通常のCookieの区切り）
+  let remainingString = cookieString;
+  let position = 0;
   
-  // デバッグ情報
-  // console.log('Cookie parts:', cookieParts);
-  
-  for (const part of cookieParts) {
-    const trimmedPart = part.trim();
+  while (position < remainingString.length) {
+    // まず次のセミコロンまでの文字列を取得
+    let semicolonPos = remainingString.indexOf(';', position);
+    let cookiePart;
+    
+    if (semicolonPos === -1) {
+      // 最後のCookieの場合
+      cookiePart = remainingString.substring(position);
+      position = remainingString.length; // ループ終了のため
+    } else {
+      cookiePart = remainingString.substring(position, semicolonPos);
+      position = semicolonPos + 1; // セミコロンの次の文字へ
+    }
+    
+    // 各Cookieパートを解析
+    const trimmedPart = cookiePart.trim();
     if (!trimmedPart) continue;
     
     // 最初の等号の位置を取得
@@ -94,9 +107,6 @@ const parseCookies = (cookieInput = '') => {
       
       // 値をそのまま保存（セミコロンを含む場合でも）
       cookies[key] = value;
-      
-      // デバッグ情報
-      // console.log(`Parsed cookie: ${key} = ${value}`);
     }
   }
   

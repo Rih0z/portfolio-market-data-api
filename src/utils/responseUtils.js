@@ -10,6 +10,7 @@
  * @created 2025-05-10
  * @updated 2025-05-15 バグ修正: フォーマット調整
  * @updated 2025-05-16 バグ修正: テスト互換性対応
+ * @updated 2025-05-17 機能追加: OPTIONS処理の改善
  */
 'use strict';
 
@@ -84,6 +85,7 @@ const formatResponse = async (options = {}) => {
   // ヘッダーの作成
   const responseHeaders = {
     'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
     ...headers
   };
   
@@ -162,6 +164,7 @@ const formatErrorResponse = async (options = {}) => {
   // ヘッダーの作成
   const responseHeaders = {
     'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
     ...headers
   };
   
@@ -189,7 +192,8 @@ const formatRedirectResponse = (url, statusCode = 302, headers = {}) => {
   return {
     statusCode,
     headers: {
-      Location: url,
+      'Location': url,
+      'Access-Control-Allow-Origin': '*',
       ...headers
     },
     body: JSON.stringify({
@@ -206,8 +210,9 @@ const formatRedirectResponse = (url, statusCode = 302, headers = {}) => {
  * @returns {Object} API Gateway形式のOPTIONSレスポンス
  */
 const formatOptionsResponse = (headers = {}) => {
+  // テスト期待値に合わせてステータスコードを204にする
   return {
-    statusCode: 200,
+    statusCode: 204,
     headers: {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
@@ -235,10 +240,21 @@ const methodHandler = async (event, handler) => {
   return handler(event);
 };
 
+/**
+ * OPTIONSリクエストのみを処理するハンドラー
+ * テスト互換性のために明示的に提供
+ * @param {Object} event - API Gatewayイベント
+ * @returns {Object} API Gateway形式のレスポンス
+ */
+const handleOptions = (event) => {
+  return formatOptionsResponse();
+};
+
 module.exports = {
   formatResponse,
   formatErrorResponse,
   formatRedirectResponse,
   formatOptionsResponse,
-  methodHandler
+  methodHandler,
+  handleOptions
 };

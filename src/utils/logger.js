@@ -2,78 +2,173 @@
  * プロジェクト: portfolio-market-data-api
  * ファイルパス: src/utils/logger.js
  * 
- * 説明: 
- * ログ出力を標準化するユーティリティ。
- * アプリケーション全体で一貫したログフォーマットを提供し、
- * 開発環境と本番環境で適切なログレベルを制御します。
+ * 説明:
+ * ログ出力ユーティリティ。
+ * 環境に応じたログレベルとフォーマットを適用し、統一的なログ出力を提供します。
  * 
  * @author Portfolio Manager Team
- * @created 2025-05-17
+ * @created 2025-05-08
  */
 'use strict';
 
-const { ENV } = require('../config/envConfig');
+// 環境設定
+const isProduction = process.env.NODE_ENV === 'production';
+const isDevelopment = process.env.NODE_ENV === 'development';
+const isTest = process.env.NODE_ENV === 'test';
 
 /**
- * ログ出力を標準化するロガーオブジェクト
+ * ログレベル
  */
-const logger = {
-  /**
-   * デバッグレベルのログを出力（開発環境のみ）
-   * @param {string} message - ログメッセージ
-   * @param {*} data - 追加データ（オプション）
-   */
-  debug: (message, data) => {
-    if (ENV.NODE_ENV === 'development' || ENV.NODE_ENV === 'test') {
-      console.debug(`[DEBUG] ${new Date().toISOString()} ${message}`, data || '');
+const LOG_LEVELS = {
+  DEBUG: 'DEBUG',
+  INFO: 'INFO',
+  WARN: 'WARN',
+  ERROR: 'ERROR',
+  CRITICAL: 'CRITICAL'
+};
+
+/**
+ * 現在のログレベル（環境変数または環境に応じたデフォルト値）
+ */
+const CURRENT_LOG_LEVEL = process.env.LOG_LEVEL || 
+  (isProduction ? LOG_LEVELS.INFO : 
+   isDevelopment ? LOG_LEVELS.DEBUG : 
+   isTest ? LOG_LEVELS.ERROR : LOG_LEVELS.INFO);
+
+/**
+ * ログレベルの重要度マップ
+ */
+const LOG_LEVEL_PRIORITY = {
+  [LOG_LEVELS.DEBUG]: 0,
+  [LOG_LEVELS.INFO]: 1,
+  [LOG_LEVELS.WARN]: 2,
+  [LOG_LEVELS.ERROR]: 3,
+  [LOG_LEVELS.CRITICAL]: 4
+};
+
+/**
+ * ログレベルをチェックする
+ * @param {string} level - ログレベル
+ * @returns {boolean} 出力すべきか
+ */
+const shouldLog = (level) => {
+  const currentPriority = LOG_LEVEL_PRIORITY[CURRENT_LOG_LEVEL] || 0;
+  const messagePriority = LOG_LEVEL_PRIORITY[level] || 0;
+  return messagePriority >= currentPriority;
+};
+
+/**
+ * ログメッセージをフォーマットする
+ * @param {string} level - ログレベル
+ * @param {string} message - ログメッセージ
+ * @param {...any} args - 追加のログ引数
+ * @returns {string} フォーマット済みログメッセージ
+ */
+const formatLog = (level, message, ...args) => {
+  const timestamp = new Date().toISOString();
+  return `[${timestamp}] [${level}] ${message} ${args.map(arg => stringify(arg)).join(' ')}`;
+};
+
+/**
+ * オブジェクトを文字列化する
+ * @param {any} obj - 文字列化するオブジェクト
+ * @returns {string} 文字列化されたオブジェクト
+ */
+const stringify = (obj) => {
+  if (obj instanceof Error) {
+    return obj.stack || obj.message;
+  }
+  
+  if (typeof obj === 'object' && obj !== null) {
+    try {
+      return JSON.stringify(obj);
+    } catch (e) {
+      return '[Object]';
     }
-  },
+  }
   
-  /**
-   * 情報レベルのログを出力
-   * @param {string} message - ログメッセージ
-   * @param {*} data - 追加データ（オプション）
-   */
-  info: (message, data) => {
-    console.log(`[INFO] ${new Date().toISOString()} ${message}`, data || '');
-  },
-  
-  /**
-   * 警告レベルのログを出力
-   * @param {string} message - ログメッセージ
-   * @param {*} data - 追加データ（オプション）
-   */
-  warn: (message, data) => {
-    console.warn(`[WARN] ${new Date().toISOString()} ${message}`, data || '');
-  },
-  
-  /**
-   * エラーレベルのログを出力
-   * @param {string} message - ログメッセージ
-   * @param {Error} error - エラーオブジェクト
-   * @param {Object} context - 追加コンテキスト情報（オプション）
-   */
-  error: (message, error, context = {}) => {
-    console.error(`[ERROR] ${new Date().toISOString()} ${message}`, {
-      errorMessage: error?.message || 'Unknown error',
-      stack: error?.stack,
-      ...context
-    });
-  },
-  
-  /**
-   * 重大なエラーログを出力
-   * @param {string} message - ログメッセージ
-   * @param {Error} error - エラーオブジェクト
-   * @param {Object} context - 追加コンテキスト情報（オプション）
-   */
-  critical: (message, error, context = {}) => {
-    console.error(`[CRITICAL] ${new Date().toISOString()} ${message}`, {
-      errorMessage: error?.message || 'Unknown error',
-      stack: error?.stack,
-      ...context
-    });
+  return String(obj);
+};
+
+/**
+ * デバッグレベルのログを出力
+ * @param {string} message - ログメッセージ
+ * @param {...any} args - 追加のログ引数
+ */
+const debug = (message, ...args) => {
+  if (shouldLog(LOG_LEVELS.DEBUG)) {
+    console.log(formatLog(LOG_LEVELS.DEBUG, message, ...args));
   }
 };
 
-module.exports = logger;
+/**
+ * 情報レベルのログを出力
+ * @param {string} message - ログメッセージ
+ * @param {...any} args - 追加のログ引数
+ */
+const info = (message, ...args) => {
+  if (shouldLog(LOG_LEVELS.INFO)) {
+    console.log(formatLog(LOG_LEVELS.INFO, message, ...args));
+  }
+};
+
+/**
+ * 警告レベルのログを出力
+ * @param {string} message - ログメッセージ
+ * @param {...any} args - 追加のログ引数
+ */
+const warn = (message, ...args) => {
+  if (shouldLog(LOG_LEVELS.WARN)) {
+    console.warn(formatLog(LOG_LEVELS.WARN, message, ...args));
+  }
+};
+
+/**
+ * エラーレベルのログを出力
+ * @param {string} message - ログメッセージ
+ * @param {...any} args - 追加のログ引数
+ */
+const error = (message, ...args) => {
+  if (shouldLog(LOG_LEVELS.ERROR)) {
+    console.error(formatLog(LOG_LEVELS.ERROR, message, ...args));
+  }
+};
+
+/**
+ * 致命的なエラーレベルのログを出力
+ * @param {string} message - ログメッセージ
+ * @param {...any} args - 追加のログ引数
+ */
+const critical = (message, ...args) => {
+  if (shouldLog(LOG_LEVELS.CRITICAL)) {
+    console.error(formatLog(LOG_LEVELS.CRITICAL, message, ...args));
+  }
+};
+
+/**
+ * ログ設定を取得する
+ * @returns {Object} 現在のログ設定
+ */
+const getLogConfig = () => {
+  return {
+    level: CURRENT_LOG_LEVEL,
+    environment: process.env.NODE_ENV || 'unknown',
+    isProduction,
+    isDevelopment,
+    isTest
+  };
+};
+
+// 標準形式でログ記録
+const log = info;
+
+module.exports = {
+  debug,
+  info,
+  warn,
+  error,
+  critical,
+  log,
+  getLogConfig,
+  LOG_LEVELS
+};

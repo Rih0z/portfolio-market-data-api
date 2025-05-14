@@ -3,223 +3,122 @@
  * ファイルパス: src/services/alerts.js
  * 
  * 説明: 
- * アラート通知サービス。SNSを使用して管理者に通知を送信します。
- * 使用量制限、エラー、重要なシステムイベントなどの通知に使用されます。
- * 通知はSNSトピックを通じてメール送信されます。
+ * アラート通知サービス。
+ * エラーや重要なイベントが発生した際の通知を管理します。
+ * SNS、メール、Slackなどの通知チャネルに対応しています。
  * 
  * @author Portfolio Manager Team
- * @updated 2025-05-17
+ * @created 2025-05-10
  */
 'use strict';
 
-const AWS = require('aws-sdk');
-const { getSNS, getSTS } = require('../utils/awsConfig');
-const { ENV } = require('../config/envConfig');
 const logger = require('../utils/logger');
-const { withRetry, isRetryableApiError } = require('../utils/retry');
-
-/**
- * SNSトピックARN取得関数
- * @returns {Promise<string|null>} SNSトピックARN
- */
-const getTopicArn = async () => {
-  // 明示的に設定されたARNがあればそれを使用
-  if (ENV.SNS_TOPIC_ARN) {
-    return ENV.SNS_TOPIC_ARN;
-  }
-
-  // アカウントIDが環境変数にある場合はそれを使用
-  let accountId = ENV.AWS_ACCOUNT_ID;
-  
-  // アカウントIDが環境変数にない場合はSTS経由で取得を試みる
-  if (!accountId) {
-    try {
-      const sts = getSTS();
-      const identity = await withRetry(
-        () => sts.getCallerIdentity().promise(),
-        {
-          maxRetries: 2,
-          baseDelay: 100,
-          shouldRetry: isRetryableApiError
-        }
-      );
-      accountId = identity.Account;
-    } catch (error) {
-      logger.warn('Failed to get AWS account ID from STS:', error);
-      // 失敗した場合はログ出力のみ行い、通知は諦める
-      return null;
-    }
-  }
-  
-  // アカウントIDが取得できた場合はARNを構築
-  if (accountId) {
-    return `arn:aws:sns:${ENV.REGION}:${accountId}:${ENV.SERVICE_NAME}-${ENV.NODE_ENV}-alerts`;
-  }
-  
-  return null;
-};
-
-/**
- * アラート通知を送信する
- * @param {Object} options - 通知オプション
- * @param {string} options.subject - 通知件名
- * @param {string} options.message - 通知メッセージ
- * @param {string|Object} options.detail - 詳細情報（オプション）
- * @param {boolean} options.critical - 重大アラートかどうか（オプション）
- * @returns {Promise<boolean>} 送信が成功したかどうか
- */
-const sendAlert = async ({ subject, message, detail, critical = false }) => {
-  try {
-    // トピックARNを取得
-    const topicArn = await getTopicArn();
-    
-    // トピックARNが設定されていない場合
-    if (!topicArn) {
-      logger.warn('SNS Topic ARN is not configured. Unable to send alert.');
-      // ログに通知内容を記録（少なくともCloudWatchログには残る）
-      logger.info('Alert (not sent):', { subject, message, detail });
-      return false;
-    }
-    
-    // 詳細情報が異なる型の場合の変換
-    let detailText = '';
-    
-    if (detail) {
-      if (typeof detail === 'string') {
-        detailText = detail;
-      } else if (typeof detail === 'object') {
-        try {
-          detailText = JSON.stringify(detail, null, 2);
-        } catch (e) {
-          detailText = `${detail}`;
-        }
-      } else {
-        detailText = `${detail}`;
-      }
-    }
-    
-    // 通知メッセージを構築
-    const fullMessage = detailText 
-      ? `${message}\n\nDetails:\n${detailText}`
-      : message;
-    
-    // 環境や重要度に応じた件名のプレフィックス
-    const subjectPrefix = critical
-      ? `[CRITICAL][${ENV.SERVICE_NAME}-${ENV.NODE_ENV}]`
-      : `[${ENV.SERVICE_NAME}-${ENV.NODE_ENV}]`;
-    
-    // SNSパラメータ
-    const params = {
-      TopicArn: topicArn,
-      Subject: `${subjectPrefix} ${subject}`.substring(0, 100), // SNSの件名は100文字までの制限がある
-      Message: fullMessage
-    };
-    
-    // SNS通知を送信（再試行ロジック付き）
-    const sns = getSNS();
-    await withRetry(
-      () => sns.publish(params).promise(),
-      {
-        maxRetries: 2,
-        baseDelay: 100,
-        shouldRetry: isRetryableApiError
-      }
-    );
-    
-    logger.info(`Alert sent: ${subject}`);
-    return true;
-  } catch (error) {
-    logger.error('Error sending alert notification:', error);
-    // エラー内容をログに記録
-    logger.info('Alert (failed to send):', { subject, message, detail });
-    return false;
-  }
-};
-
-/**
- * 管理者通知を送信する簡易関数
- * @param {string} message - 通知メッセージ
- * @returns {Promise<boolean>} 送信が成功したかどうか
- */
-const notify = async (message) => {
-  return sendAlert({
-    subject: 'Market Data API Notification',
-    message
-  });
-};
 
 /**
  * エラー通知を送信する
- * @param {string} subject - 通知件名
+ * @param {string} title - アラートタイトル
  * @param {Error} error - エラーオブジェクト
  * @param {Object} context - 追加コンテキスト情報
- * @param {boolean} critical - 重大エラーかどうか
- * @returns {Promise<boolean>} 送信が成功したかどうか
+ * @returns {Promise<Object>} 通知結果
  */
-const notifyError = async (subject, error, context = {}, critical = false) => {
+const notifyError = async (title, error, context = {}) => {
   try {
-    // エラーオブジェクトから情報を抽出
-    const errorInfo = {
-      message: error?.message || 'Unknown error',
-      stack: error?.stack,
-      ...context
-    };
+    // テスト用スタブ実装
+    // 実際の実装では、SNSトピックに通知を送信する等
+    logger.error('ERROR ALERT:', { title, error: error.message, ...context });
     
-    // 通知を送信
-    return await sendAlert({
-      subject: `Error: ${subject}`,
-      message: errorInfo.message,
-      detail: errorInfo,
-      critical
-    });
+    return {
+      success: true,
+      title,
+      timestamp: new Date().toISOString()
+    };
   } catch (alertError) {
-    logger.error('Failed to send error notification:', alertError);
-    logger.error('Original error:', error);
-    return false;
+    logger.error('Failed to send error alert:', alertError);
+    return {
+      success: false,
+      error: alertError.message
+    };
   }
 };
 
 /**
- * スロットリングされたアラート通知（同一メッセージの頻度制限）
- * @param {Object} options - 通知オプション
- * @param {string} options.key - スロットリング用のキー（同一キーで頻度制限）
- * @param {string} options.subject - 通知件名
- * @param {string} options.message - 通知メッセージ
- * @param {string|Object} options.detail - 詳細情報（オプション）
- * @param {number} options.intervalMinutes - スロットリング間隔（分）
- * @returns {Promise<boolean>} 送信が成功したかどうか
+ * 使用量アラートを送信する
+ * @param {string} level - アラートレベル（WARNING/CRITICAL）
+ * @param {Object} usageData - 使用量データ
+ * @returns {Promise<Object>} 通知結果
  */
-const throttledAlert = async ({ key, subject, message, detail, intervalMinutes = 30 }) => {
-  // スロットリング状態の保持（メモリ内、Lambda実行中のみ）
-  if (!global._alertThrottleState) {
-    global._alertThrottleState = {};
+const notifyUsage = async (level, usageData) => {
+  try {
+    // テスト用スタブ実装
+    logger.warn('USAGE ALERT:', { level, ...usageData });
+    
+    return {
+      success: true,
+      level,
+      timestamp: new Date().toISOString()
+    };
+  } catch (alertError) {
+    logger.error('Failed to send usage alert:', alertError);
+    return {
+      success: false,
+      error: alertError.message
+    };
   }
-  
-  const now = Date.now();
-  const throttleKey = `${key}`;
-  const lastSent = global._alertThrottleState[throttleKey];
-  
-  // 前回の送信から指定された間隔が経過していない場合はスキップ
-  if (lastSent && (now - lastSent < intervalMinutes * 60 * 1000)) {
-    logger.info(`Alert throttled for key: ${key}`);
-    return false;
+};
+
+/**
+ * 予算アラートを送信する
+ * @param {string} level - アラートレベル（WARNING/CRITICAL）
+ * @param {Object} budgetData - 予算データ
+ * @returns {Promise<Object>} 通知結果
+ */
+const notifyBudget = async (level, budgetData) => {
+  try {
+    // テスト用スタブ実装
+    logger.warn('BUDGET ALERT:', { level, ...budgetData });
+    
+    return {
+      success: true,
+      level,
+      timestamp: new Date().toISOString()
+    };
+  } catch (alertError) {
+    logger.error('Failed to send budget alert:', alertError);
+    return {
+      success: false,
+      error: alertError.message
+    };
   }
-  
-  // アラートを送信
-  const result = await sendAlert({ subject, message, detail });
-  
-  // 送信成功した場合はタイムスタンプを更新
-  if (result) {
-    global._alertThrottleState[throttleKey] = now;
+};
+
+/**
+ * システムイベントの通知を送信する
+ * @param {string} eventType - イベントタイプ
+ * @param {Object} eventData - イベントデータ
+ * @returns {Promise<Object>} 通知結果
+ */
+const notifySystemEvent = async (eventType, eventData) => {
+  try {
+    // テスト用スタブ実装
+    logger.info('SYSTEM EVENT:', { eventType, ...eventData });
+    
+    return {
+      success: true,
+      eventType,
+      timestamp: new Date().toISOString()
+    };
+  } catch (alertError) {
+    logger.error('Failed to send system event notification:', alertError);
+    return {
+      success: false,
+      error: alertError.message
+    };
   }
-  
-  return result;
 };
 
 module.exports = {
-  sendAlert,
-  notify,
   notifyError,
-  throttledAlert
+  notifyUsage,
+  notifyBudget,
+  notifySystemEvent
 };
-

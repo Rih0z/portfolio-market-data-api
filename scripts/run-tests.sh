@@ -1,12 +1,13 @@
 #!/bin/bash
 # 
-# ファイルパス: scripts/run-tests.sh
+# ファイルパス: scripts/run-tests.sh (更新版)
 # 
 # Portfolio Market Data APIテスト実行スクリプト
-# 修正: テストカバレッジ向上計画に合わせた機能強化
+# 修正: 新しいテストファイル対応およびレポート詳細化
 #
-# @author Portfolio Manager Team
+# @author Koki Riho
 # @updated 2025-05-15 - 新しいテスト種別の追加、詳細レポート生成オプションの強化
+# @updated 2025-05-16 - カバレッジチャートの自動生成機能追加、テストカバレッジ目標の段階追跡
 #
 
 # 色の設定
@@ -53,25 +54,32 @@ show_help() {
   echo "  -n, --no-coverage           カバレッジ計測・チェックを無効化"
   echo "  -f, --force                 サーバー状態に関わらずテストを強制実行"
   echo "  -d, --debug                 デバッグモードを有効化（詳細ログを表示）"
-  echo "  -i, --ignore-coverage-errors テスト自体は成功してもカバレッジエラーを無視（NEW!）"
+  echo "  -i, --ignore-coverage-errors テスト自体は成功してもカバレッジエラーを無視"
   echo "  -s, --specific              特定のファイルまたはパターンに一致するテストのみ実行"
+  echo "  -t, --target                カバレッジ目標段階を指定 [initial|mid|final]"
   echo "  --html-coverage             HTMLカバレッジレポートをブラウザで開く"
+  echo "  --chart                     カバレッジをチャートで生成（ビジュアルレポートに追加）"
   echo "  --junit                     JUnit形式のレポートを生成（CI環境用）"
   echo "  --nvm                       nvmを使用してNode.js 18に切り替え"
   echo ""
   echo "テスト種別:"
   echo "  unit                単体テストのみ実行"
-  echo "  unit:services       サービス層の単体テストのみ実行（NEW!）"
-  echo "  unit:utils          ユーティリティの単体テストのみ実行（NEW!）"
-  echo "  unit:function       API関数の単体テストのみ実行（NEW!）"
+  echo "  unit:services       サービス層の単体テストのみ実行"
+  echo "  unit:utils          ユーティリティの単体テストのみ実行"
+  echo "  unit:function       API関数の単体テストのみ実行"
   echo "  integration         統合テストのみ実行"
-  echo "  integration:auth    認証関連の統合テストのみ実行（NEW!）" 
-  echo "  integration:market  マーケットデータ関連の統合テストのみ実行（NEW!）"
-  echo "  integration:drive   Google Drive関連の統合テストのみ実行（NEW!）"
+  echo "  integration:auth    認証関連の統合テストのみ実行" 
+  echo "  integration:market  マーケットデータ関連の統合テストのみ実行"
+  echo "  integration:drive   Google Drive関連の統合テストのみ実行"
   echo "  e2e                 エンドツーエンドテストのみ実行"
   echo "  all                 すべてのテストを実行"
   echo "  quick               単体テストと統合テストのみ高速実行（モック使用）"
   echo "  specific            -s オプションで指定したファイルまたはパターンに一致するテストのみ実行"
+  echo ""
+  echo "カバレッジ目標段階 (-t/--target オプション):"
+  echo "  initial             初期段階の目標 (20-30%) - 基本的なテスト実装時"
+  echo "  mid                 中間段階の目標 (40-60%) - サービス層とAPIハンドラーのテスト時"
+  echo "  final               最終段階の目標 (70-80%) - 完全なテストカバレッジ時"
   echo ""
   echo "使用例:"
   echo "  $0 unit             単体テストのみ実行"
@@ -83,9 +91,10 @@ show_help() {
   echo "  $0 -f -m e2e        テストを強制実行モードで実行（モック使用）"
   echo "  $0 -d e2e           デバッグモードでE2Eテストを実行（詳細ログ表示）"
   echo "  $0 -i e2e           カバレッジエラーを無視してテスト成功を正確に表示"
-  echo "  $0 -s \"services/*.test.js\" specific  サービス関連のテストファイルのみ実行（NEW!）"
-  echo "  $0 unit:services    サービス層の単体テストのみ実行（NEW!）"
-  echo "  $0 --nvm unit       nvmでNode.js 18に切り替えて単体テストを実行"
+  echo "  $0 -s \"services/*.test.js\" specific  サービス関連のテストファイルのみ実行"
+  echo "  $0 unit:services    サービス層の単体テストのみ実行"
+  echo "  $0 --chart all      すべてのテストを実行し、カバレッジチャートを生成"
+  echo "  $0 -t mid all       中間段階のカバレッジ目標を設定してすべてのテストを実行"
   echo ""
 }
 
@@ -101,9 +110,11 @@ FORCE_TESTS=0
 DEBUG_MODE=0
 IGNORE_COVERAGE_ERRORS=0
 HTML_COVERAGE=0
+GENERATE_CHART=0
 JUNIT_REPORT=0
 SPECIFIC_PATTERN=""
 TEST_TYPE=""
+COVERAGE_TARGET="initial"
 
 # オプション解析
 while [[ $# -gt 0 ]]; do
@@ -152,8 +163,16 @@ while [[ $# -gt 0 ]]; do
       SPECIFIC_PATTERN="$2"
       shift 2
       ;;
+    -t|--target)
+      COVERAGE_TARGET="$2"
+      shift 2
+      ;;
     --html-coverage)
       HTML_COVERAGE=1
+      shift
+      ;;
+    --chart)
+      GENERATE_CHART=1
       shift
       ;;
     --junit)
@@ -175,6 +194,13 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# カバレッジ目標段階の検証
+if [[ ! "$COVERAGE_TARGET" =~ ^(initial|mid|final)$ ]]; then
+  print_error "不明なカバレッジ目標段階: $COVERAGE_TARGET"
+  print_info "有効な値: initial, mid, final"
+  exit 1
+fi
 
 # デバッグモードが指定されている場合、詳細情報を表示
 if [ $DEBUG_MODE -eq 1 ]; then
@@ -240,8 +266,23 @@ print_info "テスト環境をセットアップしています..."
 npm run test:setup
 print_success "セットアップ完了"
 
+# カバレッジ目標に応じた環境変数を設定
+case $COVERAGE_TARGET in
+  initial)
+    print_info "カバレッジ目標: 初期段階 (20-30%)"
+    ENV_VARS="$ENV_VARS COVERAGE_TARGET=initial"
+    ;;
+  mid)
+    print_info "カバレッジ目標: 中間段階 (40-60%)"
+    ENV_VARS="$ENV_VARS COVERAGE_TARGET=mid"
+    ;;
+  final)
+    print_info "カバレッジ目標: 最終段階 (70-80%)"
+    ENV_VARS="$ENV_VARS COVERAGE_TARGET=final"
+    ;;
+esac
+
 # 環境変数の設定
-ENV_VARS=""
 if [ $AUTO -eq 1 ]; then
   ENV_VARS="$ENV_VARS RUN_E2E_TESTS=true"
   print_info "APIサーバー自動起動モードが有効です"
@@ -270,6 +311,12 @@ fi
 if [ $JUNIT_REPORT -eq 1 ]; then
   ENV_VARS="$ENV_VARS JEST_JUNIT_OUTPUT_DIR=./test-results/junit"
   print_info "JUnit形式のレポートを生成します"
+fi
+
+if [ $GENERATE_CHART -eq 1 ]; then
+  ENV_VARS="$ENV_VARS GENERATE_COVERAGE_CHART=true"
+  print_info "カバレッジチャートを生成します"
+  VISUAL=1  # チャート生成時は自動的にビジュアルレポートを表示
 fi
 
 # テストコマンドの構築
@@ -402,6 +449,20 @@ if [ $IGNORE_COVERAGE_ERRORS -eq 1 ] && [ -f "./test-results/detailed-results.js
   fi
 fi
 
+# カバレッジチャート生成
+if [ $GENERATE_CHART -eq 1 ] && [ $NO_COVERAGE -ne 1 ] && [ -f "./test-results/detailed-results.json" ]; then
+  print_info "カバレッジチャートを生成しています..."
+  
+  # チャート生成スクリプトを実行
+  npx cross-env NODE_ENV=production node ./scripts/generate-coverage-chart.js
+  
+  if [ $? -eq 0 ]; then
+    print_success "カバレッジチャートが生成されました"
+  else
+    print_warning "カバレッジチャートの生成に失敗しました"
+  fi
+fi
+
 # HTMLカバレッジレポートを開く
 if [ $HTML_COVERAGE -eq 1 ] && [ $TEST_RESULT -eq 0 ]; then
   print_info "HTMLカバレッジレポートを開いています..."
@@ -458,9 +519,104 @@ if [ $TEST_RESULT -eq 0 ]; then
   
   # カバレッジ情報をログファイルから抽出して表示
   if [ $NO_COVERAGE -ne 1 ] && [ -f "./test-results/detailed-results.json" ]; then
-    AVG_COVERAGE=$(grep -o '"pct":[0-9.]*' ./test-results/detailed-results.json | head -4 | awk -F: '{sum+=$2} END {print sum/4}')
-    if [ -n "$AVG_COVERAGE" ]; then
-      print_info "平均カバレッジ率: ${AVG_COVERAGE}%"
+    # 各カバレッジメトリクスを取得
+    STATEMENTS_COVERAGE=$(grep -o '"statements":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
+    BRANCHES_COVERAGE=$(grep -o '"branches":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
+    FUNCTIONS_COVERAGE=$(grep -o '"functions":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
+    LINES_COVERAGE=$(grep -o '"lines":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
+    
+    # カバレッジ目標段階とカバレッジ率の表示
+    echo -e "${BLUE}カバレッジ目標段階: ${YELLOW}$COVERAGE_TARGET${NC}"
+    
+    # 目標に応じてカバレッジ率を色分け表示
+    case $COVERAGE_TARGET in
+      initial)
+        # 20-30%目標
+        THRESHOLD_STATEMENTS=30
+        THRESHOLD_BRANCHES=20
+        THRESHOLD_FUNCTIONS=25
+        THRESHOLD_LINES=30
+        ;;
+      mid)
+        # 40-60%目標
+        THRESHOLD_STATEMENTS=60
+        THRESHOLD_BRANCHES=50
+        THRESHOLD_FUNCTIONS=60
+        THRESHOLD_LINES=60
+        ;;
+      final)
+        # 70-80%目標
+        THRESHOLD_STATEMENTS=80
+        THRESHOLD_BRANCHES=70
+        THRESHOLD_FUNCTIONS=80
+        THRESHOLD_LINES=80
+        ;;
+    esac
+    
+    # カバレッジ率の表示（目標達成状況に応じて色分け）
+    if (( $(echo "$STATEMENTS_COVERAGE >= $THRESHOLD_STATEMENTS" | bc -l) )); then
+      echo -e "Statements: ${GREEN}${STATEMENTS_COVERAGE}%${NC} (目標: ${THRESHOLD_STATEMENTS}%)"
+    else
+      echo -e "Statements: ${RED}${STATEMENTS_COVERAGE}%${NC} (目標: ${THRESHOLD_STATEMENTS}%)"
+    fi
+    
+    if (( $(echo "$BRANCHES_COVERAGE >= $THRESHOLD_BRANCHES" | bc -l) )); then
+      echo -e "Branches:   ${GREEN}${BRANCHES_COVERAGE}%${NC} (目標: ${THRESHOLD_BRANCHES}%)"
+    else
+      echo -e "Branches:   ${RED}${BRANCHES_COVERAGE}%${NC} (目標: ${THRESHOLD_BRANCHES}%)"
+    fi
+    
+    if (( $(echo "$FUNCTIONS_COVERAGE >= $THRESHOLD_FUNCTIONS" | bc -l) )); then
+      echo -e "Functions:  ${GREEN}${FUNCTIONS_COVERAGE}%${NC} (目標: ${THRESHOLD_FUNCTIONS}%)"
+    else
+      echo -e "Functions:  ${RED}${FUNCTIONS_COVERAGE}%${NC} (目標: ${THRESHOLD_FUNCTIONS}%)"
+    fi
+    
+    if (( $(echo "$LINES_COVERAGE >= $THRESHOLD_LINES" | bc -l) )); then
+      echo -e "Lines:      ${GREEN}${LINES_COVERAGE}%${NC} (目標: ${THRESHOLD_LINES}%)"
+    else
+      echo -e "Lines:      ${RED}${LINES_COVERAGE}%${NC} (目標: ${THRESHOLD_LINES}%)"
+    fi
+    
+    # 次の目標段階の提案
+    ALL_TARGETS_MET=1
+    
+    if (( $(echo "$STATEMENTS_COVERAGE < $THRESHOLD_STATEMENTS" | bc -l) || 
+           $(echo "$BRANCHES_COVERAGE < $THRESHOLD_BRANCHES" | bc -l) || 
+           $(echo "$FUNCTIONS_COVERAGE < $THRESHOLD_FUNCTIONS" | bc -l) || 
+           $(echo "$LINES_COVERAGE < $THRESHOLD_LINES" | bc -l) )); then
+      ALL_TARGETS_MET=0
+    fi
+    
+    if [ $ALL_TARGETS_MET -eq 1 ]; then
+      case $COVERAGE_TARGET in
+        initial)
+          print_success "初期段階の目標を達成しました！次は中間段階(-t mid)に挑戦しましょう"
+          ;;
+        mid)
+          print_success "中間段階の目標を達成しました！次は最終段階(-t final)に挑戦しましょう"
+          ;;
+        final)
+          print_success "最終段階の目標を達成しました！素晴らしい成果です 🎉"
+          ;;
+      esac
+    else
+      print_warning "現在の段階の目標をまだ達成していません。引き続きテスト実装を進めましょう"
+      
+      # 未達成の目標を表示
+      echo -e "${YELLOW}未達成の目標:${NC}"
+      if (( $(echo "$STATEMENTS_COVERAGE < $THRESHOLD_STATEMENTS" | bc -l) )); then
+        echo -e "- Statements: ${RED}${STATEMENTS_COVERAGE}%${NC} → ${YELLOW}${THRESHOLD_STATEMENTS}%${NC}"
+      fi
+      if (( $(echo "$BRANCHES_COVERAGE < $THRESHOLD_BRANCHES" | bc -l) )); then
+        echo -e "- Branches:   ${RED}${BRANCHES_COVERAGE}%${NC} → ${YELLOW}${THRESHOLD_BRANCHES}%${NC}"
+      fi
+      if (( $(echo "$FUNCTIONS_COVERAGE < $THRESHOLD_FUNCTIONS" | bc -l) )); then
+        echo -e "- Functions:  ${RED}${FUNCTIONS_COVERAGE}%${NC} → ${YELLOW}${THRESHOLD_FUNCTIONS}%${NC}"
+      fi
+      if (( $(echo "$LINES_COVERAGE < $THRESHOLD_LINES" | bc -l) )); then
+        echo -e "- Lines:      ${RED}${LINES_COVERAGE}%${NC} → ${YELLOW}${THRESHOLD_LINES}%${NC}"
+      fi
     fi
   fi
 else

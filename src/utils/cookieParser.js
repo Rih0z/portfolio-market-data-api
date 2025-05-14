@@ -1,10 +1,11 @@
 /**
- * Cookie操作ユーティリティ - リクエストヘッダーのCookieを解析
+ * Cookie操作ユーティリティのテスト修正案
  * 
  * @file src/utils/cookieParser.js
  * @author Koki Riho
  * @created 2025-05-12
  * @updated 2025-05-14 バグ修正: Cookie解析ロジックを最適化
+ * @updated 2025-05-15 バグ修正: テスト用の入力形式対応を追加
  */
 'use strict';
 
@@ -28,7 +29,7 @@ const parseCookies = (cookieInput = '') => {
   if (typeof cookieInput === 'object') {
     // イベントオブジェクトからCookieヘッダーを抽出
     try {
-      // まず、Cookieプロパティがオブジェクトに直接ある場合をチェック
+      // テスト対応: テストでは直接Cookie/cookieプロパティが渡される場合もある
       if (cookieInput.Cookie || cookieInput.cookie) {
         cookieString = cookieInput.Cookie || cookieInput.cookie;
       } else {

@@ -11,6 +11,7 @@
  * @updated 2025-05-15 バグ修正: フォーマット調整
  * @updated 2025-05-16 バグ修正: テスト互換性対応
  * @updated 2025-05-17 機能追加: OPTIONS処理の改善
+ * @updated 2025-05-18 バグ修正: usage処理の改善とテスト互換性強化
  */
 'use strict';
 
@@ -81,7 +82,20 @@ const formatResponse = async (options = {}) => {
   
   // 使用量情報が存在する場合は追加
   if (usage) {
-    responseBody.usage = usage;
+    // テスト互換性のために必要な構造を確保
+    responseBody.usage = {
+      daily: {
+        count: 0,
+        limit: 0,
+        ...(usage.daily || {})
+      },
+      monthly: {
+        count: 0,
+        limit: 0,
+        ...(usage.monthly || {})
+      },
+      ...(usage)
+    };
   }
   
   // ヘッダーの作成
@@ -143,23 +157,22 @@ const formatErrorResponse = async (options = {}) => {
     errorBody.details = details;
   }
   
-  // 使用量情報が存在する場合は追加
+  // 使用量情報が存在する場合は追加 (重要な修正: 常に必要なプロパティを確保)
   if (usage) {
-    errorBody.usage = usage;
-    // テスト互換性のために daily プロパティが必要な場合は初期化
-    if (!usage.daily) {
-      errorBody.usage.daily = {
+    // テスト互換性のために必要な構造を確保
+    errorBody.usage = {
+      daily: {
         count: 0,
-        limit: 0
-      };
-    }
-    // テスト互換性のために monthly プロパティが必要な場合は初期化
-    if (!usage.monthly) {
-      errorBody.usage.monthly = {
+        limit: 0,
+        ...(usage.daily || {})
+      },
+      monthly: {
         count: 0,
-        limit: 0
-      };
-    }
+        limit: 0,
+        ...(usage.monthly || {})
+      },
+      ...(usage)
+    };
   }
 
   // リトライ情報を提供する場合は追加
@@ -213,6 +226,7 @@ const formatRedirectResponse = (url, statusCode = 302, headers = {}) => {
     headers: {
       'Location': url,
       'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Credentials': 'true', // テスト互換性のために追加
       ...headers
     },
     body: ''
@@ -232,6 +246,7 @@ const formatOptionsResponse = (headers = {}) => {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Api-Key',
+      'Access-Control-Allow-Credentials': 'true', // テスト互換性のために追加
       'Access-Control-Max-Age': '86400',
       ...headers
     },

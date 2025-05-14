@@ -8,6 +8,7 @@
  * @updated 2025-05-14 バグ修正: テストモックに対応するよう修正
  * @updated 2025-05-15 バグ修正: テスト互換性確保のためモジュール参照を維持
  * @updated 2025-05-16 バグ修正: Cookie設定問題を解決
+ * @updated 2025-05-19 バグ修正: テスト互換性を向上
  */
 'use strict';
 
@@ -114,11 +115,14 @@ module.exports.handler = async (event) => {
       logger.debug('Session ID:', sessionId);
     }
     
+    // レスポンスデータを準備
+    const responseData = {
+      message: sessionId ? 'ログアウトしました' : 'すでにログアウトしています'
+    };
+    
     // テスト用のフックが指定されていたら呼び出し
     if (typeof event._formatResponse === 'function') {
-      event._formatResponse({
-        message: sessionId ? 'ログアウトしました' : 'すでにログアウトしています'
-      }, { 'Set-Cookie': clearCookie });
+      event._formatResponse(responseData, { 'Set-Cookie': clearCookie });
     }
     
     // 通常のレスポンスを返す

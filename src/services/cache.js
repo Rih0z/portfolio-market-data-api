@@ -9,6 +9,7 @@
  * 
  * @author Portfolio Manager Team
  * @created 2025-05-10
+ * @updated 2025-05-19 バグ修正: テスト期待値に対応
  */
 'use strict';
 

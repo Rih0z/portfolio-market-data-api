@@ -11,6 +11,7 @@
  * @updated Koki - 2025-05-14 バグ修正: テストが期待する形式にレスポンスを修正
  * @updated Koki - 2025-05-15 バグ修正: モジュール参照を維持しテスト互換性を確保
  * @updated Koki - 2025-05-16 バグ修正: テスト実行時のヘッダー処理を改善
+ * @updated Koki - 2025-05-19 バグ修正: セッション情報レスポンス形式を修正
  */
 'use strict';
 
@@ -49,7 +50,7 @@ const handler = async (event) => {
       }
       
       // モジュール経由で関数を呼び出し（Jestのスパイ対応）
-      return responseUtils.formatErrorResponse(errorParams);
+      return await responseUtils.formatErrorResponse(errorParams);
     }
     
     // Cookieを直接取得
@@ -78,7 +79,7 @@ const handler = async (event) => {
         event._formatErrorResponse(errorParams);
       }
       
-      return responseUtils.formatErrorResponse(errorParams);
+      return await responseUtils.formatErrorResponse(errorParams);
     }
     
     // セッション情報を取得
@@ -108,7 +109,7 @@ const handler = async (event) => {
       return errorResponse;
     }
     
-    // 認証済みユーザー情報を返す - テストが期待する形式に合わせる
+    // 認証済みユーザー情報を返す - テストが期待する形式に完全に合わせる
     const responseData = {
       isAuthenticated: true,
       user: {

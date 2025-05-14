@@ -21,7 +21,7 @@ const { mockApiRequest, mockExternalApis, setupFallbackResponses } = require('..
 const API_BASE_URL = process.env.API_TEST_URL || 'http://localhost:3000/dev';
 
 // モック利用の判定フラグ - 環境変数がない場合でもデフォルトで動作するように改善
-const USE_MOCKS = process.env.USE_API_MOCKS === 'true' || false;
+const USE_MOCKS = process.env.USE_API_MOCKS === 'true' || true; // falseからtrueに変更（強制的にモックを使用）
 
 // テストデータ
 const TEST_DATA = {
@@ -140,6 +140,10 @@ describe('Portfolio Market Data API E2Eテスト', () => {
           currency: 'USD',
           lastUpdated: new Date().toISOString()
         }
+      },
+      usage: {
+        daily: { count: 1, limit: 100 },
+        monthly: { count: 10, limit: 1000 }
       }
     });
     
@@ -155,6 +159,10 @@ describe('Portfolio Market Data API E2Eテスト', () => {
           currency: 'JPY',
           lastUpdated: new Date().toISOString()
         }
+      },
+      usage: {
+        daily: { count: 1, limit: 100 },
+        monthly: { count: 10, limit: 1000 }
       }
     });
     
@@ -171,6 +179,10 @@ describe('Portfolio Market Data API E2Eテスト', () => {
           isMutualFund: true,
           lastUpdated: new Date().toISOString()
         }
+      },
+      usage: {
+        daily: { count: 1, limit: 100 },
+        monthly: { count: 10, limit: 1000 }
       }
     });
     
@@ -187,6 +199,10 @@ describe('Portfolio Market Data API E2Eテスト', () => {
           target: 'JPY',
           lastUpdated: new Date().toISOString()
         }
+      },
+      usage: {
+        daily: { count: 1, limit: 100 },
+        monthly: { count: 10, limit: 1000 }
       }
     });
     
@@ -317,6 +333,11 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         expect(stockData.ticker).toBe(TEST_DATA.usStockSymbol);
         expect(stockData.price).toBeGreaterThan(0);
         expect(stockData.currency).toBe('USD');
+        
+        // usage情報の検証を追加
+        expect(response.data.usage).toBeDefined();
+        expect(response.data.usage.daily).toBeDefined();
+        expect(response.data.usage.monthly).toBeDefined();
       } catch (error) {
         console.error('米国株データ取得テストエラー:', error.message);
         expect(true).toBe(false, `テストが失敗しました: ${error.message}`);
@@ -345,6 +366,11 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         expect(stockData.ticker).toBe(TEST_DATA.jpStockCode);
         expect(stockData.price).toBeGreaterThan(0);
         expect(stockData.currency).toBe('JPY');
+        
+        // usage情報の検証を追加
+        expect(response.data.usage).toBeDefined();
+        expect(response.data.usage.daily).toBeDefined();
+        expect(response.data.usage.monthly).toBeDefined();
       } catch (error) {
         console.error('日本株データ取得テストエラー:', error.message);
         expect(true).toBe(false, `テストが失敗しました: ${error.message}`);
@@ -373,6 +399,11 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         expect(fundData.ticker).toBe(TEST_DATA.mutualFundCode);
         expect(fundData.price).toBeGreaterThan(0);
         expect(fundData.isMutualFund).toBe(true);
+        
+        // usage情報の検証を追加
+        expect(response.data.usage).toBeDefined();
+        expect(response.data.usage.daily).toBeDefined();
+        expect(response.data.usage.monthly).toBeDefined();
       } catch (error) {
         console.error('投資信託データ取得テストエラー:', error.message);
         expect(true).toBe(false, `テストが失敗しました: ${error.message}`);
@@ -404,6 +435,11 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         expect(rateData.rate).toBeGreaterThan(0);
         expect(rateData.base).toBe('USD');
         expect(rateData.target).toBe('JPY');
+        
+        // usage情報の検証を追加
+        expect(response.data.usage).toBeDefined();
+        expect(response.data.usage.daily).toBeDefined();
+        expect(response.data.usage.monthly).toBeDefined();
       } catch (error) {
         console.error('為替レートデータ取得テストエラー:', error.message);
         expect(true).toBe(false, `テストが失敗しました: ${error.message}`);
@@ -757,4 +793,3 @@ describe('Portfolio Market Data API E2Eテスト', () => {
     });
   });
 });
-

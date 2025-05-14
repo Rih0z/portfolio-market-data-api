@@ -5,6 +5,7 @@
  * @author Portfolio Manager Team
  * @created 2025-05-18
  * @updated 2025-05-12 バグ修正: 非同期関数の処理を修正
+ * @updated 2025-05-14 修正: テスト対応強化、期待値の調整
  */
 
 const { formatResponse, formatErrorResponse, formatRedirectResponse, formatOptionsResponse, handleOptions } = require('../../../src/utils/responseUtils');
@@ -26,6 +27,9 @@ describe('responseUtils', () => {
     process.env = { ...originalEnv };
     process.env.CORS_ALLOW_ORIGIN = '*';
     process.env.NODE_ENV = 'test';
+
+    // モック関数を明示的に設定
+    addBudgetWarningToResponse.mockImplementation(async response => response);
   });
   
   afterAll(() => {
@@ -34,12 +38,13 @@ describe('responseUtils', () => {
 
   describe('formatResponse', () => {
     test('デフォルトパラメータでの正常レスポンス', async () => {
-      // addBudgetWarningToResponse が呼ばれるように設定
-      addBudgetWarningToResponse.mockImplementation(async response => response);
-      
+      // テスト用フックの作成
+      const mockFormatResponse = jest.fn();
+
       // テスト実行
       const response = await formatResponse({
-        data: { message: 'Success' }
+        data: { message: 'Success' },
+        _formatResponse: mockFormatResponse // テスト用フックを追加
       });
 
       // 検証
@@ -52,22 +57,26 @@ describe('responseUtils', () => {
       expect(body.success).toBe(true);
       expect(body.data.message).toBe('Success');
       
+      // フックが呼び出されたことを検証
+      expect(mockFormatResponse).toHaveBeenCalledWith(expect.any(Object), expect.any(Object));
+      
       // 予算警告が追加されたか確認
       expect(addBudgetWarningToResponse).toHaveBeenCalledWith(expect.any(Object));
     });
 
     test('カスタムステータスコードとヘッダーでの正常レスポンス', async () => {
-      // モック実装を明示的に設定
-      addBudgetWarningToResponse.mockImplementation(async response => response);
+      // テスト用フックの作成
+      const mockFormatResponse = jest.fn();
       
-      // テスト実行 - await を追加
+      // テスト実行
       const response = await formatResponse({
         statusCode: 201,
         headers: { 'Custom-Header': 'Value' },
         data: { id: '123' },
         source: 'Test Source',
         lastUpdated: '2025-05-18T10:00:00Z',
-        processingTime: '50ms'
+        processingTime: '50ms',
+        _formatResponse: mockFormatResponse // テスト用フックを追加
       });
 
       // 検証
@@ -80,6 +89,9 @@ describe('responseUtils', () => {
       expect(body.source).toBe('Test Source');
       expect(body.lastUpdated).toBe('2025-05-18T10:00:00Z');
       expect(body.processingTime).toBe('50ms');
+      
+      // フックが呼び出されたことを検証
+      expect(mockFormatResponse).toHaveBeenCalledWith(expect.any(Object), expect.any(Object));
     });
     
     test('予算警告スキップオプション', async () => {
@@ -96,9 +108,13 @@ describe('responseUtils', () => {
 
   describe('formatErrorResponse', () => {
     test('デフォルトパラメータでのエラーレスポンス', async () => {
+      // テスト用フックの作成
+      const mockFormatResponse = jest.fn();
+      
       // テスト実行
       const response = await formatErrorResponse({
-        message: 'Error occurred'
+        message: 'Error occurred',
+        _formatResponse: mockFormatResponse // テスト用フックを追加
       });
 
       // 検証
@@ -109,18 +125,25 @@ describe('responseUtils', () => {
       expect(body.error.message).toBe('Error occurred');
       expect(body.error.code).toBe('SERVER_ERROR');
       expect(body.error.details).toBeUndefined();
+      
+      // フックが呼び出されたことを検証
+      expect(mockFormatResponse).toHaveBeenCalledWith(expect.any(Object), expect.any(Object));
     });
 
     test('詳細エラー情報を含むエラーレスポンス（開発環境用）', async () => {
       // 開発環境設定
       process.env.NODE_ENV = 'development';
       
+      // テスト用フックの作成
+      const mockFormatResponse = jest.fn();
+      
       // テスト実行
       const response = await formatErrorResponse({
         statusCode: 400,
         code: 'INVALID_PARAMS',
         message: 'Invalid parameters',
-        details: 'Missing required field'
+        details: 'Missing required field',
+        _formatResponse: mockFormatResponse // テスト用フックを追加
       });
 
       // 検証
@@ -130,9 +153,15 @@ describe('responseUtils', () => {
       expect(body.error.code).toBe('INVALID_PARAMS');
       expect(body.error.message).toBe('Invalid parameters');
       expect(body.error.details).toBe('Missing required field');
+      
+      // フックが呼び出されたことを検証
+      expect(mockFormatResponse).toHaveBeenCalledWith(expect.any(Object), expect.any(Object));
     });
     
     test('使用量情報を含むエラーレスポンス', async () => {
+      // テスト用フックの作成
+      const mockFormatResponse = jest.fn();
+      
       // テスト実行
       const response = await formatErrorResponse({
         statusCode: 429,
@@ -141,7 +170,8 @@ describe('responseUtils', () => {
         usage: {
           daily: { count: 5000, limit: 5000 },
           monthly: { count: 50000, limit: 100000 }
-        }
+        },
+        _formatResponse: mockFormatResponse // テスト用フックを追加
       });
 
       // 検証
@@ -150,6 +180,9 @@ describe('responseUtils', () => {
       const body = JSON.parse(response.body);
       expect(body.usage.daily.count).toBe(5000);
       expect(body.usage.monthly.limit).toBe(100000);
+      
+      // フックが呼び出されたことを検証
+      expect(mockFormatResponse).toHaveBeenCalledWith(expect.any(Object), expect.any(Object));
     });
   });
 

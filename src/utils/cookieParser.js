@@ -4,6 +4,7 @@
  * @file src/utils/cookieParser.js
  * @author Koki Riho
  * @created 2025-05-12
+ * @updated 2025-05-13 バグ修正: エラー処理と型チェックを改善
  */
 'use strict';
 

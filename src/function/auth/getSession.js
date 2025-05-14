@@ -7,6 +7,7 @@
  * @file src/function/auth/getSession.js
  * @author Portfolio Manager Team
  * @updated Koki - 2025-05-12 バグ修正: モジュールパスを修正
+ * @updated Koki - 2025-05-13 バグ修正: parseCookies関数の使用方法を修正
  */
 
 const googleAuthService = require('../../services/googleAuthService');
@@ -23,7 +24,7 @@ const { formatResponseSync, formatErrorResponseSync } = require('../../utils/res
  */
 const handler = async (event) => {
   try {
-    // Cookieからセッションを取得
+    // Cookieからセッションを取得 - イベントオブジェクト全体を渡す
     const cookies = cookieParser.parseCookies(event);
     const sessionId = cookies.session;
     

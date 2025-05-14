@@ -64,7 +64,7 @@ const parseCookies = (cookieInput = '') => {
   }
   
   // セミコロンで分割して各Cookie部分を取得
-  const cookieParts = cookieString.split(';');
+  const cookieParts = cookieString.split(/;\s*/);
   
   // デバッグ情報
   // console.log('Cookie parts:', cookieParts);
@@ -92,7 +92,7 @@ const parseCookies = (cookieInput = '') => {
         // デコードエラーの場合は元の値を使用
       }
       
-      // 値にセミコロンが含まれる場合でも正しく処理
+      // 値をそのまま保存（セミコロンを含む場合でも）
       cookies[key] = value;
       
       // デバッグ情報

@@ -5,6 +5,7 @@
  * @author Portfolio Manager Team
  * @created 2025-05-12
  * @updated 2025-05-13 バグ修正: parseCookies関数の使用方法を修正
+ * @updated 2025-05-14 バグ修正: セッション無効化とCookie処理を修正
  */
 'use strict';
 
@@ -41,35 +42,24 @@ module.exports.handler = async (event) => {
       redirectUrl = event.queryStringParameters.redirect;
     }
     
-    // セッションがない場合でも成功として処理
-    if (!sessionId) {
-      // リダイレクトURLがある場合
-      if (redirectUrl) {
-        return formatRedirectResponseSync(redirectUrl, 302, {
-          'Set-Cookie': createClearSessionCookie()
-        });
-      }
-
-      return formatResponseSync({
-        statusCode: 200,
-        body: {
-          success: true,
-          message: 'すでにログアウトしています'
-        },
-        headers: {
-          'Set-Cookie': createClearSessionCookie()
-        }
-      });
-    }
+    // Cookie ヘッダーの作成 - 常に実行する
+    const clearCookie = createClearSessionCookie();
     
-    // セッションを無効化
-    await invalidateSession(sessionId);
-    console.info('Session invalidated', sessionId);
+    // セッションがある場合は無効化
+    if (sessionId) {
+      try {
+        await invalidateSession(sessionId);
+        console.info('Session invalidated', sessionId);
+      } catch (error) {
+        console.error('Session invalidation error:', error);
+        // エラーが発生しても処理を継続
+      }
+    }
     
     // リダイレクトURLがある場合
     if (redirectUrl) {
       return formatRedirectResponseSync(redirectUrl, 302, {
-        'Set-Cookie': createClearSessionCookie()
+        'Set-Cookie': clearCookie
       });
     }
     
@@ -78,10 +68,10 @@ module.exports.handler = async (event) => {
       statusCode: 200,
       body: {
         success: true,
-        message: 'ログアウトしました'
+        message: sessionId ? 'ログアウトしました' : 'すでにログアウトしています'
       },
       headers: {
-        'Set-Cookie': createClearSessionCookie()
+        'Set-Cookie': clearCookie
       }
     });
   } catch (error) {

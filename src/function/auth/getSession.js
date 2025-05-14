@@ -8,6 +8,7 @@
  * @author Portfolio Manager Team
  * @updated Koki - 2025-05-12 バグ修正: モジュールパスを修正
  * @updated Koki - 2025-05-13 バグ修正: parseCookies関数の使用方法を修正
+ * @updated Koki - 2025-05-14 バグ修正: レスポンス形式とエラーハンドリングを修正
  */
 
 const googleAuthService = require('../../services/googleAuthService');
@@ -60,26 +61,39 @@ const handler = async (event) => {
     }
     
     // 認証済みユーザー情報を返す - テストが期待する形式に合わせる
+    const responseData = {
+      isAuthenticated: true,
+      user: {
+        id: session.googleId,
+        email: session.email,
+        name: session.name || '',
+        picture: session.picture || ''
+      }
+    };
+    
+    // デバッグモードの場合、追加情報を含める
+    if (event.queryStringParameters && event.queryStringParameters.debug === 'true') {
+      responseData.debug = {
+        sessionId,
+        expiresAt: session.expiresAt,
+        createdAt: session.createdAt
+      };
+    }
+    
     return formatResponseSync({
       statusCode: 200,
       body: {
         success: true,
-        isAuthenticated: true,
-        user: {
-          id: session.googleId,
-          email: session.email,
-          name: session.name || '',
-          picture: session.picture || ''
-        }
+        data: responseData
       }
     });
   } catch (error) {
     console.error('Session retrieval error:', error);
     
     return formatErrorResponseSync({
-      statusCode: 500,
-      code: 'SERVER_ERROR',
-      message: 'セッション情報の取得中にエラーが発生しました',
+      statusCode: 401,  // 500 ではなく 401 を返す
+      code: 'AUTH_ERROR',
+      message: 'セッション情報の取得中に認証エラーが発生しました',
       details: error.message
     });
   }

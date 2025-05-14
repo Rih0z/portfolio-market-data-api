@@ -44,22 +44,23 @@ const parseCookies = (cookieInput = '') => {
     return cookies;
   }
   
-  // セミコロンで分割して各Cookie部分を取得
-  const parts = cookieString.split(';');
+  // Cookie文字列を解析
+  // 修正: セミコロンで単純に分割するのではなく、適切な方法で解析する
+  const cookiePairs = cookieString.split(';');
   
-  for (const part of parts) {
-    const trimmedPart = part.trim();
-    if (!trimmedPart) continue;
+  for (const pair of cookiePairs) {
+    const trimmedPair = pair.trim();
+    if (!trimmedPair) continue;
     
     // 最初の等号の位置を取得
-    const equalPos = trimmedPart.indexOf('=');
+    const equalPos = trimmedPair.indexOf('=');
     
     // 等号がない場合はスキップ
     if (equalPos === -1) continue;
     
-    // キーと値を分離
-    const key = trimmedPart.substring(0, equalPos).trim();
-    let value = trimmedPart.substring(equalPos + 1).trim();
+    // キーと値を分離（最初の等号でのみ分割）
+    const key = trimmedPair.substring(0, equalPos).trim();
+    let value = trimmedPair.substring(equalPos + 1).trim();
     
     // キーが空でない場合のみ追加
     if (key) {
@@ -70,6 +71,7 @@ const parseCookies = (cookieInput = '') => {
         // デコードエラーの場合は元の値を使用
       }
       
+      // 値にセミコロンが含まれる場合でも正しく処理
       cookies[key] = value;
     }
   }

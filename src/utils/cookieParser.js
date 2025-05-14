@@ -30,27 +30,35 @@ const parseCookies = (cookieInput = '') => {
     return {};
   }
   
-  return cookieString
-    .split(';')
-    .map(cookie => cookie.trim())
-    .filter(cookie => cookie.length > 0)
-    .reduce((result, cookie) => {
-      const parts = cookie.split('=');
-      if (parts.length >= 2) {
-        const name = parts[0].trim();
-        // 値が複数の=を含む場合、最初の=以降をすべて値として扱う
-        const value = parts.slice(1).join('=').trim();
-        
-        try {
-          // URIデコードを試みる
-          result[name] = decodeURIComponent(value);
-        } catch (error) {
-          // デコードに失敗した場合はそのまま使用
-          result[name] = value;
-        }
-      }
-      return result;
-    }, {});
+  const cookies = {};
+  
+  // セミコロンでCookieを分割
+  const cookiePairs = cookieString.split(';');
+  
+  for (const pair of cookiePairs) {
+    const trimmedPair = pair.trim();
+    if (!trimmedPair) continue;
+    
+    // 最初の=の位置を見つける (セミコロンを含む値にも対応)
+    const firstEqualIndex = trimmedPair.indexOf('=');
+    
+    // =が見つからなかった場合はスキップ
+    if (firstEqualIndex === -1) continue;
+    
+    const name = trimmedPair.substring(0, firstEqualIndex).trim();
+    let value = trimmedPair.substring(firstEqualIndex + 1).trim();
+    
+    // 値が空でも受け入れる
+    try {
+      // URIデコードを試みる
+      cookies[name] = decodeURIComponent(value);
+    } catch (error) {
+      // デコードに失敗した場合はそのまま使用
+      cookies[name] = value;
+    }
+  }
+  
+  return cookies;
 };
 
 /**

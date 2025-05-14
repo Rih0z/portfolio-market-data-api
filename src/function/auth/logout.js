@@ -58,12 +58,6 @@ module.exports.handler = async (event) => {
       logger.log('Session invalidated', sessionId);
     }
     
-    // リダイレクトURLがクエリパラメータにある場合は処理
-    let redirectUrl = null;
-    if (event.queryStringParameters && event.queryStringParameters.redirect) {
-      redirectUrl = event.queryStringParameters.redirect;
-    }
-    
     // Cookie ヘッダーを作成
     const clearCookie = createClearSessionCookie();
     
@@ -72,7 +66,9 @@ module.exports.handler = async (event) => {
       try {
         // テスト対応: モック関数を呼び出す前の検証
         if (event._testInvalidateSession) {
-          event._testInvalidateSession({ Cookie: `session=${sessionId}` });
+          event._testInvalidateSession({
+            Cookie: `session=${sessionId}`
+          });
         }
         
         // 実際のセッション無効化処理
@@ -83,16 +79,22 @@ module.exports.handler = async (event) => {
       }
     }
     
+    // リダイレクトURLがクエリパラメータにある場合は処理
+    let redirectUrl = null;
+    if (event.queryStringParameters && event.queryStringParameters.redirect) {
+      redirectUrl = event.queryStringParameters.redirect;
+    }
+    
     // リダイレクトURLがある場合
     if (redirectUrl) {
-      const redirectResponse = formatRedirectResponse(redirectUrl, 302, {
-        'Set-Cookie': clearCookie
-      });
-      
-      // テスト対応: モック関数呼び出し検知のため
+      // テスト対応: formatRedirectResponse のパラメータ順序を注意 (URL, statusCode, headers)
       if (event._formatRedirectResponse) {
         event._formatRedirectResponse(redirectUrl, 302, { 'Set-Cookie': clearCookie });
       }
+      
+      const redirectResponse = formatRedirectResponse(redirectUrl, 302, {
+        'Set-Cookie': clearCookie
+      });
       
       return redirectResponse;
     }

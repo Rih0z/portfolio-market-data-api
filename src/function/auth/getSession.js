@@ -44,7 +44,7 @@ const handler = async (event) => {
       return formatErrorResponse({
         statusCode: 401,
         code: 'NO_SESSION',
-        message: 'セッションが存在しません'
+        message: '認証セッションが存在しません'
       });
     }
     
@@ -55,7 +55,7 @@ const handler = async (event) => {
       return formatErrorResponse({
         statusCode: 401,
         code: 'NO_SESSION',
-        message: 'セッションが存在しません'
+        message: '認証セッションが存在しません'
       });
     }
     
@@ -67,7 +67,7 @@ const handler = async (event) => {
       return formatErrorResponse({
         statusCode: 401,
         code: 'SESSION_EXPIRED',
-        message: 'セッションの有効期限が切れています'
+        message: '認証セッションの期限切れです'
       });
     }
     
@@ -101,7 +101,7 @@ const handler = async (event) => {
     return formatErrorResponse({
       statusCode: 401,
       code: 'AUTH_ERROR',
-      message: 'セッション情報の取得中に認証エラーが発生しました',
+      message: '認証エラーが発生しました',
       details: error.message
     });
   }

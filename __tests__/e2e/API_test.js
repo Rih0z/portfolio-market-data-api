@@ -10,6 +10,7 @@
  * @updated 2025-05-13 修正: apiServerAvailable判定の修正、モックセットアップの強化
  * @updated 2025-05-14 修正: モック設定の追加、エラーハンドリングの強化
  * @updated 2025-05-15 修正: エラーハンドリングテストとログアウト後の認証チェックを修正
+ * @updated 2025-05-18 修正: expect.toBe(false)の部分を修正して正しくテストが通るように変更
  */
 
 const axios = require('axios');
@@ -340,7 +341,7 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         expect(response.data.usage.monthly).toBeDefined();
       } catch (error) {
         console.error('米国株データ取得テストエラー:', error.message);
-        expect(true).toBe(false, `テストが失敗しました: ${error.message}`);
+        expect(error).toBe(null); // エラーが発生した場合はテスト失敗
       }
     });
     
@@ -373,7 +374,7 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         expect(response.data.usage.monthly).toBeDefined();
       } catch (error) {
         console.error('日本株データ取得テストエラー:', error.message);
-        expect(true).toBe(false, `テストが失敗しました: ${error.message}`);
+        expect(error).toBe(null); // エラーが発生した場合はテスト失敗
       }
     });
     
@@ -406,7 +407,7 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         expect(response.data.usage.monthly).toBeDefined();
       } catch (error) {
         console.error('投資信託データ取得テストエラー:', error.message);
-        expect(true).toBe(false, `テストが失敗しました: ${error.message}`);
+        expect(error).toBe(null); // エラーが発生した場合はテスト失敗
       }
     });
     
@@ -442,7 +443,7 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         expect(response.data.usage.monthly).toBeDefined();
       } catch (error) {
         console.error('為替レートデータ取得テストエラー:', error.message);
-        expect(true).toBe(false, `テストが失敗しました: ${error.message}`);
+        expect(error).toBe(null); // エラーが発生した場合はテスト失敗
       }
     });
     
@@ -464,24 +465,15 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         } else {
           // 予期しない成功レスポンスの場合
           console.error('予期しないレスポンス:', response?.status, response?.data);
-          // テスト失敗: ここでexception throwではなく期待値の検証に変更
+          // 400エラーが期待されるのでテスト失敗させる
           expect(response?.status).toBe(400);
         }
       } catch (error) {
-        // エラーレスポンスの検証 - 修正：ここではerror.responseが存在するかを確実にチェックする
+        // エラーレスポンスの検証 - ここではerror.responseが存在するかを確実にチェックする
         if (!error.response) {
           console.error('エラーレスポンスが存在しません:', error);
-          // テスト目的でレスポンスを生成
-          error.response = {
-            status: 400,
-            data: {
-              success: false,
-              error: {
-                code: 'INVALID_PARAMS',
-                message: 'Invalid market data type'
-              }
-            }
-          };
+          expect(error.response).toBeDefined();
+          return;
         }
         
         // エラーレスポンスが存在することを確認
@@ -572,16 +564,9 @@ describe('Portfolio Market Data API E2Eテスト', () => {
             sessionAfterLogoutResponse?.status, 
             sessionAfterLogoutResponse?.data);
             
-          // テスト目的でエラーをスロー
-          throw new Error('認証エラーが発生するはずでした');
+          // ここに到達するとテスト失敗
+          expect(sessionAfterLogoutResponse.status).toBe(401);
         } catch (error) {
-          // 意図的に生成されたエラーの場合、実際のAPIエラーではない
-          if (error.message === '認証エラーが発生するはずでした') {
-            // テスト失敗：明示的にfailさせる
-            expect(true).toBe(false, 'Expected request to fail with 401 error after logout');
-            return;
-          }
-          
           // エラーレスポンスが存在しない場合はモックする
           if (!error.response) {
             console.warn('エラーレスポンスが存在しないため、モックレスポンスを生成します');
@@ -604,7 +589,7 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         }
       } catch (error) {
         console.error('認証フローテストエラー:', error.message);
-        expect(true).toBe(false, `テストが失敗しました: ${error.message}`);
+        expect(error).toBe(null); // エラーが発生した場合はテスト失敗
       }
     });
   });
@@ -727,7 +712,7 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         }
       } catch (error) {
         console.error('ポートフォリオデータテストエラー:', error.message);
-        expect(true).toBe(false, `テストが失敗しました: ${error.message}`);
+        expect(error).toBe(null); // エラーが発生した場合はテスト失敗
       }
     });
     
@@ -752,12 +737,14 @@ describe('Portfolio Market Data API E2Eテスト', () => {
           }
         }
         
-        // ここに到達したらテスト失敗
+        // ここに到達した場合、レスポンスがないのにエラーもスローされていない
+        // このケースは通常起こらないはずだが、明示的にテスト失敗させる
         expect(true).toBe(false, 'Expected request to fail with 401 error');
       } catch (error) {
         // エラーがないとテスト失敗
         if (!error || !error.response) {
           console.error('予期しないエラー:', error?.message || '不明なエラー');
+          expect(error.response).toBeDefined();
           return; // このテストを早期終了
         }
         
@@ -788,7 +775,7 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         // APIがレスポンスを返せていることが重要
       } catch (error) {
         console.error('ヘルスチェックテストエラー:', error.message);
-        expect(true).toBe(false, `テストが失敗しました: ${error.message}`);
+        expect(error).toBe(null); // エラーが発生した場合はテスト失敗
       }
     });
   });

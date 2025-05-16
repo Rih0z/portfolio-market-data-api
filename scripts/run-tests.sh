@@ -1,14 +1,4 @@
-# Jestオプションの追加
-  if [ $QUIET_MODE -eq 1 ]; then
-    # --silent: Jestのコンソール出力を抑制
-    # --no-coverage-reporters: 標準出力にカバレッジを表示しない
-    JEST_ARGS="$JEST_ARGS --silent --no-summary --reporters=./custom-reporter.js"
-    
-    # カバレッジレポーターを非表示に設定
-    if [ $NO_COVERAGE -ne 1 ] && [ $HTML_COVERAGE -ne 1 ]; then
-      JEST_ARGS="$JEST_ARGS --coverageReporters=json --no-coverage-reporters"
-    fi
-  fi#!/bin/bash
+#!/bin/bash
 # 
 # ファイルパス: scripts/run-tests.sh (更新版)
 # 
@@ -750,6 +740,18 @@ else
   JEST_ARGS="$JEST_ARGS --forceExit"
 fi
 
+# Jestオプションの追加
+if [ $QUIET_MODE -eq 1 ]; then
+  # --silent: Jestのコンソール出力を抑制
+  # --no-coverage-reporters: 標準出力にカバレッジを表示しない
+  JEST_ARGS="$JEST_ARGS --silent --no-summary --reporters=./custom-reporter.js"
+  
+  # カバレッジレポーターを非表示に設定
+  if [ $NO_COVERAGE -ne 1 ] && [ $HTML_COVERAGE -ne 1 ]; then
+    JEST_ARGS="$JEST_ARGS --coverageReporters=json --no-coverage-reporters"
+  fi
+fi
+
 # テスト実行コマンドの準備
 JEST_CMD="jest $JEST_ARGS"
 
@@ -914,6 +916,3 @@ else
 fi
 
 exit $TEST_RESULT
-
-
-

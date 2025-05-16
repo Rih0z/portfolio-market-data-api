@@ -6,9 +6,10 @@
  * 
  * @author Portfolio Manager Team
  * @created 2025-05-15
+ * @updated 2025-05-21 インポートパス修正: exchangeRateApi → exchangeRate
  */
 
-const exchangeRateApi = require('../../../../src/services/sources/exchangeRateApi');
+const exchangeRateApi = require('../../../../src/services/sources/exchangeRate');
 const axios = require('axios');
 const { withRetry } = require('../../../../src/utils/retry');
 

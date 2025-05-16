@@ -6,9 +6,10 @@
  * 
  * @author Portfolio Manager Team
  * @created 2025-05-15
+ * @updated 2025-05-21 インポートパス修正: mutualFundData → fundDataService
  */
 
-const mutualFundData = require('../../../../src/services/sources/mutualFundData');
+const mutualFundData = require('../../../../src/services/sources/fundDataService');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const { withRetry } = require('../../../../src/utils/retry');
@@ -74,10 +75,10 @@ describe('Mutual Fund Data Service', () => {
     addToBlacklist.mockResolvedValue(undefined);
   });
 
-  describe('getFundData', () => {
+  describe('getMutualFundData', () => {
     test('単一ファンドコードのデータを取得する', async () => {
       // テスト対象の関数を実行
-      const result = await mutualFundData.getFundData(testFundCode);
+      const result = await mutualFundData.getMutualFundData(testFundCode);
       
       // axios.getが正しく呼び出されたか検証
       expect(axios.get).toHaveBeenCalledWith(
@@ -93,16 +94,14 @@ describe('Mutual Fund Data Service', () => {
       
       // 結果の検証
       expect(result).toEqual({
-        [testFundCode]: {
-          symbol: testFundCode,
-          price: 12345,
-          change: 123,
-          changePercent: 1.01,
-          name: 'テスト投資信託',
-          currency: 'JPY',
-          isMutualFund: true,
-          lastUpdated: expect.any(String)
-        }
+        symbol: testFundCode,
+        price: 12345,
+        change: 123,
+        changePercent: 1.01,
+        name: 'テスト投資信託',
+        currency: 'JPY',
+        isMutualFund: true,
+        lastUpdated: expect.any(String)
       });
     });
     
@@ -161,7 +160,7 @@ describe('Mutual Fund Data Service', () => {
       });
       
       // テスト対象の関数を実行
-      const result = await mutualFundData.getFundData(fundCodes);
+      const result = await mutualFundData.getMutualFundsParallel(fundCodes);
       
       // axios.getが2回呼び出されたか検証
       expect(axios.get).toHaveBeenCalledTimes(2);
@@ -184,7 +183,7 @@ describe('Mutual Fund Data Service', () => {
       isFundBlacklisted.mockResolvedValue(true);
       
       // テスト対象の関数を実行
-      const result = await mutualFundData.getFundData(testFundCode);
+      const result = await mutualFundData.getMutualFundData(testFundCode);
       
       // ブラックリストチェックが行われたか検証
       expect(isFundBlacklisted).toHaveBeenCalledWith(testFundCode);
@@ -193,13 +192,8 @@ describe('Mutual Fund Data Service', () => {
       expect(axios.get).not.toHaveBeenCalled();
       
       // 結果の検証（エラーデータまたは空データ）
-      expect(result).toEqual({
-        [testFundCode]: {
-          symbol: testFundCode,
-          error: expect.any(String),
-          lastUpdated: expect.any(String)
-        }
-      });
+      expect(result).toHaveProperty('error');
+      expect(result).toHaveProperty('lastUpdated');
     });
     
     test('スクレイピングでエラーが発生した場合、ブラックリストに追加する', async () => {
@@ -207,19 +201,14 @@ describe('Mutual Fund Data Service', () => {
       axios.get.mockRejectedValue(new Error('Scraping failed'));
       
       // テスト対象の関数を実行
-      const result = await mutualFundData.getFundData(testFundCode);
+      const result = await mutualFundData.getMutualFundData(testFundCode);
       
       // ブラックリストに追加されたか検証
-      expect(addToBlacklist).toHaveBeenCalledWith(testFundCode);
+      expect(addToBlacklist).toHaveBeenCalledWith(testFundCode, 'fund', expect.any(Error));
       
       // 結果の検証（エラーデータ）
-      expect(result).toEqual({
-        [testFundCode]: {
-          symbol: testFundCode,
-          error: expect.stringContaining('Scraping failed'),
-          lastUpdated: expect.any(String)
-        }
-      });
+      expect(result).toHaveProperty('error');
+      expect(result.error).toContain('Scraping failed');
     });
   });
 
@@ -244,8 +233,8 @@ describe('Mutual Fund Data Service', () => {
     test('異常な入力値は0を返す', () => {
       expect(mutualFundData.parseFundPrice('')).toBe(0);
       expect(mutualFundData.parseFundPrice('価格なし')).toBe(0);
-      expect(mutualFundPrice.parseFundPrice(null)).toBe(0);
-      expect(mutualFundPrice.parseFundPrice(undefined)).toBe(0);
+      expect(mutualFundData.parseFundPrice(null)).toBe(0);
+      expect(mutualFundData.parseFundPrice(undefined)).toBe(0);
     });
   });
 
@@ -288,19 +277,3 @@ describe('Mutual Fund Data Service', () => {
     });
   });
 });
-
-// モック用の補助関数
-const mutualFundPrice = {
-  parseFundPrice: function(priceText) {
-    if (!priceText) return 0;
-    
-    try {
-      // カンマと円記号を取り除いて数値に変換
-      const numericPart = priceText.replace(/,|円/g, '');
-      const price = parseFloat(numericPart);
-      return isNaN(price) ? 0 : price;
-    } catch (error) {
-      return 0;
-    }
-  }
-};

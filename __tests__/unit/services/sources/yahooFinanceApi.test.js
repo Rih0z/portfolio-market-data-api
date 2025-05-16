@@ -6,9 +6,10 @@
  * 
  * @author Portfolio Manager Team
  * @created 2025-05-15
+ * @updated 2025-05-21 インポートパス修正: yahooFinanceApi → yahooFinance
  */
 
-const yahooFinanceApi = require('../../../../src/services/sources/yahooFinanceApi');
+const yahooFinanceApi = require('../../../../src/services/sources/yahooFinance');
 const axios = require('axios');
 const { withRetry } = require('../../../../src/utils/retry');
 
@@ -112,15 +113,13 @@ describe('Yahoo Finance API Adapter', () => {
       
       // 結果の検証
       expect(result).toEqual({
-        [testSymbol]: {
-          symbol: 'AAPL',
-          price: 185.92,
-          change: 2.46,
-          changePercent: 1.34,
-          name: 'Apple Inc.',
-          currency: 'USD',
-          lastUpdated: expect.any(String)
-        }
+        symbol: 'AAPL',
+        price: 185.92,
+        change: 2.46,
+        changePercent: 1.34,
+        name: 'Apple Inc.',
+        currency: 'USD',
+        lastUpdated: expect.any(String)
       });
     });
     
@@ -132,7 +131,7 @@ describe('Yahoo Finance API Adapter', () => {
       });
       
       // 複数シンボルを配列で渡す
-      const result = await yahooFinanceApi.getStockData(testSymbols);
+      const result = await yahooFinanceApi.getStocksData(testSymbols);
       
       // axios.getが正しく呼び出されたか検証
       expect(axios.get).toHaveBeenCalledWith(

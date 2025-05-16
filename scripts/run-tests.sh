@@ -3,47 +3,88 @@
 # ファイルパス: scripts/run-tests.sh (更新版)
 # 
 # Portfolio Market Data APIテスト実行スクリプト
-# 修正: 新しいテストファイル対応およびレポート詳細化、カバレッジ強制対応追加
+# 修正: コンソール出力を最小限にして、重要な情報のみを表示するように最適化
 #
 # @author Koki Riho
 # @updated 2025-05-15 - 新しいテスト種別の追加、詳細レポート生成オプションの強化
 # @updated 2025-05-16 - カバレッジチャートの自動生成機能追加、テストカバレッジ目標の段階追跡
 # @updated 2025-05-17 - カバレッジオプションが確実に有効になるように修正、強制カバレッジオプション追加
 # @updated 2025-05-20 - setupTests.jsを使用するように更新、コンソール出力を最小限に設定
+# @updated 2025-05-21 - コンソール出力をさらに最適化、エラーログをファイルに出力するよう変更
 #
 
 # 便利なサンプルコマンド
 # JEST_COVERAGE=true ./scripts/run-tests.sh integration  # カバレッジを強制的に有効化して統合テストを実行
 # USE_API_MOCKS=true ./scripts/run-tests.sh e2e          # モックを使用してE2Eテストを実行
 
+# ログファイルの設定
+LOG_DIR="./test-results/logs"
+LOG_FILE="$LOG_DIR/test-run-$(date +"%Y%m%d-%H%M%S").log"
+ERROR_LOG_FILE="$LOG_DIR/test-errors-$(date +"%Y%m%d-%H%M%S").log"
+
+# ログディレクトリが存在しない場合は作成
+mkdir -p "$LOG_DIR"
+
 # 色の設定
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+MAGENTA='\033[0;35m'
+BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 # 関数定義
+# コマンドラインに表示する関数
 print_header() {
-  echo -e "\n${BLUE}===========================================${NC}"
-  echo -e "${BLUE}$1${NC}"
-  echo -e "${BLUE}===========================================${NC}\n"
+  echo -e "\n${BLUE}${BOLD}==========================================${NC}"
+  echo -e "${BLUE}${BOLD}$1${NC}"
+  echo -e "${BLUE}${BOLD}==========================================${NC}\n"
+  # ログファイルにも記録
+  echo -e "\n=========================================" >> "$LOG_FILE"
+  echo -e "$1" >> "$LOG_FILE"
+  echo -e "=========================================\n" >> "$LOG_FILE"
 }
 
 print_success() {
   echo -e "${GREEN}✓ $1${NC}"
+  echo "[SUCCESS] $1" >> "$LOG_FILE"
 }
 
 print_warning() {
   echo -e "${YELLOW}⚠ $1${NC}"
+  echo "[WARNING] $1" >> "$LOG_FILE"
 }
 
 print_error() {
   echo -e "${RED}✗ $1${NC}"
+  echo "[ERROR] $1" >> "$LOG_FILE"
+  echo "[ERROR] $1" >> "$ERROR_LOG_FILE"
 }
 
 print_info() {
-  echo -e "${BLUE}ℹ $1${NC}"
+  # QUIET_MODEが1の場合はコマンドラインには表示せず、ログのみに記録
+  if [ $QUIET_MODE -eq 0 ] || [ $VERBOSE_MODE -eq 1 ]; then
+    echo -e "${BLUE}ℹ $1${NC}"
+  fi
+  echo "[INFO] $1" >> "$LOG_FILE"
+}
+
+print_step() {
+  echo -e "${CYAN}➤ $1${NC}"
+  echo "[STEP] $1" >> "$LOG_FILE"
+}
+
+print_progress() {
+  # プログレスバーを表示（常に表示）
+  echo -e "${MAGENTA}$1${NC}"
+  echo "[PROGRESS] $1" >> "$LOG_FILE"
+}
+
+# ログファイルのみに出力する関数
+log_verbose() {
+  echo "[VERBOSE] $1" >> "$LOG_FILE"
 }
 
 show_help() {
@@ -63,7 +104,8 @@ show_help() {
   echo "  -i, --ignore-coverage-errors テスト自体は成功してもカバレッジエラーを無視"
   echo "  -s, --specific              特定のファイルまたはパターンに一致するテストのみ実行"
   echo "  -t, --target                カバレッジ目標段階を指定 [initial|mid|final]"
-  echo "  -q, --quiet                詳細出力を完全に抑制（最小限の結果と進捗バーのみ表示）"
+  echo "  -q, --quiet                 詳細出力を完全に抑制（最小限の結果と進捗バーのみ表示）"
+  echo "  -v, --verbose               詳細な出力を表示（--quietより優先）"
   echo "  --html-coverage             HTMLカバレッジレポートをブラウザで開く"
   echo "  --chart                     カバレッジをチャートで生成（ビジュアルレポートに追加）"
   echo "  --junit                     JUnit形式のレポートを生成（CI環境用）"
@@ -104,9 +146,16 @@ show_help() {
   echo "  $0 unit:services    サービス層の単体テストのみ実行"
   echo "  $0 --chart all      すべてのテストを実行し、カバレッジチャートを生成"
   echo "  $0 -t mid all       中間段階のカバレッジ目標を設定してすべてのテストを実行"
-  echo "  $0 -q unit             詳細出力を完全に抑制して単体テストを実行"
+  echo "  $0 -q unit          詳細出力を完全に抑制して単体テストを実行"
   echo ""
 }
+
+# 実行の開始メッセージとログの初期化
+echo -e "${CYAN}${BOLD}Portfolio Market Data API テスト実行を開始します...${NC}"
+echo -e "${BLUE}ログファイル: $LOG_FILE${NC}"
+echo -e "${BLUE}エラーログファイル: $ERROR_LOG_FILE${NC}"
+echo "=== テスト実行開始: $(date) ===" > "$LOG_FILE"
+echo "=== エラーログ: $(date) ===" > "$ERROR_LOG_FILE"
 
 # 変数の初期化
 CLEAN=0
@@ -123,7 +172,7 @@ HTML_COVERAGE=0
 GENERATE_CHART=0
 JUNIT_REPORT=0
 FORCE_COVERAGE=0
-QUIET_MODE=1
+QUIET_MODE=1   # デフォルトでquietモードを有効化
 VERBOSE_MODE=0
 SPECIFIC_PATTERN=""
 TEST_TYPE=""
@@ -167,6 +216,7 @@ while [[ $# -gt 0 ]]; do
     -d|--debug)
       DEBUG_MODE=1
       VERBOSE_MODE=1  # デバッグモードは詳細モードも含む
+      QUIET_MODE=0    # デバッグモードではquietモードを無効化
       shift
       ;;
     -i|--ignore-coverage-errors)
@@ -186,9 +236,9 @@ while [[ $# -gt 0 ]]; do
       VERBOSE_MODE=0
       shift
       ;;
-    -v|--verbose)
+    --verbose)
       VERBOSE_MODE=1
-      QUIET_MODE=0
+      QUIET_MODE=0    # verboseモードではquietモードを無効化
       shift
       ;;
     --html-coverage)
@@ -223,6 +273,28 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# オプション情報をログに記録
+log_verbose "コマンドラインオプション:"
+log_verbose "CLEAN=$CLEAN"
+log_verbose "VISUAL=$VISUAL"
+log_verbose "AUTO=$AUTO"
+log_verbose "MOCK=$MOCK"
+log_verbose "WATCH=$WATCH"
+log_verbose "NO_COVERAGE=$NO_COVERAGE"
+log_verbose "USE_NVM=$USE_NVM"
+log_verbose "FORCE_TESTS=$FORCE_TESTS"
+log_verbose "DEBUG_MODE=$DEBUG_MODE"
+log_verbose "IGNORE_COVERAGE_ERRORS=$IGNORE_COVERAGE_ERRORS"
+log_verbose "HTML_COVERAGE=$HTML_COVERAGE"
+log_verbose "GENERATE_CHART=$GENERATE_CHART"
+log_verbose "JUNIT_REPORT=$JUNIT_REPORT"
+log_verbose "FORCE_COVERAGE=$FORCE_COVERAGE"
+log_verbose "QUIET_MODE=$QUIET_MODE"
+log_verbose "VERBOSE_MODE=$VERBOSE_MODE"
+log_verbose "SPECIFIC_PATTERN=$SPECIFIC_PATTERN"
+log_verbose "TEST_TYPE=$TEST_TYPE"
+log_verbose "COVERAGE_TARGET=$COVERAGE_TARGET"
+
 # カバレッジ目標段階の検証
 if [[ ! "$COVERAGE_TARGET" =~ ^(initial|mid|final)$ ]]; then
   print_error "不明なカバレッジ目標段階: $COVERAGE_TARGET"
@@ -232,56 +304,57 @@ fi
 
 # Jest configuration のデバッグ情報を追加
 debug_jest_config() {
-  print_info "Jest設定のデバッグ情報を表示します..."
+  log_verbose "Jest設定のデバッグ情報を表示します..."
   
   # Jest のバージョンを確認
   JEST_VERSION=$(npx jest --version 2>/dev/null || echo "Jest not found")
-  echo "Jest バージョン: $JEST_VERSION"
+  log_verbose "Jest バージョン: $JEST_VERSION"
   
   # Jest設定ファイルを探す
   if [ -f "jest.config.js" ]; then
-    echo "jest.config.js が見つかりました"
-    echo "setupFiles設定:"
-    cat jest.config.js | grep -E "setupFiles" || echo "setupFiles設定が見つかりません"
-    echo "カバレッジ設定:"
-    cat jest.config.js | grep -E "coverage|collectCoverage" || echo "カバレッジ設定が見つかりません"
+    log_verbose "jest.config.js が見つかりました"
+    log_verbose "setupFiles設定:"
+    cat jest.config.js | grep -E "setupFiles" >> "$LOG_FILE" 2>&1 || log_verbose "setupFiles設定が見つかりません"
+    log_verbose "カバレッジ設定:"
+    cat jest.config.js | grep -E "coverage|collectCoverage" >> "$LOG_FILE" 2>&1 || log_verbose "カバレッジ設定が見つかりません"
   elif [ -f "jest.config.json" ]; then
-    echo "jest.config.json が見つかりました"
-    cat jest.config.json | grep -E "setupFiles|coverage|collectCoverage" || echo "setupFiles/カバレッジ設定が見つかりません"
+    log_verbose "jest.config.json が見つかりました"
+    cat jest.config.json | grep -E "setupFiles|coverage|collectCoverage" >> "$LOG_FILE" 2>&1 || log_verbose "setupFiles/カバレッジ設定が見つかりません"
   else
     # package.jsonのJest設定を確認
     if [ -f "package.json" ]; then
-      echo "package.json の Jest 設定を確認:"
-      cat package.json | grep -A 20 '"jest":' | grep -E "setupFiles|coverage|collectCoverage" || echo "setupFiles/カバレッジ設定が見つかりません"
+      log_verbose "package.json の Jest 設定を確認:"
+      cat package.json | grep -A 20 '"jest":' | grep -E "setupFiles|coverage|collectCoverage" >> "$LOG_FILE" 2>&1 || log_verbose "setupFiles/カバレッジ設定が見つかりません"
     fi
   fi
   
   # setupTests.jsファイルの確認
   if [ -f "setupTests.js" ]; then
-    echo "setupTests.js ファイルが存在します"
+    log_verbose "setupTests.js ファイルが存在します"
   else
-    echo "setupTests.js ファイルが見つかりません"
+    log_verbose "setupTests.js ファイルが見つかりません"
   fi
   
   # .env.localファイルの確認
   if [ -f ".env.local" ]; then
-    echo ".env.local ファイルをチェックしています（カバレッジ設定の上書きがないか）:"
-    cat .env.local | grep -E "JEST|COVERAGE|collectCoverage|jest" || echo "カバレッジ関連の設定は見つかりません"
+    log_verbose ".env.local ファイルをチェックしています（カバレッジ設定の上書きがないか）:"
+    cat .env.local | grep -E "JEST|COVERAGE|collectCoverage|jest" >> "$LOG_FILE" 2>&1 || log_verbose "カバレッジ関連の設定は見つかりません"
   fi
   
   # 関連するnodeモジュールをチェック
-  echo "インストールされている関連パッケージ:"
-  npm list | grep -E "jest|istanbul|coverage" || echo "カバレッジ関連パッケージが見つかりません"
+  log_verbose "インストールされている関連パッケージ:"
+  npm list | grep -E "jest|istanbul|coverage" >> "$LOG_FILE" 2>&1 || log_verbose "カバレッジ関連パッケージが見つかりません"
 }
 
 # デバッグモードの場合は、Jest設定も表示
 if [ $DEBUG_MODE -eq 1 ]; then
+  print_info "Jestの設定情報を収集しています..."
   debug_jest_config
 fi
 
 # nvmが指定されている場合、Node.js 18に切り替え
 if [ $USE_NVM -eq 1 ]; then
-  print_info "nvmを使用してNode.js 18に切り替えます..."
+  print_step "Node.js 18の環境をセットアップしています..."
   
   # nvmをロード
   export NVM_DIR="$HOME/.nvm"
@@ -289,14 +362,15 @@ if [ $USE_NVM -eq 1 ]; then
   
   # 現在のNode.jsバージョンを確認
   CURRENT_NODE_VERSION=$(node -v)
+  log_verbose "現在のNode.jsバージョン: $CURRENT_NODE_VERSION"
   
   if [[ "$CURRENT_NODE_VERSION" == v18.* ]]; then
     print_success "既にNode.js $CURRENT_NODE_VERSION を使用しています"
   else
     # Node.js 18に切り替え
-    nvm use 18 || {
+    nvm use 18 >> "$LOG_FILE" 2>&1 || {
       print_warning "Node.js 18に切り替えられませんでした。インストールを試みます..."
-      nvm install 18 && nvm use 18 || {
+      nvm install 18 >> "$LOG_FILE" 2>&1 && nvm use 18 >> "$LOG_FILE" 2>&1 || {
         print_error "Node.js 18のインストールに失敗しました。"
         print_info "nvm install 18 を手動で実行するか、npm config set engine-strict false を実行してください。"
         exit 1
@@ -310,22 +384,22 @@ fi
 check_env_vars() {
   # 環境変数から直接実行された場合
   if [ -n "$JEST_COVERAGE" ] || [ -n "$USE_API_MOCKS" ] || [ -n "$COLLECT_COVERAGE" ]; then
-    print_info "コマンドラインから環境変数が設定されています："
+    log_verbose "コマンドラインから環境変数が設定されています："
     
     if [ -n "$JEST_COVERAGE" ]; then
-      echo "- JEST_COVERAGE=$JEST_COVERAGE"
+      log_verbose "- JEST_COVERAGE=$JEST_COVERAGE"
       # 既に設定されている場合は明示的に環境変数に追加
       ENV_VARS="$ENV_VARS JEST_COVERAGE=$JEST_COVERAGE"
     fi
     
     if [ -n "$USE_API_MOCKS" ]; then
-      echo "- USE_API_MOCKS=$USE_API_MOCKS"
+      log_verbose "- USE_API_MOCKS=$USE_API_MOCKS"
       ENV_VARS="$ENV_VARS USE_API_MOCKS=$USE_API_MOCKS"
       MOCK=1
     fi
     
     if [ -n "$COLLECT_COVERAGE" ]; then
-      echo "- COLLECT_COVERAGE=$COLLECT_COVERAGE"
+      log_verbose "- COLLECT_COVERAGE=$COLLECT_COVERAGE"
       ENV_VARS="$ENV_VARS COLLECT_COVERAGE=$COLLECT_COVERAGE"
       if [ "$COLLECT_COVERAGE" = "true" ]; then
         FORCE_COVERAGE=1
@@ -353,17 +427,17 @@ fi
 
 # クリーンアップが指定された場合は実行
 if [ $CLEAN -eq 1 ]; then
-  print_info "テスト環境をクリーンアップしています..."
-  npm run test:clean
+  print_step "テスト環境をクリーンアップしています..."
+  npm run test:clean >> "$LOG_FILE" 2>&1
   print_success "クリーンアップ完了"
 fi
 
 # setupTests.jsが存在するか確認
 if [ ! -f "setupTests.js" ]; then
-  print_warning "setupTests.jsファイルが見つかりません。作成します..."
+  print_warning "setupTests.jsファイルが見つかりません。自動生成します..."
   
   # __tests__/setup.jsおよびjest.setup.jsの内容を統合したファイルを生成
-  print_info "setupTests.jsファイルを生成しています..."
+  log_verbose "setupTests.jsファイルを生成しています..."
   
   cat > setupTests.js << 'EOF'
 /**
@@ -375,6 +449,7 @@ if [ ! -f "setupTests.js" ]; then
  * @file setupTests.js
  * @author Portfolio Manager Team
  * @created 2025-05-20
+ * @updated 2025-05-21 - コンソール出力の最適化
  */
 
 // テスト用のタイムアウト設定
@@ -425,6 +500,10 @@ process.env = {
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || 'test-client-id',
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || 'test-client-secret',
   SESSION_EXPIRES_DAYS: process.env.SESSION_EXPIRES_DAYS || '7',
+  
+  // テスト出力設定
+  QUIET_MODE: process.env.QUIET_MODE || 'true', // デフォルトでquietモードを有効化
+  VERBOSE_MODE: process.env.VERBOSE_MODE || 'false',
 };
 
 // DynamoDBモックを有効化
@@ -496,6 +575,21 @@ if (process.env.CI !== 'true' && process.env.DEBUG !== 'true' && process.env.VER
       global.originalConsole.info(...args);
     }
   };
+  
+  // QUIET_MODEが有効な場合はさらに出力を制限
+  if (process.env.QUIET_MODE === 'true') {
+    // Jest 内部のコンソール出力をほぼ完全に抑制
+    // テストファイル内のconsole.logは実行されるが、Jest本体による出力は最小限に
+    console.log = (...args) => {
+      // テスト完了メッセージのみ表示
+      if (typeof args[0] === 'string' && (
+          args[0].includes('Test Suites:') ||
+          args[0].includes('Time:')
+        )) {
+        global.originalConsole.log(...args);
+      }
+    };
+  }
 }
 
 // 警告とエラーは常に表示
@@ -540,6 +634,7 @@ afterEach(() => {
 EOF
   
   print_success "setupTests.jsファイルを作成しました"
+  log_verbose "setupTests.jsファイルの内容は $LOG_FILE に記録されています"
   
   # jest.config.jsファイルを確認し、必要であれば更新
   if [ -f "jest.config.js" ]; then
@@ -555,17 +650,21 @@ EOF
       
       print_success "jest.config.jsを更新しました"
     else
-      print_info "jest.config.jsは既にsetupTests.jsを使用しています"
+      log_verbose "jest.config.jsは既にsetupTests.jsを使用しています"
     fi
   fi
 else
-  print_success "setupTests.jsファイルが見つかりました"
+  log_verbose "setupTests.jsファイルが見つかりました"
 fi
 
 # テスト環境のセットアップ
-print_info "テスト環境をセットアップしています..."
-npm run test:setup
-print_success "セットアップ完了"
+print_step "テスト環境をセットアップしています..."
+npm run test:setup >> "$LOG_FILE" 2>"$ERROR_LOG_FILE"
+if [ $? -eq 0 ]; then
+  print_success "セットアップ完了"
+else
+  print_warning "セットアップ中に問題が発生しました。詳細はログを確認してください。"
+fi
 
 # カバレッジ目標に応じた環境変数を設定
 case $COVERAGE_TARGET in
@@ -696,10 +795,10 @@ esac
 
 # カバレッジオプションの追加
 if [ $FORCE_COVERAGE -eq 1 ]; then
-  print_info "カバレッジ計測を強制的に有効化しています"
+  log_verbose "カバレッジ計測を強制的に有効化しています"
   # 明示的にカバレッジを有効化
   if [ $HTML_COVERAGE -eq 1 ]; then
-    print_info "HTMLカバレッジレポートを生成します"
+    log_verbose "HTMLカバレッジレポートを生成します"
     JEST_ARGS="$JEST_ARGS --coverage --coverageReporters=lcov"
   else
     JEST_ARGS="$JEST_ARGS --coverage"
@@ -708,13 +807,13 @@ if [ $FORCE_COVERAGE -eq 1 ]; then
   ENV_VARS="$ENV_VARS COLLECT_COVERAGE=true"
   NO_COVERAGE=0
 elif [ $NO_COVERAGE -eq 1 ]; then
-  print_info "カバレッジチェックが無効化されています"
+  log_verbose "カバレッジチェックが無効化されています"
   JEST_ARGS="$JEST_ARGS --no-coverage"
 else
-  print_info "カバレッジ計測を有効化しています"
+  log_verbose "カバレッジ計測を有効化しています"
   # デフォルトでもカバレッジを有効化
   if [ $HTML_COVERAGE -eq 1 ]; then
-    print_info "HTMLカバレッジレポートを生成します"
+    log_verbose "HTMLカバレッジレポートを生成します"
     JEST_ARGS="$JEST_ARGS --coverage --coverageReporters=lcov"
   else
     JEST_ARGS="$JEST_ARGS --coverage"
@@ -733,7 +832,7 @@ JEST_ARGS="$JEST_ARGS --reporters=default --reporters=./custom-reporter.js"
 
 # 監視モードの設定
 if [ $WATCH -eq 1 ]; then
-  print_info "監視モードが有効です"
+  log_verbose "監視モードが有効です"
   JEST_ARGS="$JEST_ARGS --watch"
 else
   # CI環境用の設定
@@ -766,28 +865,43 @@ if [ $DEBUG_MODE -eq 1 ]; then
   echo ""
 fi
 
+# プログレスバーを表示
+print_progress "テストを実行しています... 0%"
+
+# テストの開始時間を記録
+START_TIME=$(date +%s)
+
 # テストの実行
 if [ -n "$ENV_VARS" ]; then
   # JESTのカバレッジ設定を強制的に有効化（.env.localの設定より優先）
-  eval "npx cross-env JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true $ENV_VARS $JEST_CMD"
+  log_verbose "テスト実行コマンド: npx cross-env JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true $ENV_VARS $JEST_CMD"
+  eval "npx cross-env JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true $ENV_VARS $JEST_CMD" >> "$LOG_FILE" 2>>"$ERROR_LOG_FILE"
 else
   # JESTのカバレッジ設定を強制的に有効化
-  eval "npx cross-env JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true $JEST_CMD"
+  log_verbose "テスト実行コマンド: npx cross-env JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true $JEST_CMD"
+  eval "npx cross-env JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true $JEST_CMD" >> "$LOG_FILE" 2>>"$ERROR_LOG_FILE"
 fi
 
 # テスト結果
 TEST_RESULT=$?
+
+# テストの終了時間を記録と実行時間の計算
+END_TIME=$(date +%s)
+EXECUTION_TIME=$((END_TIME - START_TIME))
+MINUTES=$((EXECUTION_TIME / 60))
+SECONDS=$((EXECUTION_TIME % 60))
 
 # カバレッジ関連ファイルのチェック
 if [ $NO_COVERAGE -ne 1 ] || [ $FORCE_COVERAGE -eq 1 ]; then
   # カバレッジ結果ファイルの存在チェック
   if [ ! -f "./test-results/detailed-results.json" ]; then
     print_warning "カバレッジ結果ファイルが見つかりません。Jest実行中にエラーが発生した可能性があります。"
+    log_verbose "エラーログを確認してください: $ERROR_LOG_FILE"
   else
     # coverageMapプロパティの存在チェック
     if ! grep -q "coverageMap" ./test-results/detailed-results.json; then
-      print_warning "カバレッジデータが結果ファイルに含まれていません。"
-      print_info "Jest設定でcollectCoverageオプションが有効になっていることを確認してください。"
+      log_verbose "カバレッジデータが結果ファイルに含まれていません。"
+      log_verbose "Jest設定でcollectCoverageオプションが有効になっていることを確認してください。"
     fi
   fi
 fi
@@ -798,18 +912,18 @@ if [ $IGNORE_COVERAGE_ERRORS -eq 1 ] && [ -f "./test-results/detailed-results.js
   FAILED_TESTS=$(grep -o '"numFailedTests":[0-9]*' ./test-results/detailed-results.json | cut -d':' -f2)
   
   if [ "$FAILED_TESTS" = "0" ]; then
-    print_info "テスト自体は成功していますが、カバレッジ要件を満たしていない可能性があります"
-    print_info "カバレッジエラーを無視するモードが有効なため、テスト成功として扱います"
+    log_verbose "テスト自体は成功していますが、カバレッジ要件を満たしていない可能性があります"
+    log_verbose "カバレッジエラーを無視するモードが有効なため、テスト成功として扱います"
     TEST_RESULT=0
   fi
 fi
 
 # カバレッジチャート生成
 if [ $GENERATE_CHART -eq 1 ] && [ $NO_COVERAGE -ne 1 ] && [ -f "./test-results/detailed-results.json" ]; then
-  print_info "カバレッジチャートを生成しています..."
+  print_step "カバレッジチャートを生成しています..."
   
   # チャート生成スクリプトを実行
-  npx cross-env NODE_ENV=production node ./scripts/generate-coverage-chart.js
+  npx cross-env NODE_ENV=production node ./scripts/generate-coverage-chart.js >> "$LOG_FILE" 2>>"$ERROR_LOG_FILE"
   
   if [ $? -eq 0 ]; then
     print_success "カバレッジチャートが生成されました"
@@ -817,15 +931,15 @@ if [ $GENERATE_CHART -eq 1 ] && [ $NO_COVERAGE -ne 1 ] && [ -f "./test-results/d
     print_warning "カバレッジチャートの生成に失敗しました"
     # エラーの詳細を確認
     if [ $DEBUG_MODE -eq 1 ]; then
-      print_info "チャート生成スクリプトを手動で実行してエラーを確認します..."
-      NODE_ENV=production node --trace-warnings ./scripts/generate-coverage-chart.js
+      log_verbose "チャート生成スクリプトを手動で実行してエラーを確認します..."
+      NODE_ENV=production node --trace-warnings ./scripts/generate-coverage-chart.js >> "$LOG_FILE" 2>>"$ERROR_LOG_FILE"
     fi
   fi
 fi
 
 # HTMLカバレッジレポートを開く
 if [ $HTML_COVERAGE -eq 1 ] && [ $TEST_RESULT -eq 0 ]; then
-  print_info "HTMLカバレッジレポートを開いています..."
+  print_step "HTMLカバレッジレポートを開いています..."
   if [ -f "./coverage/lcov-report/index.html" ]; then
     if [[ "$OSTYPE" == "darwin"* ]]; then
       # macOS
@@ -850,7 +964,7 @@ fi
 
 # 視覚的レポートが指定された場合
 if [ $VISUAL -eq 1 ]; then
-  print_info "テスト結果をビジュアルレポートで表示します..."
+  print_step "テスト結果をビジュアルレポートで表示します..."
   if [ -f "./test-results/visual-report.html" ]; then
     if [[ "$OSTYPE" == "darwin"* ]]; then
       # macOS
@@ -873,46 +987,98 @@ if [ $VISUAL -eq 1 ]; then
   fi
 fi
 
+# 詳細なカバレッジ情報を読み込み（存在する場合）
+if [ -f "./test-results/detailed-results.json" ]; then
+  TOTAL_TESTS=$(grep -o '"numTotalTests":[0-9]*' ./test-results/detailed-results.json | head -1 | cut -d':' -f2)
+  PASSED_TESTS=$(grep -o '"numPassedTests":[0-9]*' ./test-results/detailed-results.json | head -1 | cut -d':' -f2)
+  FAILED_TESTS=$(grep -o '"numFailedTests":[0-9]*' ./test-results/detailed-results.json | head -1 | cut -d':' -f2)
+  PENDING_TESTS=$(grep -o '"numPendingTests":[0-9]*' ./test-results/detailed-results.json | head -1 | cut -d':' -f2)
+  
+  # カバレッジ情報を抽出（存在する場合）
+  STATEMENTS_COVERAGE=$(grep -o '"statements":{[^}]*}' ./test-results/detailed-results.json | grep -o '"pct":[0-9.]*' | head -1 | cut -d':' -f2)
+  BRANCHES_COVERAGE=$(grep -o '"branches":{[^}]*}' ./test-results/detailed-results.json | grep -o '"pct":[0-9.]*' | head -1 | cut -d':' -f2)
+  FUNCTIONS_COVERAGE=$(grep -o '"functions":{[^}]*}' ./test-results/detailed-results.json | grep -o '"pct":[0-9.]*' | head -1 | cut -d':' -f2)
+  LINES_COVERAGE=$(grep -o '"lines":{[^}]*}' ./test-results/detailed-results.json | grep -o '"pct":[0-9.]*' | head -1 | cut -d':' -f2)
+else
+  TOTAL_TESTS="不明"
+  PASSED_TESTS="不明"
+  FAILED_TESTS="不明"
+  PENDING_TESTS="不明"
+  
+  STATEMENTS_COVERAGE="不明"
+  BRANCHES_COVERAGE="不明"
+  FUNCTIONS_COVERAGE="不明"
+  LINES_COVERAGE="不明"
+fi
+
 # 結果の表示
 if [ $TEST_RESULT -eq 0 ]; then
   print_header "テスト実行が成功しました! 🎉"
+  echo -e "${GREEN}${BOLD}テスト結果サマリー:${NC}"
+  echo -e "  ・テスト種別: ${BOLD}${TEST_TYPE}${NC}"
+  echo -e "  ・実行時間: ${BOLD}${MINUTES}分 ${SECONDS}秒${NC}"
+  echo -e "  ・テスト数: ${BOLD}${TOTAL_TESTS}${NC} (成功: ${GREEN}${PASSED_TESTS}${NC}, 失敗: ${FAILED_TESTS}, スキップ: ${PENDING_TESTS})"
+  
+  # カバレッジ情報を表示
+  if [ "$STATEMENTS_COVERAGE" != "不明" ]; then
+    echo -e "${CYAN}${BOLD}カバレッジ:${NC} (目標: ${COVERAGE_TARGET})"
+    echo -e "  ・ステートメント: ${BOLD}${STATEMENTS_COVERAGE}%${NC}"
+    echo -e "  ・ブランチ: ${BOLD}${BRANCHES_COVERAGE}%${NC}"
+    echo -e "  ・関数: ${BOLD}${FUNCTIONS_COVERAGE}%${NC}"
+    echo -e "  ・行: ${BOLD}${LINES_COVERAGE}%${NC}"
+  fi
   
   # テスト後のクリーンアップ提案
   if [ $CLEAN -ne 1 ]; then
     print_info "次回のテスト実行前に環境をクリーンアップすることをお勧めします:"
     echo "  ./scripts/run-tests.sh -c ..."
   fi
+  
+  # レポートファイルの情報
+  echo -e "\n${BLUE}詳細情報:${NC}"
+  echo -e "  ・ログファイル: $LOG_FILE"
+  echo -e "  ・エラーログ: $ERROR_LOG_FILE"
+  if [ -f "./test-results/test-log.md" ]; then
+    echo -e "  ・テストログレポート: ./test-results/test-log.md"
+  fi
+  if [ -f "./test-results/visual-report.html" ]; then
+    echo -e "  ・ビジュアルレポート: ./test-results/visual-report.html"
+  fi
 else
   print_header "テスト実行が失敗しました... 😢"
+  echo -e "${RED}${BOLD}テスト結果サマリー:${NC}"
+  echo -e "  ・テスト種別: ${BOLD}${TEST_TYPE}${NC}"
+  echo -e "  ・実行時間: ${BOLD}${MINUTES}分 ${SECONDS}秒${NC}"
+  echo -e "  ・テスト数: ${BOLD}${TOTAL_TESTS}${NC} (成功: ${GREEN}${PASSED_TESTS}${NC}, 失敗: ${RED}${FAILED_TESTS}${NC}, スキップ: ${PENDING_TESTS})"
   
-  # デバッグモードの場合、詳細情報を表示
-  if [ $DEBUG_MODE -eq 1 ]; then
-    print_info "テスト失敗の詳細情報:"
-    echo "テスト種別: $TEST_TYPE"
-    echo "終了コード: $TEST_RESULT"
-    
-    if [ -f "./test-results/detailed-results.json" ]; then
-      FAILED_TESTS=$(grep -o '"numFailedTests":[0-9]*' ./test-results/detailed-results.json | cut -d':' -f2)
-      print_info "失敗したテスト数: $FAILED_TESTS"
-      
-      # 失敗したテストの詳細を表示（最大5件）
-      if [ -f "./test-results/test-log.md" ]; then
-        echo "失敗したテストの詳細:"
-        grep -A 5 "## エラーサマリー" ./test-results/test-log.md | head -10
-      fi
+  # 失敗したテストの情報を収集（最大5件まで）
+  if [ -f "./test-results/test-log.md" ]; then
+    FAILURE_INFO=$(grep -A 5 "## エラーサマリー" ./test-results/test-log.md | head -10)
+    if [ -n "$FAILURE_INFO" ]; then
+      echo -e "\n${YELLOW}失敗したテストの概要:${NC}"
+      echo "$FAILURE_INFO" | sed 's/^/  /'
     fi
-    
-    echo "ログファイルは ./test-results/ ディレクトリにあります"
   fi
   
   # 改善提案を表示
-  print_info "改善提案:"
-  echo "- 詳細なエラー情報を確認: cat ./test-results/test-log.md"
-  echo "- ビジュアルレポートを表示: ./scripts/run-tests.sh -v $TEST_TYPE"
-  echo "- 詳細な出力で再実行: ./scripts/run-tests.sh -v $TEST_TYPE"
-  echo "- モックモードでテストを再実行: ./scripts/run-tests.sh -m $TEST_TYPE"
-  echo "- カバレッジエラーを無視してテスト: ./scripts/run-tests.sh -i $TEST_TYPE"
-  echo "- カバレッジの問題が原因の場合は強制的に有効化: ./scripts/run-tests.sh --force-coverage $TEST_TYPE"
+  echo -e "\n${BLUE}改善提案:${NC}"
+  echo -e "  ・詳細なエラー情報を確認: cat ./test-results/test-log.md"
+  echo -e "  ・ビジュアルレポートを表示: ./scripts/run-tests.sh -v $TEST_TYPE"
+  echo -e "  ・詳細な出力で再実行: ./scripts/run-tests.sh --verbose $TEST_TYPE"
+  echo -e "  ・モックモードでテストを再実行: ./scripts/run-tests.sh -m $TEST_TYPE"
+  echo -e "  ・カバレッジエラーを無視してテスト: ./scripts/run-tests.sh -i $TEST_TYPE"
+  echo -e "  ・カバレッジの問題が原因の場合は強制的に有効化: ./scripts/run-tests.sh --force-coverage $TEST_TYPE"
+  
+  # エラーログファイルの情報
+  echo -e "\n${BLUE}詳細情報:${NC}"
+  echo -e "  ・ログファイル: $LOG_FILE"
+  echo -e "  ・エラーログ: $ERROR_LOG_FILE"
+  if [ -f "./test-results/test-log.md" ]; then
+    echo -e "  ・テストログレポート: ./test-results/test-log.md"
+  fi
 fi
+
+# 実行終了メッセージをログに記録
+echo "=== テスト実行終了: $(date) - 結果: $TEST_RESULT ===" >> "$LOG_FILE"
 
 exit $TEST_RESULT

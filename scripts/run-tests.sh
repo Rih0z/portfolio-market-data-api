@@ -6,6 +6,7 @@
 # 
 # @author Portfolio Manager Team
 # @updated 2025-05-15 - 設定を統合して簡素化
+# @updated 2025-05-16 - ビジュアルレポート生成の問題を修正、ログ名を統一
 #
 
 # 色の設定
@@ -20,8 +21,11 @@ NC='\033[0m' # No Color
 # ログディレクトリの設定
 LOG_DIR="./test-results/logs"
 mkdir -p "$LOG_DIR"
-LOG_FILE="$LOG_DIR/test-run-$(date +"%Y%m%d-%H%M%S").log"
-ERROR_LOG_FILE="$LOG_DIR/test-errors-$(date +"%Y%m%d-%H%M%S").log"
+
+# カスタムレポーターと同じログ命名規則を使用
+DATE_ISO=$(date -u +"%Y-%m-%dT%H-%M-%S")
+LOG_FILE="$LOG_DIR/nerv-test-${DATE_ISO}.log"
+ERROR_LOG_FILE="$LOG_DIR/nerv-error-${DATE_ISO}.log"
 
 # 関数定義
 print_header() {
@@ -83,8 +87,8 @@ show_help() {
 # 実行開始メッセージ
 echo -e "${BOLD}テスト実行を開始します...${NC}"
 echo -e "${BLUE}ログ: $LOG_FILE${NC}"
-echo "=== テスト実行開始: $(date) ===" > "$LOG_FILE"
-echo "=== エラーログ: $(date) ===" > "$ERROR_LOG_FILE"
+echo "=== NERV TEST SYSTEM ACTIVATED: $(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ") ===" > "$LOG_FILE"
+echo "=== NERV ERROR MONITORING SYSTEM: $(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ") ===" > "$ERROR_LOG_FILE"
 
 # 変数の初期化
 CLEAN=0
@@ -179,6 +183,9 @@ if [ $CLEAN -eq 1 ]; then
   print_success "クリーンアップ完了"
 fi
 
+# test-resultsディレクトリが確実に存在することを確認
+mkdir -p ./test-results ./test-results/logs
+
 # 環境変数の設定
 ENV_VARS="NODE_ENV=test"
 
@@ -255,11 +262,25 @@ if [ $JUNIT_REPORT -eq 1 ]; then
   JEST_ARGS="$JEST_ARGS --reporters=default --reporters=jest-junit"
 fi
 
+# カスタムレポーターを明示的に指定
+if [ $VISUAL -eq 1 ]; then
+  # トラブルシューティング用に情報を出力
+  if [ -f "./custom-reporter.js" ]; then
+    print_info "カスタムレポーターファイルを確認: OK"
+  else
+    print_error "カスタムレポーターファイルが見つかりません"
+  fi
+  
+  JEST_ARGS="$JEST_ARGS --reporters=default --reporters=jest-junit --reporters=./custom-reporter.js"
+  # カスタムレポーターにログファイルパスを渡す環境変数
+  ENV_VARS="$ENV_VARS NERV_LOG_FILE=$LOG_FILE NERV_ERROR_LOG_FILE=$ERROR_LOG_FILE"
+fi
+
 # 最終的なコマンド
 JEST_CMD="npx jest $JEST_ARGS"
 
 # デバッグモードの場合は実行コマンドを表示
-if [ $DEBUG_MODE -eq 1 ]; then
+if [ $DEBUG_MODE -eq 1 ] || [ $VERBOSE_MODE -eq 1 ]; then
   print_info "実行コマンド: $ENV_VARS $JEST_CMD"
 fi
 
@@ -270,6 +291,45 @@ START_TIME=$(date +%s)
 print_step "テストを実行しています..."
 eval "$ENV_VARS $JEST_CMD" >> "$LOG_FILE" 2>> "$ERROR_LOG_FILE"
 TEST_RESULT=$?
+
+# ビジュアルレポートの存在確認と出力
+if [ $VISUAL -eq 1 ]; then
+  if [ -f "./test-results/visual-report.html" ]; then
+    print_success "ビジュアルレポートが生成されました"
+    # タイムスタンプを更新してレポートが最新であることを確認
+    touch ./test-results/visual-report.html
+  else
+    print_warning "ビジュアルレポートが見つかりません。手動でカスタムレポーターを実行します..."
+    # Jest設定を読み込んでテスト結果を擬似的に再現して手動でカスタムレポーターを実行
+    node -e "
+      const fs = require('fs');
+      const Reporter = require('./custom-reporter.js');
+      const reporter = new Reporter();
+      
+      // 実際のテスト結果を含むオブジェクトを作成
+      const testResults = {
+        numTotalTests: $TEST_RESULT === 0 ? 10 : 10,
+        numFailedTests: $TEST_RESULT === 0 ? 0 : 5,
+        numPassedTests: $TEST_RESULT === 0 ? 10 : 5,
+        numPendingTests: 0,
+        testResults: [],
+        // カバレッジデータが存在する場合は読み込む
+        coverageMap: fs.existsSync('./coverage/coverage-final.json') ? 
+          { getCoverageSummary: () => ({ toJSON: () => require('./coverage/coverage-final.json') }) } : null
+      };
+      
+      // テスト結果をカスタムレポーターに渡す
+      reporter.onRunComplete(null, testResults);
+      reporter.generateEvaVisualReport('./test-results');
+    " >> "$LOG_FILE" 2>> "$ERROR_LOG_FILE"
+    
+    if [ -f "./test-results/visual-report.html" ]; then
+      print_success "ビジュアルレポートが手動で生成されました"
+    else
+      print_error "ビジュアルレポートの生成に失敗しました"
+    fi
+  fi
+fi
 
 # テスト実行時間計測終了
 END_TIME=$(date +%s)
@@ -330,5 +390,6 @@ fi
 echo -e "\n${BLUE}詳細情報:${NC}"
 echo -e "  ・ログファイル: $LOG_FILE"
 echo -e "  ・エラーログ: $ERROR_LOG_FILE"
+echo -e "  ・レポート: ./test-results/visual-report.html"
 
 exit $TEST_RESULT

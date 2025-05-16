@@ -1,10 +1,11 @@
 #!/bin/bash
 # 
-# ファイルパス: scripts/run-tests.sh (更新版)
+# ファイルパス: scripts/run-tests.sh (修正版)
 # 
 # Portfolio Market Data APIテスト実行スクリプト
 # 修正: コンソール出力を最小限にして、重要な情報のみを表示するように最適化
 # 修正: ビジュアルレポートとカバレッジチャートをデフォルトで生成するように変更
+# 修正: --detectOpenHandlesオプションのサポート追加
 #
 # @author Koki Riho
 # @updated 2025-05-15 - 新しいテスト種別の追加、詳細レポート生成オプションの強化
@@ -14,6 +15,7 @@
 # @updated 2025-05-21 - コンソール出力をさらに最適化、エラーログをファイルに出力するよう変更
 # @updated 2025-05-25 - JSON解析方法を改善し、テスト数を正確に表示するよう修正
 # @updated 2025-05-15 - ビジュアルレポートとカバレッジチャートをデフォルトで生成するように変更
+# @updated 2025-05-15 - --detectOpenHandlesオプションと環境変数の競合を修正
 #
 
 # 便利なサンプルコマンド
@@ -108,6 +110,7 @@ show_help() {
   echo "  -t, --target                カバレッジ目標段階を指定 [initial|mid|final]"
   echo "  -q, --quiet                 詳細出力を完全に抑制（最小限の結果と進捗バーのみ表示）"
   echo "  -v, --verbose               詳細な出力を表示（--quietより優先）"
+  echo "  --detect-open-handles       テスト終了時に開いたままのリソースを検出"
   echo "  --html-coverage             HTMLカバレッジレポートをブラウザで開く"
   echo "  --no-chart                  カバレッジチャートを生成しない（デフォルトでは生成します）"
   echo "  --no-visual                 ビジュアルレポートをブラウザで自動的に開かない"
@@ -180,6 +183,7 @@ VERBOSE_MODE=0
 SPECIFIC_PATTERN=""
 TEST_TYPE=""
 COVERAGE_TARGET="initial"
+DETECT_OPEN_HANDLES=1  # デフォルトで有効に変更
 
 # オプション解析
 while [[ $# -gt 0 ]]; do
@@ -240,6 +244,14 @@ while [[ $# -gt 0 ]]; do
       QUIET_MODE=0    # verboseモードではquietモードを無効化
       shift
       ;;
+    --detect-open-handles)
+      DETECT_OPEN_HANDLES=1
+      shift
+      ;;
+    --no-detect-open-handles)
+      DETECT_OPEN_HANDLES=0
+      shift
+      ;;
     --html-coverage)
       HTML_COVERAGE=1
       shift
@@ -294,6 +306,7 @@ log_verbose "JUNIT_REPORT=$JUNIT_REPORT"
 log_verbose "FORCE_COVERAGE=$FORCE_COVERAGE"
 log_verbose "QUIET_MODE=$QUIET_MODE"
 log_verbose "VERBOSE_MODE=$VERBOSE_MODE"
+log_verbose "DETECT_OPEN_HANDLES=$DETECT_OPEN_HANDLES"
 log_verbose "SPECIFIC_PATTERN=$SPECIFIC_PATTERN"
 log_verbose "TEST_TYPE=$TEST_TYPE"
 log_verbose "COVERAGE_TARGET=$COVERAGE_TARGET"
@@ -685,7 +698,9 @@ case $COVERAGE_TARGET in
     ;;
 esac
 
-# 環境変数の設定
+# 環境変数の設定 - NODE_ENV=testは基本的に常に設定
+ENV_VARS="NODE_ENV=test $ENV_VARS"
+
 if [ $AUTO -eq 1 ]; then
   ENV_VARS="$ENV_VARS RUN_E2E_TESTS=true"
   print_info "APIサーバー自動起動モードが有効です"
@@ -837,6 +852,11 @@ if [ $WATCH -eq 1 ]; then
   log_verbose "監視モードが有効です"
   JEST_ARGS="$JEST_ARGS --watch"
 else
+  # --detectOpenHandles オプションを追加
+  if [ $DETECT_OPEN_HANDLES -eq 1 ]; then
+    JEST_ARGS="$JEST_ARGS --detectOpenHandles"
+  fi
+  
   # CI環境用の設定
   JEST_ARGS="$JEST_ARGS --forceExit"
 fi
@@ -859,11 +879,7 @@ JEST_CMD="jest $JEST_ARGS"
 # デバッグモードの場合、実行予定のコマンドを表示
 if [ $DEBUG_MODE -eq 1 ]; then
   print_info "実行するJestコマンド:"
-  echo "npx $JEST_CMD"
-  if [ -n "$ENV_VARS" ]; then
-    print_info "環境変数:"
-    echo "$ENV_VARS"
-  fi
+  echo "npx cross-env $ENV_VARS $JEST_CMD"
   echo ""
 fi
 
@@ -874,15 +890,8 @@ print_progress "テストを実行しています... 0%"
 START_TIME=$(date +%s)
 
 # テストの実行
-if [ -n "$ENV_VARS" ]; then
-  # JESTのカバレッジ設定を強制的に有効化（.env.localの設定より優先）
-  log_verbose "テスト実行コマンド: npx cross-env JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true $ENV_VARS $JEST_CMD"
-  eval "npx cross-env JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true $ENV_VARS $JEST_CMD" >> "$LOG_FILE" 2>>"$ERROR_LOG_FILE"
-else
-  # JESTのカバレッジ設定を強制的に有効化
-  log_verbose "テスト実行コマンド: npx cross-env JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true $JEST_CMD"
-  eval "npx cross-env JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true $JEST_CMD" >> "$LOG_FILE" 2>>"$ERROR_LOG_FILE"
-fi
+log_verbose "テスト実行コマンド: npx cross-env $ENV_VARS $JEST_CMD"
+eval "npx cross-env $ENV_VARS $JEST_CMD" >> "$LOG_FILE" 2>>"$ERROR_LOG_FILE"
 
 # テスト結果
 TEST_RESULT=$?

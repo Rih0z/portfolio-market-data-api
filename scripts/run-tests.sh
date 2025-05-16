@@ -11,6 +11,7 @@
 # @updated 2025-05-17 - カバレッジオプションが確実に有効になるように修正、強制カバレッジオプション追加
 # @updated 2025-05-20 - setupTests.jsを使用するように更新、コンソール出力を最小限に設定
 # @updated 2025-05-21 - コンソール出力をさらに最適化、エラーログをファイルに出力するよう変更
+# @updated 2025-05-25 - JSON解析方法を改善し、テスト数を正確に表示するよう修正
 #
 
 # 便利なサンプルコマンド
@@ -987,29 +988,75 @@ if [ $VISUAL -eq 1 ]; then
   fi
 fi
 
-# 詳細なカバレッジ情報を読み込み（存在する場合）
-if [ -f "./test-results/detailed-results.json" ]; then
-  TOTAL_TESTS=$(grep -o '"numTotalTests":[0-9]*' ./test-results/detailed-results.json | head -1 | cut -d':' -f2)
-  PASSED_TESTS=$(grep -o '"numPassedTests":[0-9]*' ./test-results/detailed-results.json | head -1 | cut -d':' -f2)
-  FAILED_TESTS=$(grep -o '"numFailedTests":[0-9]*' ./test-results/detailed-results.json | head -1 | cut -d':' -f2)
-  PENDING_TESTS=$(grep -o '"numPendingTests":[0-9]*' ./test-results/detailed-results.json | head -1 | cut -d':' -f2)
-  
-  # カバレッジ情報を抽出（存在する場合）
-  STATEMENTS_COVERAGE=$(grep -o '"statements":{[^}]*}' ./test-results/detailed-results.json | grep -o '"pct":[0-9.]*' | head -1 | cut -d':' -f2)
-  BRANCHES_COVERAGE=$(grep -o '"branches":{[^}]*}' ./test-results/detailed-results.json | grep -o '"pct":[0-9.]*' | head -1 | cut -d':' -f2)
-  FUNCTIONS_COVERAGE=$(grep -o '"functions":{[^}]*}' ./test-results/detailed-results.json | grep -o '"pct":[0-9.]*' | head -1 | cut -d':' -f2)
-  LINES_COVERAGE=$(grep -o '"lines":{[^}]*}' ./test-results/detailed-results.json | grep -o '"pct":[0-9.]*' | head -1 | cut -d':' -f2)
-else
-  TOTAL_TESTS="不明"
-  PASSED_TESTS="不明"
-  FAILED_TESTS="不明"
-  PENDING_TESTS="不明"
-  
-  STATEMENTS_COVERAGE="不明"
-  BRANCHES_COVERAGE="不明"
-  FUNCTIONS_COVERAGE="不明"
-  LINES_COVERAGE="不明"
-fi
+# JSONファイルからテスト結果を解析するヘルパー関数
+parse_test_results() {
+  local results_file="./test-results/detailed-results.json"
+  if [ ! -f "$results_file" ]; then
+    echo "不明 不明 不明 不明"
+    return
+  fi
+
+  # Node.jsを使用してJSONを解析する
+  node -e "
+    try {
+      const fs = require('fs');
+      const data = JSON.parse(fs.readFileSync('$results_file', 'utf8'));
+      console.log(
+        (data.numTotalTests || 0) + ' ' +
+        (data.numPassedTests || 0) + ' ' +
+        (data.numFailedTests || 0) + ' ' +
+        (data.numPendingTests || 0)
+      );
+    } catch (error) {
+      console.error('Error parsing JSON:', error.message);
+      console.log('不明 不明 不明 不明');
+    }
+  " 2>/dev/null || echo "不明 不明 不明 不明"
+}
+
+# JSONファイルからカバレッジ情報を解析するヘルパー関数
+parse_coverage_results() {
+  local results_file="./test-results/detailed-results.json"
+  if [ ! -f "$results_file" ]; then
+    echo "不明 不明 不明 不明"
+    return
+  fi
+
+  # Node.jsを使用してJSONを解析する
+  node -e "
+    try {
+      const fs = require('fs');
+      const data = JSON.parse(fs.readFileSync('$results_file', 'utf8'));
+      if (data.coverageMap && data.coverageMap.total) {
+        console.log(
+          (data.coverageMap.total.statements.pct || 0) + ' ' +
+          (data.coverageMap.total.branches.pct || 0) + ' ' +
+          (data.coverageMap.total.functions.pct || 0) + ' ' +
+          (data.coverageMap.total.lines.pct || 0)
+        );
+      } else {
+        console.log('不明 不明 不明 不明');
+      }
+    } catch (error) {
+      console.error('Error parsing coverage data:', error.message);
+      console.log('不明 不明 不明 不明');
+    }
+  " 2>/dev/null || echo "不明 不明 不明 不明"
+}
+
+# 詳細なテスト情報を読み込み
+TEST_RESULTS=($(parse_test_results))
+TOTAL_TESTS=${TEST_RESULTS[0]}
+PASSED_TESTS=${TEST_RESULTS[1]}
+FAILED_TESTS=${TEST_RESULTS[2]}
+PENDING_TESTS=${TEST_RESULTS[3]}
+
+# カバレッジ情報を読み込み
+COVERAGE_RESULTS=($(parse_coverage_results))
+STATEMENTS_COVERAGE=${COVERAGE_RESULTS[0]}
+BRANCHES_COVERAGE=${COVERAGE_RESULTS[1]}
+FUNCTIONS_COVERAGE=${COVERAGE_RESULTS[2]}
+LINES_COVERAGE=${COVERAGE_RESULTS[3]}
 
 # 結果の表示
 if [ $TEST_RESULT -eq 0 ]; then
@@ -1082,4 +1129,3 @@ fi
 echo "=== テスト実行終了: $(date) - 結果: $TEST_RESULT ===" >> "$LOG_FILE"
 
 exit $TEST_RESULT
-

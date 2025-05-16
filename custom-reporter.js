@@ -6,6 +6,7 @@
  * 
  * @author Portfolio Manager Team / NERV
  * @created 2025-05-26
+ * @updated 2025-05-15 - 出力ファイル名を visual-report.html に変更
  */
 
 const fs = require('fs');
@@ -140,8 +141,6 @@ class EvaNervReporter {
     this.originalConsole.log(`${color}${prefix}${message}${this.colors.reset}`);
   }
   
-  // その他のメソッド...（既存のコードと同じなので省略）
-
   /**
    * HTMLビジュアルレポートを生成
    * @param {string} outputDir 出力ディレクトリ
@@ -577,6 +576,22 @@ class EvaNervReporter {
               z-index: -1;
             }
             
+            /* カバレッジチャートのスタイル */
+            .coverage-charts {
+              margin-top: 30px;
+              border-top: 1px solid #eee;
+              padding-top: 20px;
+            }
+            .coverage-charts h2 {
+              text-align: center;
+              margin-bottom: 20px;
+            }
+            .chart-container {
+              display: flex;
+              justify-content: center;
+              margin-bottom: 30px;
+            }
+            
             /* レスポンシブ対応 */
             @media (max-width: 768px) {
               .summary {
@@ -822,16 +837,17 @@ class EvaNervReporter {
       
       // カバレッジチャート用のプレースホルダー
       html += `
-        <div class="magi-system">
-          <div class="magi-header">
-            <div class="magi-title">MAGI-SYSTEM/CASPER - 視覚化解析データ</div>
-            <div class="magi-status">OPERATIONAL</div>
-          </div>
-          <div style="text-align: center; padding: 20px;">
-            <!-- カバレッジチャートがここに挿入されます -->
+        <div class="coverage-charts">
+          <h2>コードカバレッジチャート</h2>
+          <div class="chart-container">
+            <!-- バーチャートはここに挿入されます -->
             <p style="color: var(--nerv-green);">グラフデータ解析中...</p>
           </div>
-        </div>
+          <div class="chart-container">
+            <!-- 折れ線チャートはここに挿入されます -->
+            <p style="color: var(--nerv-green);">履歴データ解析中...</p>
+          </div>
+        </div><!-- end coverage-charts -->
       `;
       
       // フッターと終了タグ
@@ -846,9 +862,9 @@ class EvaNervReporter {
         </html>
       `;
       
-      // ファイルに書き込み
-      fs.writeFileSync(path.join(outputDir, 'eva-nerv-report.html'), html);
-      this.log('エヴァンゲリオン風レポートを生成しました: ' + path.join(outputDir, 'eva-nerv-report.html'), 'INFO');
+      // ファイルに書き込み - eva-nerv-report.htmlではなくvisual-report.htmlに出力
+      fs.writeFileSync(path.join(outputDir, 'visual-report.html'), html);
+      this.log('エヴァンゲリオン風レポートを生成しました: ' + path.join(outputDir, 'visual-report.html'), 'INFO');
     } catch (error) {
       this.log('ビジュアルレポート生成中にエラーが発生しました: ' + error.message, 'ERROR');
       
@@ -883,7 +899,7 @@ class EvaNervReporter {
         </html>
       `;
       
-      fs.writeFileSync(path.join(outputDir, 'eva-nerv-report.html'), basicHtml);
+      fs.writeFileSync(path.join(outputDir, 'visual-report.html'), basicHtml);
     }
   }
   
@@ -914,6 +930,51 @@ class EvaNervReporter {
     }
     return '<span style="color: var(--nerv-red); animation: blink 1s infinite;">CRITICAL [×]</span>';
   }
+  
+  /**
+   * カバレッジ目標値を取得
+   * @param {string} level 目標レベル
+   * @returns {Object} しきい値設定
+   */
+  getCoverageThresholds(level) {
+    // デフォルトのしきい値設定
+    const thresholds = {
+      initial: {
+        statements: 30,
+        branches: 20,
+        functions: 25,
+        lines: 30
+      },
+      mid: {
+        statements: 60,
+        branches: 50,
+        functions: 60,
+        lines: 60
+      },
+      final: {
+        statements: 80,
+        branches: 70,
+        functions: 80,
+        lines: 80
+      }
+    };
+    
+    // 設定ファイルからしきい値を取得（可能であれば）
+    try {
+      const reporterConfig = require('./jest-reporter.config.js');
+      if (reporterConfig && reporterConfig.baseOptions && 
+          reporterConfig.baseOptions.coverageReport && 
+          reporterConfig.baseOptions.coverageReport.thresholds) {
+        return reporterConfig.baseOptions.coverageReport.thresholds[level] || thresholds[level];
+      }
+    } catch (error) {
+      this.log('レポーター設定の読み込みに失敗しました: ' + error.message, 'WARNING');
+    }
+    
+    return thresholds[level] || thresholds.initial;
+  }
+  
+  // これ以下にEvaNervReporterクラスの他のメソッドを追加...
 }
 
 module.exports = EvaNervReporter;

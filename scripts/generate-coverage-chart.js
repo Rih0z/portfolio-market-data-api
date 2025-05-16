@@ -6,6 +6,7 @@
  * 
  * @author Portfolio Manager Team
  * @created 2025-05-16
+ * @updated 2025-05-15 - visual-report.htmlとの互換性を修正
  */
 
 const fs = require('fs');
@@ -453,9 +454,24 @@ function embedChartsInReport(barChartSvg, lineChartSvg) {
         </div><!-- end coverage-charts -->`
       );
     } else {
-      // チャートセクションを追加
-      const insertPosition = html.indexOf('</body>');
-      if (insertPosition !== -1) {
+      // カスタムレポーターが生成したHTMLにチャートセクションを追加
+      // チャートセクションがない場合は追加する場所を探す
+      let insertPosition = html.indexOf('</body>');
+      if (insertPosition === -1) {
+        // </body>タグがない場合はファイルの最後に追加
+        insertPosition = html.length;
+        html = html + `
+          <div class="coverage-charts">
+            <h2>コードカバレッジチャート</h2>
+            <div class="chart-container">
+              ${barChartSvg}
+            </div>
+            <div class="chart-container">
+              ${lineChartSvg}
+            </div>
+          </div><!-- end coverage-charts -->
+        `;
+      } else {
         html = html.slice(0, insertPosition) + 
         `<div class="coverage-charts">
           <h2>コードカバレッジチャート</h2>
@@ -494,6 +510,30 @@ function embedChartsInReport(barChartSvg, lineChartSvg) {
         }
         ` + 
         html.slice(stylePosition);
+      } else {
+        // スタイルタグがない場合は追加
+        const headPosition = html.indexOf('</head>');
+        if (headPosition !== -1) {
+          html = html.slice(0, headPosition) + 
+          `<style>
+          /* カバレッジチャートのスタイル */
+          .coverage-charts {
+            margin-top: 30px;
+            border-top: 1px solid #eee;
+            padding-top: 20px;
+          }
+          .coverage-charts h2 {
+            text-align: center;
+            margin-bottom: 20px;
+          }
+          .chart-container {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 30px;
+          }
+          </style>` + 
+          html.slice(headPosition);
+        }
       }
     }
     

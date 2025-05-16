@@ -3,6 +3,7 @@
  * 
  * @file __tests__/testUtils/apiMocks.js
  * @updated 2025-05-15 - モック機能強化、エラーハンドリング改善
+ * @updated 2025-05-20 - クエリパラメータマッチング改善
  */
 
 const nock = require('nock');
@@ -447,32 +448,96 @@ const mockExternalApis = () => {
  * @returns {boolean} 一致する場合はtrue
  */
 const requestMatchesConditions = (req, options) => {
+  const debug = process.env.DEBUG === 'true';
+  
   // クエリパラメータのマッチング
   if (options.queryParams) {
-    const url = new URL(`http://localhost${req.path}`);
-    const queryParams = Object.entries(options.queryParams);
+    // 実際のURLからクエリパラメータを取得
+    let reqParams = {};
+    
+    // パスからクエリパラメータを抽出
+    if (req.path && req.path.includes('?')) {
+      const [path, queryString] = req.path.split('?');
+      const searchParams = new URLSearchParams(queryString);
+      for (const [key, value] of searchParams.entries()) {
+        reqParams[key] = value;
+      }
+    }
+    
+    // reqオブジェクトのqueryプロパティからパラメータを抽出
+    if (req.query) {
+      Object.assign(reqParams, req.query);
+    }
+    
+    // URLからもパラメータを抽出
+    if (req.url) {
+      const url = new URL(`http://example.com${req.url}`);
+      for (const [key, value] of url.searchParams.entries()) {
+        reqParams[key] = value;
+      }
+    }
+    
+    // さらにリクエストオブジェクトからパラメータを抽出 (nockのreq実装に依存)
+    try {
+      if (req.options && req.options.path) {
+        const urlPath = req.options.path;
+        if (urlPath.includes('?')) {
+          const queryString = urlPath.split('?')[1];
+          const searchParams = new URLSearchParams(queryString);
+          for (const [key, value] of searchParams.entries()) {
+            reqParams[key] = value;
+          }
+        }
+      }
+    } catch (e) {
+      // 無視 - これは拡張的な試みです
+    }
+    
+    if (debug) {
+      console.log('Query params matching:');
+      console.log('Expected:', options.queryParams);
+      console.log('Actual:', reqParams);
+      console.log('Request path:', req.path);
+      console.log('Request URL:', req.url);
+    }
+    
+    const expectedParams = Object.entries(options.queryParams);
     
     // 各クエリパラメータが一致するかチェック
-    for (const [key, value] of queryParams) {
-      const paramValue = url.searchParams.get(key);
+    for (const [key, value] of expectedParams) {
+      const paramValue = reqParams[key];
+      
+      if (debug) {
+        console.log(`Checking param ${key}: expected=${value}, actual=${paramValue}`);
+      }
       
       // 値がRegExpの場合はパターンマッチング
       if (value instanceof RegExp) {
         if (!paramValue || !value.test(paramValue)) {
+          if (debug) console.log(`Regex match failed for ${key}`);
           return false;
         }
       } else if (value === undefined) {
         // 未定義の場合はパラメータが存在しないことをチェック
-        if (url.searchParams.has(key)) {
+        if (reqParams.hasOwnProperty(key)) {
+          if (debug) console.log(`Parameter ${key} should not exist but does`);
           return false;
         }
-      } else if (value === expect.any(String)) {
-        // anyStringの場合は文字列であることをチェック
-        if (!paramValue || typeof paramValue !== 'string') {
+      } else if (value === null) {
+        // nullの場合はパラメータが存在するが値がないことをチェック
+        if (!reqParams.hasOwnProperty(key) || reqParams[key] !== '') {
+          if (debug) console.log(`Parameter ${key} should exist with empty value`);
+          return false;
+        }
+      } else if (typeof value === 'object' && value.partialMatch) {
+        // 部分一致の場合（カンマ区切りの値など）
+        if (!paramValue || !paramValue.includes(value.partialMatch)) {
+          if (debug) console.log(`Partial match failed for ${key}`);
           return false;
         }
       } else if (paramValue !== value) {
         // 完全一致をチェック
+        if (debug) console.log(`Exact match failed for ${key}: ${paramValue} !== ${value}`);
         return false;
       }
     }
@@ -480,12 +545,19 @@ const requestMatchesConditions = (req, options) => {
   
   // ヘッダーのマッチング
   if (options.headers) {
+    if (debug) {
+      console.log('Header matching:');
+      console.log('Expected:', options.headers);
+      console.log('Actual:', req.headers);
+    }
+    
     const headers = Object.entries(options.headers);
     
     for (const [key, value] of headers) {
       const headerValue = req.headers[key.toLowerCase()];
       
       if (!headerValue || !headerValue.includes(value)) {
+        if (debug) console.log(`Header match failed for ${key}`);
         return false;
       }
     }
@@ -497,13 +569,26 @@ const requestMatchesConditions = (req, options) => {
       const reqBody = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
       const expectedBody = options.body;
       
+      if (debug) {
+        console.log('Body matching:');
+        console.log('Expected:', expectedBody);
+        console.log('Actual:', reqBody);
+      }
+      
+      // 関数による検証
+      if (typeof expectedBody === 'function') {
+        return expectedBody(reqBody);
+      }
+      
       // 簡易的な比較（深い比較が必要な場合は改良が必要）
       for (const key in expectedBody) {
         if (reqBody[key] !== expectedBody[key]) {
+          if (debug) console.log(`Body match failed for ${key}`);
           return false;
         }
       }
     } catch (error) {
+      if (debug) console.log(`Body parse error: ${error.message}`);
       return false;
     }
   }
@@ -515,13 +600,15 @@ const requestMatchesConditions = (req, options) => {
  * APIリクエストのモックを設定する
  * @param {string} url モックするURL
  * @param {string} method HTTPメソッド
- * @param {object} response レスポンスデータ
+ * @param {object|function} response レスポンスデータ（関数の場合は動的レスポンス）
  * @param {number} statusCode HTTPステータスコード
  * @param {object} headers レスポンスヘッダー
  * @param {object} options 追加オプション（queryParams, headers, bodyなど）
  * @returns {boolean} 成功した場合はtrue
  */
 const mockApiRequest = (url, method = 'GET', response = {}, statusCode = 200, headers = {}, options = {}) => {
+  const debug = process.env.DEBUG === 'true';
+  
   try {
     const urlObj = new URL(url);
     
@@ -532,9 +619,11 @@ const mockApiRequest = (url, method = 'GET', response = {}, statusCode = 200, he
     }
     
     // デバッグ情報
-    const debug = process.env.DEBUG === 'true';
-    if (debug) {
+    if (debug || process.env.MOCK_DEBUG === 'true') {
       console.log(`Setting up mock: ${method.toUpperCase()} ${url}`);
+      if (options.queryParams) {
+        console.log(`With query params: ${JSON.stringify(options.queryParams)}`);
+      }
     }
     
     // モックインスタンスの作成
@@ -543,10 +632,10 @@ const mockApiRequest = (url, method = 'GET', response = {}, statusCode = 200, he
     // 特殊条件の対応
     if (options.queryParams) {
       // クエリパラメータによる条件付きレスポンス
-      mockScope = mockScope[normalizedMethod](urlObj.pathname)
-        .query(() => true);  // 常にtrueを返して、後でリクエストマッチングでフィルタリング
+      // 常にtrueを返して、後でリクエストマッチングでフィルタリング
+      mockScope = mockScope[normalizedMethod](urlObj.pathname).query(() => true);
     } else {
-      // 通常のURLパスとクエリ
+      // 通常のURLパスとクエリ（完全一致）
       mockScope = mockScope[normalizedMethod](urlObj.pathname + urlObj.search);
     }
     
@@ -559,23 +648,24 @@ const mockApiRequest = (url, method = 'GET', response = {}, statusCode = 200, he
       }
     }
     
-    // ヘッダーフィルターの追加（カスタム実装）
-    // options.headersがある場合は、後でフィルタリング
-    
     // レスポンス設定
     mockScope.reply(function(uri, requestBody) {
       // リクエストマッチング
       if (options.queryParams || options.headers || options.body) {
         const matches = requestMatchesConditions(this.req, options);
         if (!matches) {
-          // 条件に一致しなければ、次のモックにパス
-          return nock.cleanAll(); // スコープをリセットして偽の404を避ける
+          // 条件に一致しなければ、スキップして次のモックにパス
+          if (debug) {
+            console.log(`Mock skipped for ${method.toUpperCase()} ${uri} - conditions not met`);
+          }
+          // nockのインターセプターチェーンを続行
+          return null;
         }
       }
       
       // デバッグ情報
       if (debug) {
-        console.log(`Mock received request: ${method.toUpperCase()} ${uri}`);
+        console.log(`Mock matched request: ${method.toUpperCase()} ${uri}`);
         if (requestBody) {
           console.log(`Request body: ${typeof requestBody === 'string' ? requestBody : JSON.stringify(requestBody)}`);
         }
@@ -614,17 +704,23 @@ const mockApiRequest = (url, method = 'GET', response = {}, statusCode = 200, he
         }
       }
       
-      // 遅延実装
+      // 動的レスポンス処理
+      let finalResponse = response;
+      if (typeof response === 'function') {
+        finalResponse = response(uri, requestBody, this.req);
+      }
+      
+      // レスポンス遅延
       if (options.delay && options.delay > 0) {
         return new Promise(resolve => {
           setTimeout(() => {
-            resolve([statusCode, response, headers]);
+            resolve([statusCode, finalResponse, headers]);
           }, options.delay);
         });
       }
       
       // 通常レスポンス
-      return [statusCode, response, headers];
+      return [statusCode, finalResponse, headers];
     });
     
     return true;
@@ -1043,6 +1139,7 @@ module.exports = {
   setupFallbackResponses,
   TEST_DATA,
   sessionState,
+  requestMatchesConditions,
   // 追加機能
   getConfigValue,
   API_CONFIG

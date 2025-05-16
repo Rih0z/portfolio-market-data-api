@@ -8,6 +8,7 @@
  * @author Portfolio Manager Team
  * @created 2025-05-18
  * @updated 2025-05-15 - 設定を統合して最適化
+ * @updated 2025-05-16 - タイムアウト設定のバグを修正
  */
 
 module.exports = {
@@ -52,8 +53,10 @@ module.exports = {
   // 統合セットアップファイルを使用
   setupFiles: ['./setupTests.js'],
   
-  // テストタイムアウト設定
-  testTimeout: 30000,
+  // タイムアウト設定 - 正しいオプション名に修正
+  // 修正: testTimeout -> timeout に変更
+  // テスト単位でタイムアウトを設定する場合は、個別のテストで jest.setTimeout() を使用
+  timeout: 30000, // グローバルデフォルトタイムアウト
   
   // モック設定
   moduleNameMapper: {
@@ -92,20 +95,21 @@ module.exports = {
       displayName: 'unit',
       testMatch: ['**/__tests__/unit/**/*.js'],
       testPathIgnorePatterns: ['/node_modules/'],
-      // テスト種別ごとに異なるタイムアウト値
-      testTimeout: 15000
+      // 修正: 正しいタイムアウトオプション名を使用
+      // testTimeout -> timeoutではなく、jest.setTimeout()を使用
+      setupFilesAfterEnv: ['<rootDir>/jest.setup.unit.js'] // このファイルでjest.setTimeout(15000)を設定
     },
     {
       displayName: 'integration',
       testMatch: ['**/__tests__/integration/**/*.js'],
       testPathIgnorePatterns: ['/node_modules/'],
-      testTimeout: 30000
+      setupFilesAfterEnv: ['<rootDir>/jest.setup.integration.js'] // このファイルでjest.setTimeout(30000)を設定
     },
     {
       displayName: 'e2e',
       testMatch: ['**/__tests__/e2e/**/*.js'],
       testPathIgnorePatterns: ['/node_modules/'],
-      testTimeout: 60000
+      setupFilesAfterEnv: ['<rootDir>/jest.setup.e2e.js'] // このファイルでjest.setTimeout(60000)を設定
     }
   ],
   
@@ -140,4 +144,3 @@ module.exports = {
     }
   }
 };
-

@@ -8,6 +8,7 @@
  * @updated 2025-05-12 修正: APIサーバー自動起動機能の追加、E2Eテスト実行条件の改善
  * @updated 2025-05-14 修正: 環境変数の拡張サポート、デバッグログの追加
  * @updated 2025-05-15 修正: モック初期化プロセスの改善、エラーハンドリング強化
+ * @updated 2025-05-16 修正: テーブル作成のエラーハンドリングと安定性の向上
  */
 const { startDynamoDBLocal, stopDynamoDBLocal, createTestTable } = require('./dynamodbLocal');
 const { setupMockServer, stopMockServer } = require('./mockServer');
@@ -27,6 +28,7 @@ console.log('================================');
 
 /**
  * テスト環境をセットアップする
+ * 修正: テーブル作成の順序とエラーハンドリングを改善
  */
 const setupTestEnvironment = async () => {
   try {
@@ -113,32 +115,70 @@ const setupTestEnvironment = async () => {
       }
     }
     
-    // DynamoDB Localを起動
+    // DynamoDB Localを起動 - まず最初に実行して利用可能にする
     try {
       await startDynamoDBLocal();
       console.log('✅ DynamoDB Local started successfully');
+      
+      // 短い待機を追加して確実に起動するようにする
+      await new Promise(resolve => setTimeout(resolve, 1000));
     } catch (dbError) {
       console.warn(`DynamoDB Local startup warning: ${dbError.message}`);
       console.warn('Continuing with tests, but DynamoDB-dependent tests may fail');
     }
     
-    // テスト用のテーブルを作成 - 並列に処理して高速化
+    // テスト用のテーブルを作成 - 逐次処理に変更して信頼性を高める
     try {
-      const tableCreationPromises = [
-        createTestTable(process.env.SESSION_TABLE || 'test-sessions', { sessionId: 'S' }),
-        createTestTable(`${process.env.DYNAMODB_TABLE_PREFIX || 'test-'}cache`, { key: 'S' }),
-        createTestTable(`${process.env.DYNAMODB_TABLE_PREFIX || 'test-'}scraping-blacklist`, { symbol: 'S' })
-      ];
+      // テーブル名を明示的に設定
+      const sessionTableName = process.env.SESSION_TABLE || 'test-sessions';
+      const cacheTableName = `${process.env.DYNAMODB_TABLE_PREFIX || 'test-'}cache`;
+      const blacklistTableName = `${process.env.DYNAMODB_TABLE_PREFIX || 'test-'}scraping-blacklist`;
       
-      // すべてのテーブル作成が完了するか、エラーが発生するまで待機
-      const results = await Promise.allSettled(tableCreationPromises);
+      // 逐次処理でテーブルを作成 - エラーが発生しても全体が失敗しないようにする
+      console.log('Creating test tables sequentially for better reliability...');
       
-      // 結果をログに出力（オプショナル）
-      const successCount = results.filter(r => r.status === 'fulfilled').length;
-      if (successCount === tableCreationPromises.length) {
+      // セッションテーブルを作成
+      let sessionTableCreated = false;
+      try {
+        sessionTableCreated = await createTestTable(sessionTableName, { sessionId: 'S' });
+        if (sessionTableCreated) {
+          console.log(`✅ Created session table: ${sessionTableName}`);
+        }
+      } catch (tableError) {
+        console.warn(`Session table creation error: ${tableError.message}`);
+      }
+      
+      // キャッシュテーブルを作成
+      let cacheTableCreated = false;
+      try {
+        cacheTableCreated = await createTestTable(cacheTableName, { key: 'S' });
+        if (cacheTableCreated) {
+          console.log(`✅ Created cache table: ${cacheTableName}`);
+        }
+      } catch (tableError) {
+        console.warn(`Cache table creation error: ${tableError.message}`);
+      }
+      
+      // ブラックリストテーブルを作成
+      let blacklistTableCreated = false;
+      try {
+        blacklistTableCreated = await createTestTable(blacklistTableName, { symbol: 'S' });
+        if (blacklistTableCreated) {
+          console.log(`✅ Created blacklist table: ${blacklistTableName}`);
+        }
+      } catch (tableError) {
+        console.warn(`Blacklist table creation error: ${tableError.message}`);
+      }
+      
+      // 作成結果を表示
+      if (sessionTableCreated && cacheTableCreated && blacklistTableCreated) {
         console.log('✅ All test tables created successfully');
       } else {
-        console.warn(`⚠️ Some test tables could not be created (${successCount}/${tableCreationPromises.length})`);
+        console.warn(`⚠️ Some test tables could not be created - Created: ` +
+                    `sessions=${sessionTableCreated}, ` +
+                    `cache=${cacheTableCreated}, ` +
+                    `blacklist=${blacklistTableCreated}`);
+        console.warn('Continuing with tests, but some table-dependent tests may fail');
       }
     } catch (tableError) {
       console.warn(`Test table creation error: ${tableError.message}`);

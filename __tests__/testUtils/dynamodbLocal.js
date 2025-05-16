@@ -7,6 +7,7 @@
  * @author Portfolio Manager Team
  * @updated 2025-05-12 バグ修正: AWS SDK v3のエラーハンドリングを改善
  * @updated 2025-05-13 AWS SDK v3マイグレーション対応の完了
+ * @updated 2025-05-16 バグ修正: テーブル存在チェックのエラーハンドリング強化
  */
 const { spawn } = require('child_process');
 const { DynamoDBClient, CreateTableCommand, DescribeTableCommand } = require('@aws-sdk/client-dynamodb');
@@ -111,7 +112,7 @@ const getDynamoDBClient = () => {
 /**
  * テスト用のテーブルを作成する
  * 
- * 修正: エラーハンドリングを改善し、テーブル作成エラーで全体のテストが失敗しないようにする
+ * バグ修正: エラーハンドリングを改善し、テーブル作成エラーで全体のテストが失敗しないようにする
  */
 const createTestTable = async (tableName, keySchema = { key: 'S' }) => {
   try {
@@ -127,18 +128,34 @@ const createTestTable = async (tableName, keySchema = { key: 'S' }) => {
     const keyName = Object.keys(keySchema)[0];
     const keyType = keySchema[keyName];
     
-    // 修正: テーブルが既に存在するかを事前にチェック
+    // 修正: テーブルが既に存在するかを事前にチェック - エラーハンドリング強化
     try {
       await client.send(new DescribeTableCommand({ TableName: tableName }));
       console.log(`Table ${tableName} already exists, skipping creation`);
       return; // テーブルが既に存在する場合は早期リターン
     } catch (describeError) {
-      // テーブルが存在しない場合は、エラーが発生するため、ここで作成処理に進む
-      if (describeError.name !== 'ResourceNotFoundException') {
-        console.warn(`Unexpected error checking table existence: ${describeError.message}`);
+      // テーブルが存在しない場合は、ResourceNotFoundExceptionが発生するため、ここで作成処理に進む
+      if (describeError) {
+        if (describeError.name === 'ResourceNotFoundException') {
+          console.log(`Table ${tableName} does not exist, will create it`);
+        } else {
+          console.warn(`Unexpected error checking table existence: ${describeError.message || 'Unknown error'}`);
+          console.warn(`Error type: ${describeError.name || 'Unknown'}, code: ${describeError.code || 'Unknown'}`);
+          // エラーログを詳細に表示してデバッグしやすくする
+          if (describeError.stack) {
+            console.debug('Error stack:', describeError.stack.split('\n').slice(0, 3).join('\n'));
+          }
+          
+          // ResourceNotFoundExceptionではないエラーの場合も、テーブル作成を試みる
+          console.log(`Will attempt to create table ${tableName} anyway`);
+        }
+      } else {
+        console.warn(`Null or undefined error when checking table existence for ${tableName}`);
+        console.log(`Will attempt to create table ${tableName}`);
       }
     }
     
+    // テーブル作成パラメータ
     const params = {
       TableName: tableName,
       KeySchema: [
@@ -153,21 +170,34 @@ const createTestTable = async (tableName, keySchema = { key: 'S' }) => {
       }
     };
     
-    // テーブルが存在しない場合、新しく作成
-    await client.send(new CreateTableCommand(params));
-    console.log(`Created table: ${tableName}`);
-    
-    // テーブル作成後に少し待機（DynamoDB Local が非同期で処理を完了するため）
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-  } catch (error) {
-    if (error.name === 'ResourceInUseException') {
-      console.log(`Table ${tableName} already exists`);
-    } else {
-      console.error(`Error creating table ${tableName}:`, error.message);
-      // 修正: エラーをスローせず、警告だけ表示してテストを続行できるようにする
-      console.warn(`Continuing tests without table ${tableName} - some tests may fail`);
+    try {
+      // テーブル作成を試みる
+      await client.send(new CreateTableCommand(params));
+      console.log(`Created table: ${tableName}`);
+      
+      // テーブル作成後に少し待機（DynamoDB Local が非同期で処理を完了するため）
+      await new Promise(resolve => setTimeout(resolve, 500));
+      return true;
+    } catch (createError) {
+      if (createError.name === 'ResourceInUseException') {
+        console.log(`Table ${tableName} already exists`);
+        return true;
+      } else {
+        console.error(`Error creating table ${tableName}:`, createError.message || 'Unknown error');
+        // スタックトレースの一部を表示してデバッグしやすくする
+        if (createError.stack) {
+          console.debug('Create error stack:', createError.stack.split('\n').slice(0, 3).join('\n'));
+        }
+        
+        // 修正: エラーをスローせず、警告だけ表示してテストを続行できるようにする
+        console.warn(`Continuing tests without table ${tableName} - some tests may fail`);
+        return false;
+      }
     }
+  } catch (error) {
+    console.error(`Unexpected error in createTestTable for ${tableName}:`, error.message || 'Unknown error');
+    console.warn(`Continuing tests without table ${tableName} - some tests may fail`);
+    return false;
   }
 };
 
@@ -185,14 +215,16 @@ const insertTestData = async (tableName, items) => {
           Item: item
         }));
       } catch (error) {
-        console.error(`Error inserting test data into ${tableName}:`, error.message);
+        console.error(`Error inserting test data into ${tableName}:`, error.message || 'Unknown error');
       }
     }
     
     console.log(`Inserted ${items.length} items into ${tableName}`);
+    return true;
   } catch (error) {
     console.error(`Failed to insert test data into ${tableName}:`, error);
     console.warn('Continuing tests without test data - some tests may fail');
+    return false;
   }
 };
 

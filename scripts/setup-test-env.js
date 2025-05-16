@@ -1,15 +1,34 @@
 /**
  * テスト環境セットアップスクリプト
  * DynamoDB Localの起動、テーブル作成、環境変数設定を自動化
+ * コンソール出力を最小限にして、重要な情報のみを表示するように最適化
  * 
  * @file scripts/setup-test-env.js
  * @updated 2025-05-15 - エラーハンドリング強化、設定の最適化
+ * @updated 2025-05-21 - コンソール出力を最小限にして、ログファイル出力を強化
  */
 
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { DynamoDBClient, CreateTableCommand, ListTablesCommand } = require('@aws-sdk/client-dynamodb');
+
+// ログディレクトリの設定
+const LOG_DIR = './test-results/logs';
+const LOG_FILE = `${LOG_DIR}/setup-env-${new Date().toISOString().replace(/:/g, '-')}.log`;
+
+// ログディレクトリが存在しない場合は作成
+if (!fs.existsSync(LOG_DIR)) {
+  fs.mkdirSync(LOG_DIR, { recursive: true });
+}
+
+// 環境変数からQuietModeとVerboseModeを取得
+const QUIET_MODE = process.env.QUIET_MODE === 'true';
+const VERBOSE_MODE = process.env.VERBOSE_MODE === 'true';
+const DEBUG_MODE = process.env.DEBUG === 'true';
+
+// ログファイルの初期化
+fs.writeFileSync(LOG_FILE, `=== Test Environment Setup: ${new Date().toISOString()} ===\n\n`);
 
 // 色の設定
 const colors = {
@@ -18,17 +37,85 @@ const colors = {
   red: '\x1b[31m',
   blue: '\x1b[34m',
   cyan: '\x1b[36m',
+  magenta: '\x1b[35m',
+  bold: '\x1b[1m',
   reset: '\x1b[0m'
 };
 
+// ロガー関数
+function logToFile(message) {
+  fs.appendFileSync(LOG_FILE, `${message}\n`);
+}
+
 // ログ関数
 const log = {
-  info: message => console.log(`${colors.blue}[INFO]${colors.reset} ${message}`),
-  success: message => console.log(`${colors.green}[SUCCESS]${colors.reset} ${message}`),
-  warning: message => console.log(`${colors.yellow}[WARNING]${colors.reset} ${message}`),
-  error: message => console.log(`${colors.red}[ERROR]${colors.reset} ${message}`),
-  step: message => console.log(`${colors.cyan}[STEP]${colors.reset} ${message}`)
+  // コンソールとファイルの両方に出力
+  info: message => {
+    console.log(`${colors.blue}[INFO]${colors.reset} ${message}`);
+    logToFile(`[INFO] ${message}`);
+  },
+  success: message => {
+    console.log(`${colors.green}[SUCCESS]${colors.reset} ${message}`);
+    logToFile(`[SUCCESS] ${message}`);
+  },
+  warning: message => {
+    console.log(`${colors.yellow}[WARNING]${colors.reset} ${message}`);
+    logToFile(`[WARNING] ${message}`);
+  },
+  error: message => {
+    console.log(`${colors.red}[ERROR]${colors.reset} ${message}`);
+    logToFile(`[ERROR] ${message}`);
+  },
+  step: message => {
+    console.log(`${colors.cyan}[STEP]${colors.reset} ${message}`);
+    logToFile(`[STEP] ${message}`);
+  },
+  // ファイルにのみ出力（詳細情報）
+  verbose: message => {
+    if (VERBOSE_MODE || DEBUG_MODE) {
+      console.log(`${colors.magenta}[VERBOSE]${colors.reset} ${message}`);
+    }
+    logToFile(`[VERBOSE] ${message}`);
+  },
+  debug: message => {
+    if (DEBUG_MODE) {
+      console.log(`${colors.magenta}[DEBUG]${colors.reset} ${message}`);
+    }
+    logToFile(`[DEBUG] ${message}`);
+  }
 };
+
+// 静音モードで使用するログ関数
+const quietLog = {
+  info: message => {
+    logToFile(`[INFO] ${message}`);
+  },
+  success: message => {
+    console.log(`${colors.green}✓${colors.reset} ${message}`);
+    logToFile(`[SUCCESS] ${message}`);
+  },
+  warning: message => {
+    console.log(`${colors.yellow}⚠${colors.reset} ${message}`);
+    logToFile(`[WARNING] ${message}`);
+  },
+  error: message => {
+    console.log(`${colors.red}✗${colors.reset} ${message}`);
+    logToFile(`[ERROR] ${message}`);
+  },
+  step: message => {
+    console.log(`${colors.cyan}➤${colors.reset} ${message}`);
+    logToFile(`[STEP] ${message}`);
+  },
+  verbose: message => {
+    logToFile(`[VERBOSE] ${message}`);
+  },
+  debug: message => {
+    logToFile(`[DEBUG] ${message}`);
+  }
+};
+
+// 使用するログ関数を決定
+const logger = QUIET_MODE ? quietLog : log;
 
 /**
  * DynamoDB Local が起動しているかチェック
@@ -45,6 +132,7 @@ function isDynamoDBRunning() {
       return execSync('lsof -i :8000 | grep LISTEN', { stdio: 'pipe' }).toString().trim() !== '';
     }
   } catch (error) {
+    logger.debug(`DynamoDB check error: ${error.message}`);
     return false;
   }
 }
@@ -54,19 +142,26 @@ function isDynamoDBRunning() {
  * @returns {Promise<boolean>} 起動成功時はtrue
  */
 async function startDynamoDBLocal() {
-  log.step('DynamoDB Local の確認・起動...');
+  logger.step('DynamoDB Local の確認・起動...');
   
   // 既に起動しているか確認
   if (isDynamoDBRunning()) {
-    log.success('DynamoDB Local はすでに起動しています');
+    logger.success('DynamoDB Local はすでに起動しています');
     return true;
   }
   
   // DynamoDBのjarファイルが存在するか確認
   const jarPath = './dynamodb-local/DynamoDBLocal.jar';
   if (!fs.existsSync(jarPath)) {
-    log.warning(`DynamoDB Local の jar ファイルが見つかりません: ${jarPath}`);
-    log.info('DynamoDB Local をダウンロードしますか？ (y/n)');
+    logger.warning(`DynamoDB Local の jar ファイルが見つかりません: ${jarPath}`);
+    
+    if (QUIET_MODE) {
+      // 静音モードではモック動作に自動設定
+      logger.info('モックモードで続行します');
+      return false;
+    }
+    
+    logger.info('DynamoDB Local をダウンロードしますか？ (y/n)');
     
     // ユーザーの入力を待つ（同期的に）
     const readline = require('readline').createInterface({
@@ -80,7 +175,7 @@ async function startDynamoDBLocal() {
     readline.close();
     
     if (answer.toLowerCase() === 'y') {
-      log.info('DynamoDB Local をダウンロードしています...');
+      logger.info('DynamoDB Local をダウンロードしています...');
       
       try {
         // dynamodb-local ディレクトリを作成
@@ -88,41 +183,53 @@ async function startDynamoDBLocal() {
           fs.mkdirSync('./dynamodb-local', { recursive: true });
         }
         
-        // ダウンロードコマンドを実行
-        execSync('curl -L https://d1ni2b6xgvw0s0.cloudfront.net/v2.2.0/dynamodb_local_latest.zip -o ./dynamodb-local/dynamodb_local_latest.zip', { stdio: 'inherit' });
+        // ダウンロードコマンドを実行（出力を抑制）
+        logger.verbose('ダウンロードコマンドを実行しています...');
+        let outputLog = '';
+        try {
+          outputLog = execSync('curl -L https://d1ni2b6xgvw0s0.cloudfront.net/v2.2.0/dynamodb_local_latest.zip -o ./dynamodb-local/dynamodb_local_latest.zip', { stdio: 'pipe' }).toString();
+        } catch (error) {
+          logger.verbose(`ダウンロードエラー: ${error.message}`);
+          logger.verbose(error.stdout ? error.stdout.toString() : 'No stdout');
+          logger.verbose(error.stderr ? error.stderr.toString() : 'No stderr');
+          throw error;
+        }
+        logger.verbose(`ダウンロード出力: ${outputLog}`);
         
-        // 解凍
+        // 解凍（出力を抑制）
+        logger.info('ダウンロードしたファイルを解凍しています...');
         if (process.platform === 'win32') {
           // Windows環境
-          execSync('powershell -command "Expand-Archive -Path ./dynamodb-local/dynamodb_local_latest.zip -DestinationPath ./dynamodb-local -Force"', { stdio: 'inherit' });
+          outputLog = execSync('powershell -command "Expand-Archive -Path ./dynamodb-local/dynamodb_local_latest.zip -DestinationPath ./dynamodb-local -Force"', { stdio: 'pipe' }).toString();
         } else {
           // Unix系環境
-          execSync('unzip -o ./dynamodb-local/dynamodb_local_latest.zip -d ./dynamodb-local', { stdio: 'inherit' });
+          outputLog = execSync('unzip -o ./dynamodb-local/dynamodb_local_latest.zip -d ./dynamodb-local', { stdio: 'pipe' }).toString();
         }
+        logger.verbose(`解凍出力: ${outputLog}`);
         
-        log.success('DynamoDB Local のダウンロードが完了しました');
+        logger.success('DynamoDB Local のダウンロードが完了しました');
       } catch (error) {
-        log.error(`DynamoDB Local のダウンロードに失敗しました: ${error.message}`);
-        log.warning('テストはモックモードで実行する必要があります');
+        logger.error(`DynamoDB Local のダウンロードに失敗しました: ${error.message}`);
+        logger.warning('テストはモックモードで実行する必要があります');
         return false;
       }
     } else {
-      log.warning('DynamoDB Local のダウンロードをスキップします');
-      log.warning('テストはモックモードで実行する必要があります');
+      logger.warning('DynamoDB Local のダウンロードをスキップします');
+      logger.warning('テストはモックモードで実行する必要があります');
       return false;
     }
   }
   
   // DynamoDB Local を起動
-  log.info('DynamoDB Local を起動します...');
+  logger.info('DynamoDB Local を起動します...');
   
   try {
     // Java バージョンを確認
     try {
       const javaVersion = execSync('java -version 2>&1', { stdio: 'pipe' }).toString();
-      log.info(`Java バージョン: ${javaVersion.split('\n')[0]}`);
+      logger.verbose(`Java バージョン: ${javaVersion.split('\n')[0]}`);
     } catch (error) {
-      log.error('Java が見つかりません。DynamoDB Local の実行には Java が必要です。');
+      logger.error('Java が見つかりません。DynamoDB Local の実行には Java が必要です。');
       return false;
     }
     
@@ -140,17 +247,18 @@ async function startDynamoDBLocal() {
       stdio: process.platform === 'win32' ? 'ignore' : ['ignore', 'pipe', 'pipe']
     });
     
-    // エラーハンドリング
+    // エラーハンドリング（ログファイルに出力）
     if (child.stderr) {
       child.stderr.on('data', (data) => {
-        log.error(`DynamoDB stderr: ${data}`);
+        logger.verbose(`DynamoDB stderr: ${data}`);
       });
     }
     
     if (child.stdout) {
       child.stdout.on('data', (data) => {
+        logger.verbose(`DynamoDB stdout: ${data}`);
         if (data.toString().includes('CorsParams')) {
-          log.success('DynamoDB Local が正常に起動しました');
+          logger.success('DynamoDB Local が正常に起動しました');
         }
       });
     }
@@ -159,7 +267,7 @@ async function startDynamoDBLocal() {
     child.unref();
     
     // 起動を待機
-    log.info('DynamoDB Local の起動を待機しています...');
+    logger.info('DynamoDB Local の起動を待機しています...');
     let attempts = 0;
     const maxAttempts = 5;
     
@@ -168,18 +276,18 @@ async function startDynamoDBLocal() {
       attempts++;
       
       if (isDynamoDBRunning()) {
-        log.success(`DynamoDB Local の起動が完了しました (${attempts}秒)`);
+        logger.success(`DynamoDB Local の起動が完了しました (${attempts}秒)`);
         return true;
       }
       
-      log.info(`起動待機中... (${attempts}/${maxAttempts})`);
+      logger.verbose(`起動待機中... (${attempts}/${maxAttempts})`);
     }
     
-    log.error('DynamoDB Local の起動タイムアウト');
+    logger.error('DynamoDB Local の起動タイムアウト');
     return false;
   } catch (error) {
-    log.error(`DynamoDB Local の起動に失敗しました: ${error.message}`);
-    log.warning('テストはモックモードで実行されます');
+    logger.error(`DynamoDB Local の起動に失敗しました: ${error.message}`);
+    logger.warning('テストはモックモードで実行されます');
     return false;
   }
 }
@@ -188,11 +296,12 @@ async function startDynamoDBLocal() {
  * テスト用ディレクトリの作成
  */
 function createTestDirectories() {
-  log.step('テストディレクトリを作成しています...');
+  logger.step('テストディレクトリを作成しています...');
   
   const directories = [
     './test-results',
     './test-results/junit',
+    './test-results/logs',
     './coverage',
     './.jest-cache'
   ];
@@ -200,11 +309,13 @@ function createTestDirectories() {
   directories.forEach(dir => {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
-      log.success(`ディレクトリを作成しました: ${dir}`);
+      logger.verbose(`ディレクトリを作成しました: ${dir}`);
     } else {
-      log.info(`ディレクトリは既に存在します: ${dir}`);
+      logger.verbose(`ディレクトリは既に存在します: ${dir}`);
     }
   });
+  
+  logger.success('テストディレクトリの確認が完了しました');
 }
 
 /**
@@ -227,7 +338,7 @@ function createDynamoDBClient() {
  * @returns {Promise<boolean>} 成功時はtrue
  */
 async function createTestTables() {
-  log.step('テスト用テーブルを作成しています...');
+  logger.step('テスト用テーブルを作成しています...');
   
   try {
     const client = createDynamoDBClient();
@@ -237,9 +348,9 @@ async function createTestTables() {
     try {
       const { TableNames } = await client.send(new ListTablesCommand({}));
       existingTables = TableNames || [];
-      log.info(`既存のテーブル: ${existingTables.join(', ') || '(なし)'}`);
+      logger.verbose(`既存のテーブル: ${existingTables.join(', ') || '(なし)'}`);
     } catch (error) {
-      log.warning(`テーブル一覧の取得に失敗しました: ${error.message}`);
+      logger.verbose(`テーブル一覧の取得に失敗しました: ${error.message}`);
     }
     
     // 作成するテーブルの定義
@@ -266,7 +377,7 @@ async function createTestTables() {
     for (const table of tables) {
       if (!existingTables.includes(table.name)) {
         try {
-          log.info(`テーブルを作成しています: ${table.name}`);
+          logger.verbose(`テーブルを作成しています: ${table.name}`);
           
           await client.send(new CreateTableCommand({
             TableName: table.name,
@@ -275,25 +386,31 @@ async function createTestTables() {
             BillingMode: 'PAY_PER_REQUEST'
           }));
           
-          log.success(`テーブルを作成しました: ${table.name}`);
+          logger.verbose(`テーブルを作成しました: ${table.name}`);
           successCount++;
         } catch (error) {
           if (error.name === 'ResourceInUseException') {
-            log.info(`テーブルは既に存在します: ${table.name}`);
+            logger.verbose(`テーブルは既に存在します: ${table.name}`);
             successCount++;
           } else {
-            log.error(`テーブル作成エラー - ${table.name}: ${error.message}`);
+            logger.error(`テーブル作成エラー - ${table.name}: ${error.message}`);
           }
         }
       } else {
-        log.info(`テーブルは既に存在します: ${table.name}`);
+        logger.verbose(`テーブルは既に存在します: ${table.name}`);
         successCount++;
       }
     }
     
+    if (successCount === tables.length) {
+      logger.success(`テスト用テーブル (${tables.length}件) の作成が完了しました`);
+    } else {
+      logger.warning(`一部のテーブル作成に失敗しました (${successCount}/${tables.length}件成功)`);
+    }
+    
     return successCount === tables.length;
   } catch (error) {
-    log.error(`テーブル作成処理に失敗しました: ${error.message}`);
+    logger.error(`テーブル作成処理に失敗しました: ${error.message}`);
     return false;
   }
 }
@@ -302,7 +419,7 @@ async function createTestTables() {
  * テスト環境変数の設定
  */
 function setupEnvironmentVariables() {
-  log.step('テスト環境変数を設定しています...');
+  logger.step('テスト環境変数を設定しています...');
   
   // .env.test ファイルのパス
   const envFile = path.join(process.cwd(), '.env.test');
@@ -322,11 +439,12 @@ CACHE_TIME_MUTUAL_FUND=60
 CACHE_TIME_EXCHANGE_RATE=60
 CORS_ALLOW_ORIGIN=*
 TEST_MODE=true
+QUIET_MODE=true
 `;
   
   // .env.test ファイルが存在するか確認
   if (fs.existsSync(envFile)) {
-    log.info('.env.test ファイルが見つかりました');
+    logger.verbose('.env.test ファイルが見つかりました');
     
     // ファイルの内容を読み込む
     const content = fs.readFileSync(envFile, 'utf8');
@@ -342,13 +460,12 @@ TEST_MODE=true
     const missingVars = requiredVars.filter(varName => !content.includes(`${varName}=`));
     
     if (missingVars.length > 0) {
-      log.warning(`.env.test ファイルに不足している環境変数があります: ${missingVars.join(', ')}`);
-      log.info('ファイルを更新しますか？ (y/n)');
+      logger.verbose(`.env.test ファイルに不足している環境変数があります: ${missingVars.join(', ')}`);
       
-      // ユーザーの入力を待つ（同期的に）
-      const answer = require('readline-sync').question('> ');
-      
-      if (answer.toLowerCase() === 'y') {
+      if (QUIET_MODE) {
+        // 静音モードでは自動的に更新
+        logger.verbose('.env.test ファイルを自動的に更新します');
+        
         // 既存の内容に追加
         const updatedContent = content + '\n' + missingVars.map(varName => {
           const defaultValue = defaultEnv.match(new RegExp(`${varName}=(.*)`))[1];
@@ -356,14 +473,31 @@ TEST_MODE=true
         }).join('\n') + '\n';
         
         fs.writeFileSync(envFile, updatedContent);
-        log.success('.env.test ファイルを更新しました');
+        logger.verbose('.env.test ファイルを更新しました');
+      } else {
+        // 通常モードではユーザーに確認
+        logger.info('ファイルを更新しますか？ (y/n)');
+        
+        // ユーザーの入力を待つ（同期的に）
+        const answer = require('readline-sync').question('> ');
+        
+        if (answer.toLowerCase() === 'y') {
+          // 既存の内容に追加
+          const updatedContent = content + '\n' + missingVars.map(varName => {
+            const defaultValue = defaultEnv.match(new RegExp(`${varName}=(.*)`))[1];
+            return `${varName}=${defaultValue}`;
+          }).join('\n') + '\n';
+          
+          fs.writeFileSync(envFile, updatedContent);
+          logger.success('.env.test ファイルを更新しました');
+        }
       }
     }
   } else {
     // .env.test ファイルがなければ作成
-    log.warning('.env.test ファイルが見つかりません。デフォルト設定で作成します。');
+    logger.warning('.env.test ファイルが見つかりません。デフォルト設定で作成します。');
     fs.writeFileSync(envFile, defaultEnv);
-    log.success('.env.test ファイルを作成しました');
+    logger.success('.env.test ファイルを作成しました');
   }
   
   // 現在のプロセスの環境変数を設定
@@ -373,15 +507,18 @@ TEST_MODE=true
   process.env.DYNAMODB_TABLE_PREFIX = 'test-';
   process.env.SKIP_DYNAMODB_CHECKS = 'true';
   process.env.USE_API_MOCKS = 'true';
+  process.env.QUIET_MODE = QUIET_MODE ? 'true' : 'false';
+  process.env.VERBOSE_MODE = VERBOSE_MODE ? 'true' : 'false';
+  process.env.DEBUG = DEBUG_MODE ? 'true' : 'false';
   
-  log.success('環境変数の設定が完了しました');
+  logger.success('環境変数の設定が完了しました');
 }
 
 /**
  * モックセットアップファイルの確認と生成
  */
 function checkMockSetup() {
-  log.step('モックセットアップファイルを確認しています...');
+  logger.step('モックセットアップファイルを確認しています...');
   
   const mockDirs = [
     './__mocks__',
@@ -393,7 +530,7 @@ function checkMockSetup() {
   mockDirs.forEach(dir => {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
-      log.success(`ディレクトリを作成しました: ${dir}`);
+      logger.verbose(`ディレクトリを作成しました: ${dir}`);
     }
   });
   
@@ -435,17 +572,17 @@ module.exports = {
 };`;
     
     fs.writeFileSync(axiosMockFile, axiosMockContent);
-    log.success(`モックファイルを作成しました: ${axiosMockFile}`);
+    logger.verbose(`モックファイルを作成しました: ${axiosMockFile}`);
   }
   
-  log.success('モックファイルの確認が完了しました');
+  logger.success('モックファイルの確認が完了しました');
 }
 
 /**
  * テスト実行前の設定とクリーンアップ
  */
 function prepareTestEnvironment() {
-  log.step('テスト実行前の準備...');
+  logger.step('テスト実行前の準備...');
   
   // 古いレポートファイルのクリーンアップ
   const reportPatterns = [
@@ -458,9 +595,9 @@ function prepareTestEnvironment() {
     if (fs.existsSync(pattern)) {
       try {
         fs.unlinkSync(pattern);
-        log.info(`古いレポートを削除しました: ${pattern}`);
+        logger.verbose(`古いレポートを削除しました: ${pattern}`);
       } catch (error) {
-        log.warning(`レポートファイルの削除に失敗しました: ${pattern}`);
+        logger.verbose(`レポートファイルの削除に失敗しました: ${pattern}`);
       }
     }
   });
@@ -468,15 +605,15 @@ function prepareTestEnvironment() {
   // テストモードフラグファイルの作成
   fs.writeFileSync('./test-results/.test-mode', new Date().toISOString());
   
-  log.success('テスト実行前の準備が完了しました');
+  logger.success('テスト実行前の準備が完了しました');
 }
 
 /**
  * メイン処理
  */
 async function main() {
-  log.info('テスト環境のセットアップを開始します...');
-  console.log('=====================================');
+  console.log(`${colors.cyan}${colors.bold}テスト環境のセットアップを開始します...${colors.reset}`);
+  console.log(`${colors.blue}ログファイル: ${LOG_FILE}${colors.reset}`);
   
   try {
     // テストディレクトリの作成
@@ -502,27 +639,23 @@ async function main() {
     // 前処理
     prepareTestEnvironment();
     
-    console.log('=====================================');
+    console.log(`${colors.cyan}${colors.bold}=== セットアップ結果 ====${colors.reset}`);
     
     if (dynamoDBRunning && tablesCreated) {
-      log.success('テスト環境のセットアップが完了しました！');
-      log.info('テストを実行するには:');
-      log.info('  npm test');
-      log.info('  または');
-      log.info('  ./scripts/run-tests.sh [テスト種別]');
+      logger.success('テスト環境のセットアップが完了しました！');
+      console.log(`${colors.green}テスト実行の準備が整いました${colors.reset}`);
     } else if (dynamoDBRunning) {
-      log.warning('DynamoDB は起動していますが、テーブル作成に問題がありました');
-      log.info('必要に応じてモックモードでテストを実行してください:');
-      log.info('  USE_API_MOCKS=true npm test');
+      logger.warning('DynamoDB は起動していますが、テーブル作成に問題がありました');
+      console.log(`${colors.yellow}ほとんどのテストは実行できますが、一部のテストが失敗する可能性があります${colors.reset}`);
     } else {
-      log.warning('DynamoDBの起動に問題があります。モックモードでテストを実行してください:');
-      log.info('  USE_API_MOCKS=true npm test');
+      logger.warning('DynamoDBの起動に問題があります。モックモードでテストを実行してください:');
+      console.log(`${colors.yellow}モックモード${colors.reset}でテストを実行します`);
     }
     
     return 0;
   } catch (error) {
-    log.error(`テスト環境のセットアップに失敗しました: ${error.message}`);
-    log.error(error.stack);
+    logger.error(`テスト環境のセットアップに失敗しました: ${error.message}`);
+    logger.verbose(error.stack);
     return 1;
   }
 }
@@ -534,5 +667,6 @@ main().then(exitCode => {
   }
 }).catch(error => {
   console.error('Fatal error:', error);
+  logToFile(`FATAL ERROR: ${error.message}\n${error.stack}`);
   process.exit(1);
 });

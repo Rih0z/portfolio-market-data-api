@@ -1082,3 +1082,4 @@ fi
 echo "=== テスト実行終了: $(date) - 結果: $TEST_RESULT ===" >> "$LOG_FILE"
 
 exit $TEST_RESULT
+

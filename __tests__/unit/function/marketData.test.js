@@ -169,11 +169,6 @@ describe('Market Data API Handler', () => {
         false
       );
       
-      // キャッシュ確認が行われたか検証（注：実装によるのでこの検証は不要かもしれません）
-      // expect(cacheService.get).toHaveBeenCalledWith(
-      //   expect.stringContaining('us-stock')
-      // );
-      
       // 使用量チェックが行われたか検証
       expect(usageService.checkAndUpdateUsage).toHaveBeenCalled();
       

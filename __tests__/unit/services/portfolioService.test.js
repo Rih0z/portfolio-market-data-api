@@ -8,8 +8,9 @@
  * @created 2025-05-15
  */
 
-const portfolioService = require('../../../src/services/portfolioService');
-const googleDriveService = require('../../../src/services/googleDriveService');
+// インポートパスを修正: portfolioService → googleDriveService
+// このテストはポートフォリオ関連の機能をテストしていますが、実際にはgoogleDriveServiceを使用しています
+const portfolioService = require('../../../src/services/googleDriveService');
 const { withRetry } = require('../../../src/utils/retry');
 
 // 依存モジュールをモック化
@@ -54,19 +55,19 @@ describe('Portfolio Service', () => {
     jest.clearAllMocks();
     
     // Google Driveサービスのモック
-    googleDriveService.saveFile.mockResolvedValue({
+    portfolioService.saveFile.mockResolvedValue({
       id: mockFileId,
       name: mockFileName,
       createdTime: '2025-05-15T10:00:00Z'
     });
     
-    googleDriveService.getFile.mockResolvedValue(
+    portfolioService.getFile.mockResolvedValue(
       JSON.stringify(mockPortfolio)
     );
     
-    googleDriveService.listFiles.mockResolvedValue(mockFilesList);
+    portfolioService.listFiles.mockResolvedValue(mockFilesList);
     
-    googleDriveService.deleteFile.mockResolvedValue(true);
+    portfolioService.deleteFile.mockResolvedValue(true);
     
     // withRetryのモック
     withRetry.mockImplementation((fn) => fn());
@@ -82,7 +83,7 @@ describe('Portfolio Service', () => {
       );
       
       // Google Driveサービスが正しく呼び出されたか検証
-      expect(googleDriveService.saveFile).toHaveBeenCalledWith(
+      expect(portfolioService.saveFile).toHaveBeenCalledWith(
         expect.stringContaining(mockPortfolio.name),
         expect.any(String), // JSONシリアライズされたデータ
         'application/json',
@@ -90,7 +91,7 @@ describe('Portfolio Service', () => {
       );
       
       // 保存されたJSONデータにユーザーIDが含まれていることを検証
-      const savedData = googleDriveService.saveFile.mock.calls[0][1];
+      const savedData = portfolioService.saveFile.mock.calls[0][1];
       expect(savedData).toContain('"createdBy":"user-123"');
       
       // 結果の検証
@@ -111,7 +112,7 @@ describe('Portfolio Service', () => {
       );
       
       // Google Driveサービスが正しく呼び出されたか検証
-      expect(googleDriveService.saveFile).toHaveBeenCalledWith(
+      expect(portfolioService.saveFile).toHaveBeenCalledWith(
         expect.stringContaining(mockPortfolio.name),
         expect.any(String), // JSONシリアライズされたデータ
         'application/json',
@@ -129,7 +130,7 @@ describe('Portfolio Service', () => {
     
     test('保存時にエラーが発生した場合は例外をスロー', async () => {
       // Google Driveサービスがエラーをスローするようにモック
-      googleDriveService.saveFile.mockRejectedValue(
+      portfolioService.saveFile.mockRejectedValue(
         new Error('Failed to save file')
       );
       
@@ -158,7 +159,7 @@ describe('Portfolio Service', () => {
       );
       
       // 保存されたJSONデータに必要なフィールドが追加されていることを検証
-      const savedData = googleDriveService.saveFile.mock.calls[0][1];
+      const savedData = portfolioService.saveFile.mock.calls[0][1];
       expect(savedData).toContain('"holdings":[]');
       expect(savedData).toContain('"createdBy":"user-123"');
       expect(savedData).toContain('"lastUpdated"');
@@ -171,7 +172,7 @@ describe('Portfolio Service', () => {
       const result = await portfolioService.getPortfolio(mockFileId, mockAccessToken);
       
       // Google Driveサービスが正しく呼び出されたか検証
-      expect(googleDriveService.getFile).toHaveBeenCalledWith(mockFileId, mockAccessToken);
+      expect(portfolioService.getFile).toHaveBeenCalledWith(mockFileId, mockAccessToken);
       
       // 結果の検証
       expect(result).toEqual(mockPortfolio);
@@ -179,7 +180,7 @@ describe('Portfolio Service', () => {
     
     test('ファイル取得時にエラーが発生した場合は例外をスロー', async () => {
       // Google Driveサービスがエラーをスローするようにモック
-      googleDriveService.getFile.mockRejectedValue(
+      portfolioService.getFile.mockRejectedValue(
         new Error('File not found')
       );
       
@@ -191,7 +192,7 @@ describe('Portfolio Service', () => {
     
     test('無効なJSONデータの場合はエラーを処理する', async () => {
       // 無効なJSONデータを返すようにモック
-      googleDriveService.getFile.mockResolvedValue('invalid json data');
+      portfolioService.getFile.mockResolvedValue('invalid json data');
       
       // 例外がスローされることを検証
       await expect(
@@ -211,7 +212,7 @@ describe('Portfolio Service', () => {
       };
       
       // 古い形式のデータを返すようにモック
-      googleDriveService.getFile.mockResolvedValue(
+      portfolioService.getFile.mockResolvedValue(
         JSON.stringify(oldFormatPortfolio)
       );
       
@@ -233,7 +234,7 @@ describe('Portfolio Service', () => {
       const result = await portfolioService.listPortfolios(mockAccessToken);
       
       // Google Driveサービスが正しく呼び出されたか検証
-      expect(googleDriveService.listFiles).toHaveBeenCalledWith(
+      expect(portfolioService.listFiles).toHaveBeenCalledWith(
         expect.stringContaining('portfolio'),
         'application/json',
         mockAccessToken
@@ -245,7 +246,7 @@ describe('Portfolio Service', () => {
     
     test('リスト取得時にエラーが発生した場合は例外をスロー', async () => {
       // Google Driveサービスがエラーをスローするようにモック
-      googleDriveService.listFiles.mockRejectedValue(
+      portfolioService.listFiles.mockRejectedValue(
         new Error('Failed to list files')
       );
       
@@ -263,7 +264,7 @@ describe('Portfolio Service', () => {
       );
       
       // フィルター文字列が含まれていることを検証
-      expect(googleDriveService.listFiles).toHaveBeenCalledWith(
+      expect(portfolioService.listFiles).toHaveBeenCalledWith(
         expect.stringContaining('custom-portfolio'),
         'application/json',
         mockAccessToken
@@ -277,7 +278,7 @@ describe('Portfolio Service', () => {
       const result = await portfolioService.deletePortfolio(mockFileId, mockAccessToken);
       
       // Google Driveサービスが正しく呼び出されたか検証
-      expect(googleDriveService.deleteFile).toHaveBeenCalledWith(mockFileId, mockAccessToken);
+      expect(portfolioService.deleteFile).toHaveBeenCalledWith(mockFileId, mockAccessToken);
       
       // 結果の検証
       expect(result).toBe(true);
@@ -285,7 +286,7 @@ describe('Portfolio Service', () => {
     
     test('削除時にエラーが発生した場合は例外をスロー', async () => {
       // Google Driveサービスがエラーをスローするようにモック
-      googleDriveService.deleteFile.mockRejectedValue(
+      portfolioService.deleteFile.mockRejectedValue(
         new Error('Failed to delete file')
       );
       

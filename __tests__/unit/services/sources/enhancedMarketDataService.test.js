@@ -9,9 +9,9 @@
  */
 
 const enhancedMarketDataService = require('../../../../src/services/sources/enhancedMarketDataService');
-const yahooFinanceService = require('../../../../src/services/sources/yahooFinance');
+const yahooFinance = require('../../../../src/services/sources/yahooFinance');
 const scrapingService = require('../../../../src/services/sources/marketDataProviders');
-const exchangeRateService = require('../../../../src/services/sources/exchangeRate');
+const exchangeRate = require('../../../../src/services/sources/exchangeRate');
 const fundDataService = require('../../../../src/services/sources/fundDataService');
 const { fetchDataWithFallback, fetchBatchDataWithFallback } = require('../../../../src/utils/dataFetchWithFallback');
 
@@ -70,11 +70,11 @@ describe('Enhanced Market Data Service', () => {
     jest.clearAllMocks();
     
     // モック実装を設定
-    yahooFinanceService.getStockData.mockResolvedValue({ 
+    yahooFinance.getStockData.mockResolvedValue({ 
       [usStockSymbol]: mockStockData 
     });
     
-    yahooFinanceService.getStocksData.mockResolvedValue({
+    yahooFinance.getStocksData.mockResolvedValue({
       'AAPL': mockStockData,
       'MSFT': {
         symbol: 'MSFT',
@@ -90,7 +90,7 @@ describe('Enhanced Market Data Service', () => {
     
     fundDataService.getMutualFundData.mockResolvedValue(mockMutualFundData);
     
-    exchangeRateService.getExchangeRate.mockResolvedValue({
+    exchangeRate.getExchangeRate.mockResolvedValue({
       'USD-JPY': mockExchangeRateData
     });
     
@@ -173,7 +173,7 @@ describe('Enhanced Market Data Service', () => {
       const result = await enhancedMarketDataService.getUsStocksData(symbols);
       
       // Yahoo Finance API のバッチ取得が呼び出されたか検証
-      expect(yahooFinanceService.getStocksData).toHaveBeenCalledWith(symbols);
+      expect(yahooFinance.getStocksData).toHaveBeenCalledWith(symbols);
       
       // 結果が正しいことを検証
       expect(result).toHaveProperty('AAPL');
@@ -182,7 +182,7 @@ describe('Enhanced Market Data Service', () => {
     
     test('Yahoo Finance API 失敗時に個別取得にフォールバックする', async () => {
       // バッチAPIの失敗をシミュレート
-      yahooFinanceService.getStocksData.mockRejectedValue(
+      yahooFinance.getStocksData.mockRejectedValue(
         new Error('Batch API failed')
       );
       
@@ -203,7 +203,7 @@ describe('Enhanced Market Data Service', () => {
     
     test('バッチAPIで一部のシンボルが取得できなかった場合は個別取得で補完する', async () => {
       // 一部の銘柄だけ返すようにモック
-      yahooFinanceService.getStocksData.mockResolvedValue({
+      yahooFinance.getStocksData.mockResolvedValue({
         'AAPL': mockStockData
         // MSFT は含まれていない
       });

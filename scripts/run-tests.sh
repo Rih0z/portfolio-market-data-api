@@ -4,6 +4,7 @@
 # 
 # Portfolio Market Data APIテスト実行スクリプト
 # 修正: コンソール出力を最小限にして、重要な情報のみを表示するように最適化
+# 修正: ビジュアルレポートとカバレッジチャートをデフォルトで生成するように変更
 #
 # @author Koki Riho
 # @updated 2025-05-15 - 新しいテスト種別の追加、詳細レポート生成オプションの強化
@@ -12,6 +13,7 @@
 # @updated 2025-05-20 - setupTests.jsを使用するように更新、コンソール出力を最小限に設定
 # @updated 2025-05-21 - コンソール出力をさらに最適化、エラーログをファイルに出力するよう変更
 # @updated 2025-05-25 - JSON解析方法を改善し、テスト数を正確に表示するよう修正
+# @updated 2025-05-15 - ビジュアルレポートとカバレッジチャートをデフォルトで生成するように変更
 #
 
 # 便利なサンプルコマンド
@@ -95,7 +97,6 @@ show_help() {
   echo "オプション:"
   echo "  -h, --help                  このヘルプメッセージを表示"
   echo "  -c, --clean                 テスト実行前にテスト環境をクリーンアップ"
-  echo "  -v, --visual                テスト結果をビジュアルレポートで表示"
   echo "  -a, --auto                  APIサーバーを自動起動（E2Eテスト用）"
   echo "  -m, --mock                  APIモックを使用（E2Eテスト用）"
   echo "  -w, --watch                 監視モードでテストを実行（コード変更時に自動再実行）"
@@ -108,7 +109,8 @@ show_help() {
   echo "  -q, --quiet                 詳細出力を完全に抑制（最小限の結果と進捗バーのみ表示）"
   echo "  -v, --verbose               詳細な出力を表示（--quietより優先）"
   echo "  --html-coverage             HTMLカバレッジレポートをブラウザで開く"
-  echo "  --chart                     カバレッジをチャートで生成（ビジュアルレポートに追加）"
+  echo "  --no-chart                  カバレッジチャートを生成しない（デフォルトでは生成します）"
+  echo "  --no-visual                 ビジュアルレポートをブラウザで自動的に開かない"
   echo "  --junit                     JUnit形式のレポートを生成（CI環境用）"
   echo "  --nvm                       nvmを使用してNode.js 18に切り替え"
   echo "  --force-coverage            カバレッジ計測を強制的に有効化（--no-coverageより優先）"
@@ -135,7 +137,7 @@ show_help() {
   echo "使用例:"
   echo "  $0 unit             単体テストのみ実行（カバレッジあり）"
   echo "  $0 -c all           環境クリーンアップ後、すべてのテストを実行"
-  echo "  $0 -a -v e2e        APIサーバー自動起動でE2Eテストを実行し、結果をビジュアル表示"
+  echo "  $0 -a e2e           APIサーバー自動起動でE2Eテストを実行"
   echo "  $0 -m -w unit       モックを使用し、監視モードで単体テストを実行"
   echo "  $0 quick            単体テストと統合テストを高速実行（モック使用）"
   echo "  $0 -n integration   カバレッジチェック無効で統合テストを実行"
@@ -145,7 +147,7 @@ show_help() {
   echo "  $0 -i e2e           カバレッジエラーを無視してテスト成功を正確に表示"
   echo "  $0 -s \"services/*.test.js\" specific  サービス関連のテストファイルのみ実行"
   echo "  $0 unit:services    サービス層の単体テストのみ実行"
-  echo "  $0 --chart all      すべてのテストを実行し、カバレッジチャートを生成"
+  echo "  $0 --no-chart all   チャート生成を無効にしてすべてのテストを実行"
   echo "  $0 -t mid all       中間段階のカバレッジ目標を設定してすべてのテストを実行"
   echo "  $0 -q unit          詳細出力を完全に抑制して単体テストを実行"
   echo ""
@@ -160,7 +162,7 @@ echo "=== エラーログ: $(date) ===" > "$ERROR_LOG_FILE"
 
 # 変数の初期化
 CLEAN=0
-VISUAL=0
+VISUAL=1            # デフォルトで有効に変更
 AUTO=0
 MOCK=0
 WATCH=0
@@ -170,7 +172,7 @@ FORCE_TESTS=0
 DEBUG_MODE=0
 IGNORE_COVERAGE_ERRORS=0
 HTML_COVERAGE=0
-GENERATE_CHART=0
+GENERATE_CHART=1    # デフォルトで有効に変更
 JUNIT_REPORT=0
 FORCE_COVERAGE=0
 QUIET_MODE=1   # デフォルトでquietモードを有効化
@@ -188,10 +190,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     -c|--clean)
       CLEAN=1
-      shift
-      ;;
-    -v|--visual)
-      VISUAL=1
       shift
       ;;
     -a|--auto)
@@ -246,8 +244,12 @@ while [[ $# -gt 0 ]]; do
       HTML_COVERAGE=1
       shift
       ;;
-    --chart)
-      GENERATE_CHART=1
+    --no-chart)
+      GENERATE_CHART=0  # チャート生成を無効化
+      shift
+      ;;
+    --no-visual)
+      VISUAL=0          # ビジュアルレポートの自動表示を無効化
       shift
       ;;
     --junit)
@@ -727,7 +729,6 @@ fi
 if [ $GENERATE_CHART -eq 1 ]; then
   ENV_VARS="$ENV_VARS GENERATE_COVERAGE_CHART=true"
   print_info "カバレッジチャートを生成します"
-  VISUAL=1  # チャート生成時は自動的にビジュアルレポートを表示
   FORCE_COVERAGE=1  # チャート生成時は常にカバレッジを有効化
 fi
 
@@ -1083,13 +1084,11 @@ if [ $TEST_RESULT -eq 0 ]; then
   
   # レポートファイルの情報
   echo -e "\n${BLUE}詳細情報:${NC}"
+  echo -e "  ・ビジュアルレポート: ./test-results/visual-report.html"
   echo -e "  ・ログファイル: $LOG_FILE"
   echo -e "  ・エラーログ: $ERROR_LOG_FILE"
   if [ -f "./test-results/test-log.md" ]; then
     echo -e "  ・テストログレポート: ./test-results/test-log.md"
-  fi
-  if [ -f "./test-results/visual-report.html" ]; then
-    echo -e "  ・ビジュアルレポート: ./test-results/visual-report.html"
   fi
 else
   print_header "テスト実行が失敗しました... 😢"
@@ -1110,7 +1109,7 @@ else
   # 改善提案を表示
   echo -e "\n${BLUE}改善提案:${NC}"
   echo -e "  ・詳細なエラー情報を確認: cat ./test-results/test-log.md"
-  echo -e "  ・ビジュアルレポートを表示: ./scripts/run-tests.sh -v $TEST_TYPE"
+  echo -e "  ・ビジュアルレポートを表示: ./test-results/visual-report.html"
   echo -e "  ・詳細な出力で再実行: ./scripts/run-tests.sh --verbose $TEST_TYPE"
   echo -e "  ・モックモードでテストを再実行: ./scripts/run-tests.sh -m $TEST_TYPE"
   echo -e "  ・カバレッジエラーを無視してテスト: ./scripts/run-tests.sh -i $TEST_TYPE"
@@ -1118,6 +1117,7 @@ else
   
   # エラーログファイルの情報
   echo -e "\n${BLUE}詳細情報:${NC}"
+  echo -e "  ・ビジュアルレポート: ./test-results/visual-report.html"
   echo -e "  ・ログファイル: $LOG_FILE"
   echo -e "  ・エラーログ: $ERROR_LOG_FILE"
   if [ -f "./test-results/test-log.md" ]; then

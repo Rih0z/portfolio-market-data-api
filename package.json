@@ -29,7 +29,6 @@
     "test:dev": "cross-env NODE_ENV=development USE_API_MOCKS=true jest --watch",
     "test:full:mock": "npm run test:reset && npm run test:setup && cross-env USE_API_MOCKS=true npm run test",
     "test:full:auto": "npm run test:reset && npm run test:setup && cross-env RUN_E2E_TESTS=true npm run test",
-    
     "test:nocov": "jest --no-coverage --forceExit",
     "test:unit:nocov": "jest --selectProjects unit --no-coverage --forceExit",
     "test:integration:nocov": "jest --selectProjects integration --no-coverage --forceExit",
@@ -67,6 +66,7 @@
     "mock-fs": "^5.2.0",
     "nock": "^13.5.1",
     "open": "^8.4.2",
+    "readline-sync": "^1.4.10",
     "serverless": "^3.32.2",
     "serverless-dotenv-plugin": "^4.0.2",
     "serverless-offline": "^12.0.4",
@@ -84,4 +84,3 @@
     "ancestorSeparator": " > "
   }
 }
-

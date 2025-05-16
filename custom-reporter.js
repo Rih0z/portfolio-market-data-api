@@ -272,6 +272,11 @@ class EvaNervReporter {
     const limitedHistory = this.coverageHistory.slice(-30);
     
     try {
+      // 出力ディレクトリがない場合は作成
+      if (!fs.existsSync(path.dirname(historyFile))) {
+        fs.mkdirSync(path.dirname(historyFile), { recursive: true });
+      }
+      
       fs.writeFileSync(historyFile, JSON.stringify(limitedHistory, null, 2));
       this.log('カバレッジ履歴データを保存しました', 'INFO');
     } catch (error) {
@@ -294,6 +299,11 @@ class EvaNervReporter {
    */
   generateEvaVisualReport(outputDir) {
     try {
+      // 出力ディレクトリがなければ作成
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+      
       // 基本的なHTMLテンプレート - エヴァンゲリオン風
       let html = `
         <!DOCTYPE html>
@@ -1596,7 +1606,8 @@ class EvaNervReporter {
       fs.writeFileSync(path.join(outputDir, 'visual-report.html'), basicHtml);
     }
   }
-/**
+  
+  /**
    * テスト実行開始時のハンドラ
    * @param {Object} results テスト結果
    * @param {Object} options オプション
@@ -1689,9 +1700,6 @@ class EvaNervReporter {
       this.print(`レポート生成中にエラーが発生しました: ${error.message}`, 'error');
     }
   }
-}
-
-module.exports = EvaNervReporter;  
 }
 
 module.exports = EvaNervReporter;

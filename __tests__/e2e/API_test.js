@@ -10,6 +10,7 @@
  * @updated 2025-05-13 修正: apiServerAvailable判定の修正、モックセットアップの強化
  * @updated 2025-05-14 修正: モック設定の追加、エラーハンドリングの強化
  * @updated 2025-05-15 修正: エラーハンドリングテストとログアウト後の認証チェックを修正
+ * @updated 2025-05-21 修正: モック設定をクエリパラメータ方式に変更、デバッグ情報を追加
  */
 
 const axios = require('axios');
@@ -117,6 +118,8 @@ describe('Portfolio Market Data API E2Eテスト', () => {
   
   // モックAPIレスポンスのセットアップ
   const setupMockResponses = () => {
+    console.log('Setting up mock API responses...');
+    
     // 安全性のため先に全ての外部APIをモック
     mockExternalApis();
     
@@ -128,92 +131,153 @@ describe('Portfolio Market Data API E2Eテスト', () => {
       timestamp: new Date().toISOString()
     });
     
-    // 米国株データAPI
-    mockApiRequest(`${API_BASE_URL}/api/market-data?type=us-stock&symbols=${TEST_DATA.usStockSymbol}`, 'GET', {
-      success: true,
-      data: {
-        [TEST_DATA.usStockSymbol]: {
-          ticker: TEST_DATA.usStockSymbol,
-          price: 190.5,
-          change: 2.3,
-          changePercent: 1.2,
-          currency: 'USD',
-          lastUpdated: new Date().toISOString()
+    // 米国株データAPI - クエリパラメータで正確にマッチさせる
+    mockApiRequest(
+      `${API_BASE_URL}/api/market-data`, 
+      'GET', 
+      {
+        success: true,
+        data: {
+          [TEST_DATA.usStockSymbol]: {
+            ticker: TEST_DATA.usStockSymbol,
+            price: 190.5,
+            change: 2.3,
+            changePercent: 1.2,
+            currency: 'USD',
+            lastUpdated: new Date().toISOString()
+          }
+        },
+        usage: {
+          daily: { count: 1, limit: 100 },
+          monthly: { count: 10, limit: 1000 }
         }
       },
-      usage: {
-        daily: { count: 1, limit: 100 },
-        monthly: { count: 10, limit: 1000 }
+      200,
+      {},
+      { 
+        queryParams: { 
+          type: 'us-stock', 
+          symbols: TEST_DATA.usStockSymbol 
+        } 
       }
-    });
+    );
     
-    // 日本株データAPI
-    mockApiRequest(`${API_BASE_URL}/api/market-data?type=jp-stock&symbols=${TEST_DATA.jpStockCode}`, 'GET', {
-      success: true,
-      data: {
-        [TEST_DATA.jpStockCode]: {
-          ticker: TEST_DATA.jpStockCode,
-          price: 2500,
-          change: 50,
-          changePercent: 2.0,
-          currency: 'JPY',
-          lastUpdated: new Date().toISOString()
+    // 日本株データAPI - クエリパラメータで正確にマッチさせる
+    mockApiRequest(
+      `${API_BASE_URL}/api/market-data`, 
+      'GET', 
+      {
+        success: true,
+        data: {
+          [TEST_DATA.jpStockCode]: {
+            ticker: TEST_DATA.jpStockCode,
+            price: 2500,
+            change: 50,
+            changePercent: 2.0,
+            currency: 'JPY',
+            lastUpdated: new Date().toISOString()
+          }
+        },
+        usage: {
+          daily: { count: 1, limit: 100 },
+          monthly: { count: 10, limit: 1000 }
         }
       },
-      usage: {
-        daily: { count: 1, limit: 100 },
-        monthly: { count: 10, limit: 1000 }
+      200,
+      {},
+      { 
+        queryParams: { 
+          type: 'jp-stock', 
+          symbols: TEST_DATA.jpStockCode 
+        } 
       }
-    });
+    );
     
-    // 投資信託データAPI
-    mockApiRequest(`${API_BASE_URL}/api/market-data?type=mutual-fund&symbols=${TEST_DATA.mutualFundCode}`, 'GET', {
-      success: true,
-      data: {
-        [TEST_DATA.mutualFundCode]: {
-          ticker: TEST_DATA.mutualFundCode,
-          price: 12500,
-          change: 25,
-          changePercent: 0.2,
-          currency: 'JPY',
-          isMutualFund: true,
-          lastUpdated: new Date().toISOString()
+    // 投資信託データAPI - クエリパラメータで正確にマッチさせる
+    mockApiRequest(
+      `${API_BASE_URL}/api/market-data`, 
+      'GET', 
+      {
+        success: true,
+        data: {
+          [TEST_DATA.mutualFundCode]: {
+            ticker: TEST_DATA.mutualFundCode,
+            price: 12500,
+            change: 25,
+            changePercent: 0.2,
+            currency: 'JPY',
+            isMutualFund: true,
+            lastUpdated: new Date().toISOString()
+          }
+        },
+        usage: {
+          daily: { count: 1, limit: 100 },
+          monthly: { count: 10, limit: 1000 }
         }
       },
-      usage: {
-        daily: { count: 1, limit: 100 },
-        monthly: { count: 10, limit: 1000 }
+      200,
+      {},
+      { 
+        queryParams: { 
+          type: 'mutual-fund', 
+          symbols: TEST_DATA.mutualFundCode 
+        } 
       }
-    });
+    );
     
-    // 為替レートデータAPI
-    mockApiRequest(`${API_BASE_URL}/api/market-data?type=exchange-rate&symbols=${TEST_DATA.exchangeRate}&base=USD&target=JPY`, 'GET', {
-      success: true,
-      data: {
-        [TEST_DATA.exchangeRate]: {
-          pair: TEST_DATA.exchangeRate,
-          rate: 148.5,
-          change: 0.5,
-          changePercent: 0.3,
+    // 為替レートデータAPI - クエリパラメータで正確にマッチさせる
+    mockApiRequest(
+      `${API_BASE_URL}/api/market-data`, 
+      'GET', 
+      {
+        success: true,
+        data: {
+          [TEST_DATA.exchangeRate]: {
+            pair: TEST_DATA.exchangeRate,
+            rate: 148.5,
+            change: 0.5,
+            changePercent: 0.3,
+            base: 'USD',
+            target: 'JPY',
+            lastUpdated: new Date().toISOString()
+          }
+        },
+        usage: {
+          daily: { count: 1, limit: 100 },
+          monthly: { count: 10, limit: 1000 }
+        }
+      },
+      200,
+      {},
+      { 
+        queryParams: { 
+          type: 'exchange-rate', 
+          symbols: TEST_DATA.exchangeRate,
           base: 'USD',
-          target: 'JPY',
-          lastUpdated: new Date().toISOString()
-        }
-      },
-      usage: {
-        daily: { count: 1, limit: 100 },
-        monthly: { count: 10, limit: 1000 }
+          target: 'JPY'
+        } 
       }
-    });
+    );
     
     // エラーハンドリングテスト用 - 明示的に400エラーを設定
-    mockApiRequest(`${API_BASE_URL}/api/market-data`, 'GET', {
-      success: false,
-      error: {
-        code: 'INVALID_PARAMS',
-        message: 'Invalid market data type'
+    mockApiRequest(
+      `${API_BASE_URL}/api/market-data`, 
+      'GET', 
+      {
+        success: false,
+        error: {
+          code: 'INVALID_PARAMS',
+          message: 'Invalid market data type'
+        }
+      }, 
+      400, 
+      {}, 
+      { 
+        queryParams: { 
+          type: 'invalid-type' 
+        } 
       }
-    }, 400, {}, { queryParams: { type: 'invalid-type' } });
+    );
     
     // 認証APIモック
     mockApiRequest(`${API_BASE_URL}/auth/google/login`, 'POST', {
@@ -249,7 +313,7 @@ describe('Portfolio Market Data API E2Eテスト', () => {
       'set-cookie': ['session=; Max-Age=0; HttpOnly; Secure']
     });
     
-    // ログアウト後のセッション確認API - 401エラーを返すようにする（修正）
+    // ログアウト後のセッション確認API - 401エラーを返すようにする
     mockApiRequest(`${API_BASE_URL}/auth/session`, 'GET', {
       success: false,
       error: {
@@ -281,16 +345,38 @@ describe('Portfolio Market Data API E2Eテスト', () => {
       }
     });
     
-    // テストデータファイル (drive/load)用にモックを追加
-    mockApiRequest(`${API_BASE_URL}/drive/load`, 'GET', {
-      success: true,
-      data: TEST_DATA.samplePortfolio
-    }, 200, {}, { queryParams: { fileId: 'file-123' } });
+    // テストデータファイル (drive/load)用にモック - クエリパラメータで正確にマッチさせる
+    mockApiRequest(
+      `${API_BASE_URL}/drive/load`, 
+      'GET', 
+      {
+        success: true,
+        data: TEST_DATA.samplePortfolio
+      }, 
+      200, 
+      {}, 
+      { 
+        queryParams: { 
+          fileId: 'file-123' 
+        } 
+      }
+    );
     
-    mockApiRequest(`${API_BASE_URL}/drive/load`, 'GET', {
-      success: true,
-      data: TEST_DATA.samplePortfolio
-    }, 200, {}, { queryParams: { fileId: 'new-file-123' } });
+    mockApiRequest(
+      `${API_BASE_URL}/drive/load`, 
+      'GET', 
+      {
+        success: true,
+        data: TEST_DATA.samplePortfolio
+      }, 
+      200, 
+      {}, 
+      { 
+        queryParams: { 
+          fileId: 'new-file-123' 
+        } 
+      }
+    );
     
     // 認証なしエラー
     mockApiRequest(`${API_BASE_URL}/drive/files`, 'GET', {
@@ -308,11 +394,22 @@ describe('Portfolio Market Data API E2Eテスト', () => {
       version: '1.0.0',
       timestamp: new Date().toISOString()
     });
+    
+    console.log('✅ Mock API responses setup completed');
   };
   
   describe('マーケットデータAPI', () => {
     conditionalTest('米国株データ取得', async () => {
       try {
+        // デバッグ情報を追加
+        console.log('Running US stock data test with:', { 
+          url: `${API_BASE_URL}/api/market-data`,
+          params: {
+            type: 'us-stock',
+            symbols: TEST_DATA.usStockSymbol
+          }
+        });
+        
         // APIリクエスト
         const response = await axios.get(`${API_BASE_URL}/api/market-data`, {
           params: {
@@ -320,6 +417,9 @@ describe('Portfolio Market Data API E2Eテスト', () => {
             symbols: TEST_DATA.usStockSymbol
           }
         });
+        
+        // レスポンスをログ出力（デバッグ用）
+        console.log('Response received:', JSON.stringify(response.data, null, 2));
         
         // レスポンスの存在確認
         expect(response).toBeDefined();
@@ -340,12 +440,24 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         expect(response.data.usage.monthly).toBeDefined();
       } catch (error) {
         console.error('米国株データ取得テストエラー:', error.message);
+        if (error.response) {
+          console.error('Error response:', JSON.stringify(error.response.data, null, 2));
+        }
         expect(true).toBe(false, `テストが失敗しました: ${error.message}`);
       }
     });
     
     conditionalTest('日本株データ取得', async () => {
       try {
+        // デバッグ情報を追加
+        console.log('Running JP stock data test with:', { 
+          url: `${API_BASE_URL}/api/market-data`,
+          params: {
+            type: 'jp-stock',
+            symbols: TEST_DATA.jpStockCode
+          }
+        });
+        
         // APIリクエスト
         const response = await axios.get(`${API_BASE_URL}/api/market-data`, {
           params: {
@@ -353,6 +465,9 @@ describe('Portfolio Market Data API E2Eテスト', () => {
             symbols: TEST_DATA.jpStockCode
           }
         });
+        
+        // レスポンスをログ出力（デバッグ用）
+        console.log('Response received:', JSON.stringify(response.data, null, 2));
         
         // レスポンスの存在確認
         expect(response).toBeDefined();
@@ -373,12 +488,24 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         expect(response.data.usage.monthly).toBeDefined();
       } catch (error) {
         console.error('日本株データ取得テストエラー:', error.message);
+        if (error.response) {
+          console.error('Error response:', JSON.stringify(error.response.data, null, 2));
+        }
         expect(true).toBe(false, `テストが失敗しました: ${error.message}`);
       }
     });
     
     conditionalTest('投資信託データ取得', async () => {
       try {
+        // デバッグ情報を追加
+        console.log('Running mutual fund data test with:', { 
+          url: `${API_BASE_URL}/api/market-data`,
+          params: {
+            type: 'mutual-fund',
+            symbols: TEST_DATA.mutualFundCode
+          }
+        });
+        
         // APIリクエスト
         const response = await axios.get(`${API_BASE_URL}/api/market-data`, {
           params: {
@@ -386,6 +513,9 @@ describe('Portfolio Market Data API E2Eテスト', () => {
             symbols: TEST_DATA.mutualFundCode
           }
         });
+        
+        // レスポンスをログ出力（デバッグ用）
+        console.log('Response received:', JSON.stringify(response.data, null, 2));
         
         // レスポンスの存在確認
         expect(response).toBeDefined();
@@ -406,12 +536,26 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         expect(response.data.usage.monthly).toBeDefined();
       } catch (error) {
         console.error('投資信託データ取得テストエラー:', error.message);
+        if (error.response) {
+          console.error('Error response:', JSON.stringify(error.response.data, null, 2));
+        }
         expect(true).toBe(false, `テストが失敗しました: ${error.message}`);
       }
     });
     
     conditionalTest('為替レートデータ取得', async () => {
       try {
+        // デバッグ情報を追加
+        console.log('Running exchange rate data test with:', { 
+          url: `${API_BASE_URL}/api/market-data`,
+          params: {
+            type: 'exchange-rate',
+            symbols: TEST_DATA.exchangeRate,
+            base: 'USD',
+            target: 'JPY'
+          }
+        });
+        
         // APIリクエスト
         const response = await axios.get(`${API_BASE_URL}/api/market-data`, {
           params: {
@@ -421,6 +565,9 @@ describe('Portfolio Market Data API E2Eテスト', () => {
             target: 'JPY'
           }
         });
+        
+        // レスポンスをログ出力（デバッグ用）
+        console.log('Response received:', JSON.stringify(response.data, null, 2));
         
         // レスポンスの存在確認
         expect(response).toBeDefined();
@@ -442,12 +589,24 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         expect(response.data.usage.monthly).toBeDefined();
       } catch (error) {
         console.error('為替レートデータ取得テストエラー:', error.message);
+        if (error.response) {
+          console.error('Error response:', JSON.stringify(error.response.data, null, 2));
+        }
         expect(true).toBe(false, `テストが失敗しました: ${error.message}`);
       }
     });
     
     conditionalTest('無効なパラメータでのエラーハンドリング', async () => {
       try {
+        // デバッグ情報を追加
+        console.log('Running invalid parameter test with:', { 
+          url: `${API_BASE_URL}/api/market-data`,
+          params: {
+            type: 'invalid-type',
+            symbols: TEST_DATA.usStockSymbol
+          }
+        });
+        
         // 不正なパラメータでAPIリクエスト
         const response = await axios.get(`${API_BASE_URL}/api/market-data`, {
           params: {
@@ -468,6 +627,11 @@ describe('Portfolio Market Data API E2Eテスト', () => {
           expect(response?.status).toBe(400);
         }
       } catch (error) {
+        // エラーレスポンスをログ出力（デバッグ用）
+        if (error.response) {
+          console.log('Error response received:', JSON.stringify(error.response.data, null, 2));
+        }
+        
         // エラーレスポンスの検証 - 修正：ここではerror.responseが存在するかを確実にチェックする
         if (!error.response) {
           console.error('エラーレスポンスが存在しません:', error);
@@ -498,7 +662,11 @@ describe('Portfolio Market Data API E2Eテスト', () => {
   describe('認証API', () => {
     conditionalTest('認証フロー: ログイン、セッション取得、ログアウト', async () => {
       try {
+        // デバッグ情報を追加
+        console.log('Running authentication flow test...');
+        
         // ステップ1: Googleログイン
+        console.log('Step 1: Google login');
         const loginResponse = await axios.post(`${API_BASE_URL}/auth/google/login`, {
           code: TEST_DATA.testAuthCode,
           redirectUri: TEST_DATA.redirectUri
@@ -519,8 +687,10 @@ describe('Portfolio Market Data API E2Eテスト', () => {
           : 'session=test-session-id';
           
         expect(sessionCookie).toContain('session=');
+        console.log('Session cookie received:', sessionCookie);
         
         // ステップ2: セッション情報取得
+        console.log('Step 2: Get session info');
         const sessionResponse = await axios.get(`${API_BASE_URL}/auth/session`, {
           headers: {
             Cookie: sessionCookie
@@ -529,6 +699,7 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         
         // レスポンスの存在確認
         expect(sessionResponse).toBeDefined();
+        console.log('Session response:', JSON.stringify(sessionResponse.data, null, 2));
         
         // レスポンス検証
         expect(sessionResponse.status).toBe(200);
@@ -537,6 +708,7 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         expect(sessionResponse.data.data.user.id).toBeDefined();
         
         // ステップ3: ログアウト
+        console.log('Step 3: Logout');
         const logoutResponse = await axios.post(`${API_BASE_URL}/auth/logout`, {}, {
           headers: {
             Cookie: sessionCookie
@@ -545,6 +717,7 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         
         // レスポンスの存在確認
         expect(logoutResponse).toBeDefined();
+        console.log('Logout response:', JSON.stringify(logoutResponse.data, null, 2));
         
         // レスポンス検証
         expect(logoutResponse.status).toBe(200);
@@ -557,8 +730,10 @@ describe('Portfolio Market Data API E2Eテスト', () => {
           : 'session=; Max-Age=0';
           
         expect(logoutCookie).toContain('Max-Age=0');
+        console.log('Logout cookie:', logoutCookie);
         
         // ステップ4: ログアウト後のセッション情報取得（エラーになるはず）
+        console.log('Step 4: Get session info after logout (should fail)');
         try {
           // 修正：ログアウト後に正しいクッキーヘッダーを設定するように改善
           const sessionAfterLogoutResponse = await axios.get(`${API_BASE_URL}/auth/session`, {
@@ -580,6 +755,13 @@ describe('Portfolio Market Data API E2Eテスト', () => {
             // テスト失敗：明示的にfailさせる
             expect(true).toBe(false, 'Expected request to fail with 401 error after logout');
             return;
+          }
+          
+          // エラーレスポンスをログ出力（デバッグ用）
+          if (error.response) {
+            console.log('Expected error response received:', JSON.stringify(error.response.data, null, 2));
+          } else {
+            console.warn('Missing error response, creating mock response for test');
           }
           
           // エラーレスポンスが存在しない場合はモックする
@@ -604,6 +786,9 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         }
       } catch (error) {
         console.error('認証フローテストエラー:', error.message);
+        if (error.response) {
+          console.error('Error response:', JSON.stringify(error.response.data, null, 2));
+        }
         expect(true).toBe(false, `テストが失敗しました: ${error.message}`);
       }
     });
@@ -617,6 +802,7 @@ describe('Portfolio Market Data API E2Eテスト', () => {
       
       // ログイン処理
       try {
+        console.log('Login before Google Drive API tests');
         const loginResponse = await axios.post(`${API_BASE_URL}/auth/google/login`, {
           code: TEST_DATA.testAuthCode,
           redirectUri: TEST_DATA.redirectUri
@@ -625,6 +811,8 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         sessionCookie = loginResponse.headers['set-cookie'] 
           ? loginResponse.headers['set-cookie'][0]
           : 'session=test-session-id';
+        
+        console.log('Session cookie for Drive tests:', sessionCookie);
       } catch (error) {
         console.error('Login failed in beforeEach:', error.message);
         sessionCookie = 'session=test-session-id'; // モック用のフォールバック
@@ -633,7 +821,11 @@ describe('Portfolio Market Data API E2Eテスト', () => {
     
     conditionalTest('ポートフォリオデータの保存と読み込み', async () => {
       try {
+        // デバッグ情報を追加
+        console.log('Running portfolio data save and load test...');
+        
         // ステップ1: ポートフォリオデータを保存
+        console.log('Step 1: Save portfolio data');
         const saveResponse = await axios.post(
           `${API_BASE_URL}/drive/save`,
           { portfolioData: TEST_DATA.samplePortfolio },
@@ -646,6 +838,7 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         
         // レスポンスの存在確認
         expect(saveResponse).toBeDefined();
+        console.log('Save response:', JSON.stringify(saveResponse.data, null, 2));
         
         // レスポンス検証
         expect(saveResponse.status).toBe(200);
@@ -654,9 +847,11 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         
         // 保存したファイルIDを取得
         const fileId = saveResponse.data.file.id;
+        console.log('Saved file ID:', fileId);
         
         // ステップ2: ファイル一覧を取得して検証
         try {
+          console.log('Step 2: Get file list');
           const listResponse = await axios.get(`${API_BASE_URL}/drive/files`, {
             headers: {
               Cookie: sessionCookie
@@ -668,6 +863,8 @@ describe('Portfolio Market Data API E2Eテスト', () => {
             console.warn('ファイル一覧リクエストのレスポンスが未定義です');
             // 代替検証を続行
           } else {
+            console.log('File list response:', JSON.stringify(listResponse.data, null, 2));
+            
             // レスポンス検証
             expect(listResponse.status).toBe(200);
             expect(listResponse.data.success).toBe(true);
@@ -682,12 +879,16 @@ describe('Portfolio Market Data API E2Eテスト', () => {
           }
         } catch (listError) {
           console.warn('ファイル一覧取得エラー:', listError.message);
+          if (listError.response) {
+            console.warn('List error response:', JSON.stringify(listError.response.data, null, 2));
+          }
           // テストを継続（リスト取得の失敗はファイル読み込みテストに影響しない）
         }
         
         // 保存したファイルを読み込み
         // 修正: 使用するファイルIDを明示的に選択し、try-catchで囲む
         const useFileId = fileId || 'file-123'; // モックの場合は固定ID
+        console.log('Step 3: Load file with ID:', useFileId);
         
         try {
           const loadResponse = await axios.get(`${API_BASE_URL}/drive/load`, {
@@ -702,12 +903,17 @@ describe('Portfolio Market Data API E2Eテスト', () => {
             throw new Error(`ファイル読み込みのレスポンスが未定義です (fileId: ${useFileId})`);
           }
           
+          console.log('Load response:', JSON.stringify(loadResponse.data, null, 2));
+          
           // レスポンス検証
           expect(loadResponse.status).toBe(200);
           expect(loadResponse.data.success).toBe(true);
           expect(loadResponse.data.data).toEqual(TEST_DATA.samplePortfolio);
         } catch (loadError) {
           console.warn(`ファイル読み込みエラー(${useFileId}):`, loadError.message);
+          if (loadError.response) {
+            console.warn('Load error response:', JSON.stringify(loadError.response.data, null, 2));
+          }
           
           // フォールバック: 固定のファイルIDを試す
           console.log('フォールバックファイルIDを使用して再試行します: file-123');
@@ -722,22 +928,32 @@ describe('Portfolio Market Data API E2Eテスト', () => {
             throw new Error('フォールバックファイル読み込みのレスポンスが未定義です');
           }
           
+          console.log('Fallback load response:', JSON.stringify(fallbackResponse.data, null, 2));
+          
           expect(fallbackResponse.status).toBe(200);
           expect(fallbackResponse.data.data).toEqual(TEST_DATA.samplePortfolio);
         }
       } catch (error) {
         console.error('ポートフォリオデータテストエラー:', error.message);
+        if (error.response) {
+          console.error('Error response:', JSON.stringify(error.response.data, null, 2));
+        }
         expect(true).toBe(false, `テストが失敗しました: ${error.message}`);
       }
     });
     
     conditionalTest('認証なしでのアクセス拒否', async () => {
       try {
+        // デバッグ情報を追加
+        console.log('Running unauthorized access test...');
+        
         // 認証なしでリクエスト
         const response = await axios.get(`${API_BASE_URL}/drive/files`);
         
         // 成功レスポンスがある場合はそのステータスをチェック
         if (response) {
+          console.log('Unexpected success response:', JSON.stringify(response.data, null, 2));
+          
           // 本来は401エラーが期待されるが、環境によってはモックが異なる動作をする可能性がある
           console.warn('認証なしアクセスが成功してしまいました:', response.status);
           
@@ -755,6 +971,11 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         // ここに到達したらテスト失敗
         expect(true).toBe(false, 'Expected request to fail with 401 error');
       } catch (error) {
+        // エラーレスポンスをログ出力（デバッグ用）
+        if (error.response) {
+          console.log('Expected error response received:', JSON.stringify(error.response.data, null, 2));
+        }
+        
         // エラーがないとテスト失敗
         if (!error || !error.response) {
           console.error('予期しないエラー:', error?.message || '不明なエラー');
@@ -777,10 +998,14 @@ describe('Portfolio Market Data API E2Eテスト', () => {
   describe('API基本機能', () => {
     conditionalTest('ヘルスチェックエンドポイント', async () => {
       try {
+        // デバッグ情報を追加
+        console.log('Running health check test...');
+        
         const response = await axios.get(`${API_BASE_URL}/health`);
         
         // レスポンスの存在確認
         expect(response).toBeDefined();
+        console.log('Health check response:', JSON.stringify(response.data, null, 2));
         
         // レスポンス検証
         expect(response.status).toBe(200);
@@ -788,6 +1013,9 @@ describe('Portfolio Market Data API E2Eテスト', () => {
         // APIがレスポンスを返せていることが重要
       } catch (error) {
         console.error('ヘルスチェックテストエラー:', error.message);
+        if (error.response) {
+          console.error('Error response:', JSON.stringify(error.response.data, null, 2));
+        }
         expect(true).toBe(false, `テストが失敗しました: ${error.message}`);
       }
     });

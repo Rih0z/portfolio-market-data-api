@@ -7,6 +7,7 @@
  * @author Portfolio Manager Team / NERV
  * @created 2025-05-26
  * @updated 2025-05-15 - 出力ファイル名を visual-report.html に変更
+ * @updated 2025-05-16 - グラフ部分をCSS/HTMLのみで実装し、外部スクリプト不要に変更
  */
 
 const fs = require('fs');
@@ -75,6 +76,11 @@ class EvaNervReporter {
       inverse: '\x1b[7m',        // 反転（重要警告用）
       reset: '\x1b[0m'
     };
+
+    // カバレッジ履歴データ
+    this.coverageHistory = [];
+    // 履歴データファイルを確認して読み込む
+    this.loadCoverageHistory();
   }
   
   /**
@@ -142,6 +148,147 @@ class EvaNervReporter {
   }
   
   /**
+   * カバレッジバーのクラスを取得
+   * @param {number} value 現在の値
+   * @param {number} threshold 目標値
+   * @returns {string} クラス名
+   */
+  getCoverageBarClass(value, threshold) {
+    if (value >= threshold) {
+      return 'success';
+    } else if (value >= threshold * 0.7) {
+      return 'warning';
+    }
+    return 'critical';
+  }
+  
+  /**
+   * NERV風のステータス記号を取得
+   * @param {number} value 現在の値
+   * @param {number} threshold 目標値
+   * @returns {string} ステータス記号
+   */
+  getNervStatusSymbol(value, threshold) {
+    if (value >= threshold) {
+      return '<span style="color: var(--nerv-green);">ACCEPTABLE [◯]</span>';
+    }
+    return '<span style="color: var(--nerv-red); animation: blink 1s infinite;">CRITICAL [×]</span>';
+  }
+  
+  /**
+   * カバレッジ目標値を取得
+   * @param {string} level 目標レベル
+   * @returns {Object} しきい値設定
+   */
+  getCoverageThresholds(level) {
+    // デフォルトのしきい値設定
+    const thresholds = {
+      initial: {
+        statements: 30,
+        branches: 20,
+        functions: 25,
+        lines: 30
+      },
+      mid: {
+        statements: 60,
+        branches: 50,
+        functions: 60,
+        lines: 60
+      },
+      final: {
+        statements: 80,
+        branches: 70,
+        functions: 80,
+        lines: 80
+      }
+    };
+    
+    // 設定ファイルからしきい値を取得（可能であれば）
+    try {
+      const reporterConfig = require('./jest-reporter.config.js');
+      if (reporterConfig && reporterConfig.baseOptions && 
+          reporterConfig.baseOptions.coverageReport && 
+          reporterConfig.baseOptions.coverageReport.thresholds) {
+        return reporterConfig.baseOptions.coverageReport.thresholds[level] || thresholds[level];
+      }
+    } catch (error) {
+      this.log('レポーター設定の読み込みに失敗しました: ' + error.message, 'WARNING');
+    }
+    
+    return thresholds[level] || thresholds.initial;
+  }
+
+  /**
+   * カバレッジ履歴データを読み込む
+   * @returns {void}
+   */
+  loadCoverageHistory() {
+    const historyFile = path.resolve('./test-results/coverage-history.json');
+    
+    if (!fs.existsSync(historyFile)) {
+      // 履歴ファイルがない場合は空配列をセット
+      this.coverageHistory = [];
+      return;
+    }
+    
+    try {
+      const data = JSON.parse(fs.readFileSync(historyFile, 'utf8'));
+      this.coverageHistory = Array.isArray(data) ? data : [];
+      this.log(`カバレッジ履歴データを読み込みました: ${this.coverageHistory.length}件`, 'INFO');
+    } catch (error) {
+      this.log('カバレッジ履歴データの読み込みに失敗しました: ' + error.message, 'WARNING');
+      this.coverageHistory = [];
+    }
+  }
+
+  /**
+   * カバレッジ履歴データを保存する
+   * @param {Object} currentData 現在のカバレッジデータ
+   */
+  saveCoverageHistory(currentData) {
+    const historyFile = path.resolve('./test-results/coverage-history.json');
+    
+    // 現在の日付
+    const today = new Date().toISOString().split('T')[0];
+    
+    // 同じ日付のデータがあれば上書き、なければ追加
+    const existingIndex = this.coverageHistory.findIndex(item => item.date === today);
+    
+    const newDataPoint = {
+      date: today,
+      statements: currentData.statements.pct,
+      branches: currentData.branches.pct,
+      functions: currentData.functions.pct,
+      lines: currentData.lines.pct
+    };
+    
+    if (existingIndex >= 0) {
+      this.coverageHistory[existingIndex] = newDataPoint;
+    } else {
+      this.coverageHistory.push(newDataPoint);
+    }
+    
+    // 履歴を最大30日分に制限
+    const limitedHistory = this.coverageHistory.slice(-30);
+    
+    try {
+      fs.writeFileSync(historyFile, JSON.stringify(limitedHistory, null, 2));
+      this.log('カバレッジ履歴データを保存しました', 'INFO');
+    } catch (error) {
+      this.log('カバレッジ履歴データの保存に失敗しました: ' + error.message, 'WARNING');
+    }
+  }
+
+  /**
+   * 数値を小数点以下2桁に丸める
+   * @param {number} num 丸める数値
+   * @returns {number} 丸められた数値
+   */
+  roundToTwo(num) {
+    return Math.round((num + Number.EPSILON) * 100) / 100;
+  }
+
+  /**
    * HTMLビジュアルレポートを生成
    * @param {string} outputDir 出力ディレクトリ
    */
@@ -169,6 +316,10 @@ class EvaNervReporter {
               --nerv-purple: #9933CC;
               --nerv-white: #CCCCCC;
               --grid-line: #333333;
+              --statements-color: #4285F4;
+              --branches-color: #34A853;
+              --functions-color: #FBBC05;
+              --lines-color: #EA4335;
             }
             
             @keyframes scanline {
@@ -191,6 +342,16 @@ class EvaNervReporter {
               25% { transform: translate(-2px, 2px); }
               50% { transform: translate(2px, -2px); }
               75% { transform: translate(-1px, -1px); }
+            }
+
+            @keyframes growRight {
+              from { width: 0; }
+              to { width: 100%; }
+            }
+
+            @keyframes appear {
+              from { opacity: 0; transform: translateY(10px); }
+              to { opacity: 1; transform: translateY(0); }
             }
             
             * {
@@ -455,7 +616,7 @@ class EvaNervReporter {
             
             .coverage-bar-fill {
               height: 100%;
-              animation: fadeIn 1.5s ease-out;
+              animation: growRight 1.5s ease-out;
             }
             
             .coverage-bar-fill.success {
@@ -468,7 +629,7 @@ class EvaNervReporter {
             
             .coverage-bar-fill.critical {
               background-color: var(--nerv-red);
-              animation: blink 2s infinite;
+              animation: blink 2s infinite, growRight 1.5s ease-out;
             }
             
             .coverage-percentage {
@@ -579,7 +740,7 @@ class EvaNervReporter {
             /* カバレッジチャートのスタイル */
             .coverage-charts {
               margin-top: 30px;
-              border-top: 1px solid #eee;
+              border-top: 1px solid var(--grid-line);
               padding-top: 20px;
             }
             .coverage-charts h2 {
@@ -588,10 +749,293 @@ class EvaNervReporter {
             }
             .chart-container {
               display: flex;
+              flex-direction: column;
               justify-content: center;
               margin-bottom: 30px;
+              padding: 20px;
+              background-color: rgba(0, 0, 0, 0.6);
+              border: 1px solid var(--grid-line);
             }
-            
+
+            /* バーチャートのスタイル（CSSのみ） */
+            .css-bar-chart {
+              display: grid;
+              grid-template-columns: 160px 1fr 80px 100px;
+              gap: 10px;
+              margin-bottom: 20px;
+            }
+
+            .css-bar-chart-header {
+              grid-column: 1 / -1;
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              padding-bottom: 10px;
+              border-bottom: 1px solid var(--grid-line);
+              margin-bottom: 15px;
+            }
+
+            .css-bar-chart-title {
+              font-size: 1.2rem;
+              color: var(--nerv-green);
+            }
+
+            .css-bar-chart-date {
+              font-size: 0.9rem;
+              color: var(--nerv-blue);
+            }
+
+            .css-bar-label {
+              color: var(--nerv-white);
+              font-weight: bold;
+              padding: 5px;
+              text-transform: uppercase;
+            }
+
+            .css-bar-container {
+              position: relative;
+              height: 40px;
+              background-color: rgba(20, 20, 20, 0.5);
+              border: 1px solid var(--grid-line);
+            }
+
+            .css-bar-fill {
+              height: 100%;
+              width: 0;
+              position: absolute;
+              top: 0;
+              left: 0;
+              z-index: 1;
+              transition: width 1.5s ease-out;
+              animation: growRight 1.5s ease-out forwards;
+            }
+
+            .css-bar-target {
+              position: absolute;
+              top: 0;
+              height: 100%;
+              border-right: 2px dashed rgba(255, 255, 255, 0.3);
+              z-index: 2;
+            }
+
+            .css-bar-target::after {
+              content: attr(data-target);
+              position: absolute;
+              top: -20px;
+              right: -15px;
+              font-size: 0.8rem;
+              color: var(--nerv-white);
+            }
+
+            .css-bar-fill.statements {
+              background-color: var(--statements-color);
+            }
+
+            .css-bar-fill.branches {
+              background-color: var(--branches-color);
+            }
+
+            .css-bar-fill.functions {
+              background-color: var(--functions-color);
+            }
+
+            .css-bar-fill.lines {
+              background-color: var(--lines-color);
+            }
+
+            .css-bar-percentage {
+              font-weight: bold;
+              text-align: right;
+              color: var(--nerv-white);
+              padding: 5px;
+            }
+
+            .css-bar-counts {
+              font-size: 0.9rem;
+              text-align: right;
+              color: var(--nerv-blue);
+              padding: 5px;
+            }
+
+            /* ラインチャートのスタイル（CSSのみ） */
+            .css-line-chart {
+              height: 300px;
+              position: relative;
+              border: 1px solid var(--grid-line);
+              margin-top: 40px;
+              background-color: rgba(20, 20, 20, 0.5);
+              padding: 20px 30px 30px 60px;
+            }
+
+            .css-line-chart-header {
+              position: absolute;
+              top: -30px;
+              left: 0;
+              width: 100%;
+              display: flex;
+              justify-content: space-between;
+              padding: 5px 30px 5px 60px;
+            }
+
+            .css-line-chart-title {
+              font-size: 1.2rem;
+              color: var(--nerv-green);
+            }
+
+            .css-line-chart-legend {
+              display: flex;
+              gap: 20px;
+            }
+
+            .css-legend-item {
+              display: flex;
+              align-items: center;
+              gap: 5px;
+              font-size: 0.9rem;
+            }
+
+            .css-legend-color {
+              width: 12px;
+              height: 12px;
+              border-radius: 2px;
+            }
+
+            .css-legend-color.statements {
+              background-color: var(--statements-color);
+            }
+
+            .css-legend-color.branches {
+              background-color: var(--branches-color);
+            }
+
+            .css-legend-color.functions {
+              background-color: var(--functions-color);
+            }
+
+            .css-legend-color.lines {
+              background-color: var(--lines-color);
+            }
+
+            .css-line-chart-grid {
+              position: absolute;
+              top: 0;
+              left: 0;
+              width: 100%;
+              height: 100%;
+              z-index: 1;
+            }
+
+            .css-line-chart-y-axis {
+              position: absolute;
+              top: 0;
+              left: 0;
+              height: 100%;
+              width: 60px;
+              display: flex;
+              flex-direction: column;
+              justify-content: space-between;
+              padding: 20px 0;
+            }
+
+            .css-line-chart-y-label {
+              position: relative;
+              font-size: 0.8rem;
+              color: var(--nerv-white);
+              text-align: right;
+              width: 100%;
+              padding-right: 10px;
+            }
+
+            .css-line-chart-x-axis {
+              position: absolute;
+              bottom: 0;
+              left: 60px;
+              width: calc(100% - 60px);
+              height: 30px;
+              display: flex;
+              justify-content: space-between;
+            }
+
+            .css-line-chart-x-label {
+              font-size: 0.8rem;
+              color: var(--nerv-white);
+              text-align: center;
+              transform: rotate(-45deg);
+              transform-origin: top left;
+              position: absolute;
+              bottom: -25px;
+              width: 100px;
+            }
+
+            .css-line-chart-horizontal-line {
+              position: absolute;
+              left: 60px;
+              width: calc(100% - 60px);
+              height: 1px;
+              background-color: rgba(255, 255, 255, 0.1);
+              z-index: 1;
+            }
+
+            .css-line-chart-vertical-line {
+              position: absolute;
+              top: 20px;
+              height: calc(100% - 50px);
+              width: 1px;
+              background-color: rgba(255, 255, 255, 0.1);
+              z-index: 1;
+            }
+
+            .css-line-chart-line {
+              position: absolute;
+              z-index: 2;
+              stroke-width: 2px;
+              fill: none;
+              animation: appear 1s ease-out forwards;
+            }
+
+            .css-line-chart-dot {
+              position: absolute;
+              width: 6px;
+              height: 6px;
+              border-radius: 50%;
+              z-index: 3;
+              transform: translate(-3px, -3px);
+              animation: appear 1s ease-out forwards;
+            }
+
+            .css-line-chart-target-line {
+              position: absolute;
+              left: 60px;
+              width: calc(100% - 60px);
+              height: 1px;
+              background-color: rgba(255, 255, 255, 0.3);
+              z-index: 2;
+              border-top: 1px dashed;
+            }
+
+            .css-line-chart-target-line.statements {
+              border-color: var(--statements-color);
+            }
+
+            .css-line-chart-target-line.branches {
+              border-color: var(--branches-color);
+            }
+
+            .css-line-chart-target-line.functions {
+              border-color: var(--functions-color);
+            }
+
+            .css-line-chart-target-line.lines {
+              border-color: var(--lines-color);
+            }
+
+            .css-line-chart-target-label {
+              position: absolute;
+              right: 10px;
+              font-size: 0.8rem;
+              transform: translateY(-50%);
+            }
+
             /* レスポンシブ対応 */
             @media (max-width: 768px) {
               .summary {
@@ -612,6 +1056,16 @@ class EvaNervReporter {
                 text-align: left;
                 width: auto;
                 margin-top: 5px;
+              }
+
+              .css-bar-chart {
+                grid-template-columns: 100px 1fr;
+                grid-template-rows: auto auto;
+              }
+
+              .css-bar-percentage, .css-bar-counts {
+                grid-column: 2;
+                text-align: left;
               }
             }
           </style>
@@ -781,6 +1235,261 @@ class EvaNervReporter {
               </table>
             </div>
           `;
+
+          // 現在のカバレッジデータを保存
+          const currentData = {
+            statements: {
+              pct: total.statements.pct,
+              covered: total.statements.covered,
+              total: total.statements.total
+            },
+            branches: {
+              pct: total.branches.pct,
+              covered: total.branches.covered,
+              total: total.branches.total
+            },
+            functions: {
+              pct: total.functions.pct,
+              covered: total.functions.covered,
+              total: total.functions.total
+            },
+            lines: {
+              pct: total.lines.pct,
+              covered: total.lines.covered,
+              total: total.lines.total
+            }
+          };
+
+          // 履歴データを保存
+          this.saveCoverageHistory(currentData);
+
+          // CSSのみのバーチャートを作成
+          html += `
+            <div id="coverage-charts" class="coverage-charts">
+              <h2>コードカバレッジチャート</h2>
+              <div id="bar-chart-container" class="chart-container">
+                <div class="css-bar-chart">
+                  <div class="css-bar-chart-header">
+                    <div class="css-bar-chart-title">コードカバレッジ詳細</div>
+                    <div class="css-bar-chart-date">${new Date().toLocaleDateString('ja-JP')}</div>
+                  </div>
+
+                  <div class="css-bar-label">ステートメント</div>
+                  <div class="css-bar-container">
+                    <div class="css-bar-fill statements" style="width: ${total.statements.pct}%;"></div>
+                    <div class="css-bar-target" style="left: ${targetThresholds.statements}%;" data-target="${targetThresholds.statements}%"></div>
+                  </div>
+                  <div class="css-bar-percentage">${total.statements.pct.toFixed(2)}%</div>
+                  <div class="css-bar-counts">${total.statements.covered}/${total.statements.total}</div>
+
+                  <div class="css-bar-label">ブランチ</div>
+                  <div class="css-bar-container">
+                    <div class="css-bar-fill branches" style="width: ${total.branches.pct}%;"></div>
+                    <div class="css-bar-target" style="left: ${targetThresholds.branches}%;" data-target="${targetThresholds.branches}%"></div>
+                  </div>
+                  <div class="css-bar-percentage">${total.branches.pct.toFixed(2)}%</div>
+                  <div class="css-bar-counts">${total.branches.covered}/${total.branches.total}</div>
+
+                  <div class="css-bar-label">関数</div>
+                  <div class="css-bar-container">
+                    <div class="css-bar-fill functions" style="width: ${total.functions.pct}%;"></div>
+                    <div class="css-bar-target" style="left: ${targetThresholds.functions}%;" data-target="${targetThresholds.functions}%"></div>
+                  </div>
+                  <div class="css-bar-percentage">${total.functions.pct.toFixed(2)}%</div>
+                  <div class="css-bar-counts">${total.functions.covered}/${total.functions.total}</div>
+
+                  <div class="css-bar-label">コード行</div>
+                  <div class="css-bar-container">
+                    <div class="css-bar-fill lines" style="width: ${total.lines.pct}%;"></div>
+                    <div class="css-bar-target" style="left: ${targetThresholds.lines}%;" data-target="${targetThresholds.lines}%"></div>
+                  </div>
+                  <div class="css-bar-percentage">${total.lines.pct.toFixed(2)}%</div>
+                  <div class="css-bar-counts">${total.lines.covered}/${total.lines.total}</div>
+                </div>
+              </div>
+          `;
+
+          // 履歴データがある場合はラインチャートを追加
+          if (this.coverageHistory.length > 0) {
+            // Y軸の最大値を計算（最大値 + 10％ または 100％のいずれか大きい方）
+            const allValues = [
+              ...this.coverageHistory.map(d => d.statements),
+              ...this.coverageHistory.map(d => d.branches),
+              ...this.coverageHistory.map(d => d.functions),
+              ...this.coverageHistory.map(d => d.lines),
+              total.statements.pct,
+              total.branches.pct, 
+              total.functions.pct,
+              total.lines.pct
+            ];
+            
+            const maxValue = Math.max(100, Math.ceil((Math.max(...allValues) + 10) / 10) * 10);
+            
+            // 表示する日付データを制限（最新の7件）
+            const displayedHistory = [...this.coverageHistory].slice(-6);
+            
+            // 現在のデータを追加
+            displayedHistory.push({
+              date: new Date().toISOString().split('T')[0],
+              statements: total.statements.pct,
+              branches: total.branches.pct,
+              functions: total.functions.pct,
+              lines: total.lines.pct
+            });
+
+            // Y軸のラベルを生成
+            let yAxisHtml = '';
+            for (let i = 0; i <= 100; i += 20) {
+              yAxisHtml += `
+                <div class="css-line-chart-y-label" style="bottom: ${i}%;">${i}%</div>
+                <div class="css-line-chart-horizontal-line" style="bottom: ${i}%;"></div>
+              `;
+            }
+
+            // X軸のラベルとデータポイントの生成
+            let xAxisHtml = '';
+            const pointsStatements = [];
+            const pointsBranches = [];
+            const pointsFunctions = [];
+            const pointsLines = [];
+            
+            displayedHistory.forEach((item, index) => {
+              const xPercentage = (index / (displayedHistory.length - 1)) * 100;
+              xAxisHtml += `
+                <div class="css-line-chart-x-label" style="left: ${xPercentage}%;">${item.date.substring(5)}</div>
+                <div class="css-line-chart-vertical-line" style="left: calc(60px + ${xPercentage}% * (100% - 60px) / 100);"></div>
+              `;
+              
+              // データポイント座標の計算
+              const xPos = `calc(60px + ${xPercentage}% * (100% - 60px) / 100)`;
+              pointsStatements.push({
+                x: xPos,
+                y: `calc(100% - ${item.statements / maxValue * 100}% - 30px)`,
+                value: item.statements
+              });
+              
+              pointsBranches.push({
+                x: xPos,
+                y: `calc(100% - ${item.branches / maxValue * 100}% - 30px)`,
+                value: item.branches
+              });
+              
+              pointsFunctions.push({
+                x: xPos,
+                y: `calc(100% - ${item.functions / maxValue * 100}% - 30px)`,
+                value: item.functions
+              });
+              
+              pointsLines.push({
+                x: xPos,
+                y: `calc(100% - ${item.lines / maxValue * 100}% - 30px)`,
+                value: item.lines
+              });
+            });
+
+            // ターゲットラインの位置を計算
+            const targetStatementsPos = `calc(100% - ${targetThresholds.statements / maxValue * 100}% - 30px)`;
+            const targetBranchesPos = `calc(100% - ${targetThresholds.branches / maxValue * 100}% - 30px)`;
+            const targetFunctionsPos = `calc(100% - ${targetThresholds.functions / maxValue * 100}% - 30px)`;
+            const targetLinesPos = `calc(100% - ${targetThresholds.lines / maxValue * 100}% - 30px)`;
+
+            // ラインチャートのHTMLを生成
+            html += `
+              <div id="line-chart-container" class="chart-container">
+                <div class="css-line-chart">
+                  <div class="css-line-chart-header">
+                    <div class="css-line-chart-title">カバレッジ履歴</div>
+                    <div class="css-line-chart-legend">
+                      <div class="css-legend-item">
+                        <div class="css-legend-color statements"></div>
+                        <div>ステートメント</div>
+                      </div>
+                      <div class="css-legend-item">
+                        <div class="css-legend-color branches"></div>
+                        <div>ブランチ</div>
+                      </div>
+                      <div class="css-legend-item">
+                        <div class="css-legend-color functions"></div>
+                        <div>関数</div>
+                      </div>
+                      <div class="css-legend-item">
+                        <div class="css-legend-color lines"></div>
+                        <div>コード行</div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div class="css-line-chart-y-axis">
+                    ${yAxisHtml}
+                  </div>
+                  
+                  <div class="css-line-chart-x-axis">
+                    ${xAxisHtml}
+                  </div>
+                  
+                  <!-- ターゲットライン -->
+                  <div class="css-line-chart-target-line statements" style="top: ${targetStatementsPos};">
+                    <span class="css-line-chart-target-label" style="color: var(--statements-color);">
+                      ステートメント: ${targetThresholds.statements}%
+                    </span>
+                  </div>
+                  <div class="css-line-chart-target-line branches" style="top: ${targetBranchesPos};">
+                    <span class="css-line-chart-target-label" style="color: var(--branches-color);">
+                      ブランチ: ${targetThresholds.branches}%
+                    </span>
+                  </div>
+                  <div class="css-line-chart-target-line functions" style="top: ${targetFunctionsPos};">
+                    <span class="css-line-chart-target-label" style="color: var(--functions-color);">
+                      関数: ${targetThresholds.functions}%
+                    </span>
+                  </div>
+                  <div class="css-line-chart-target-line lines" style="top: ${targetLinesPos};">
+                    <span class="css-line-chart-target-label" style="color: var(--lines-color);">
+                      コード行: ${targetThresholds.lines}%
+                    </span>
+                  </div>
+            `;
+
+            // データポイントとライン描画
+            function generatePoints(points, colorClass) {
+              let html = '';
+              
+              // 点を描画
+              points.forEach((point, index) => {
+                html += `
+                  <div class="css-line-chart-dot ${colorClass}"
+                       style="left: ${point.x}; top: ${point.y}; background-color: var(--${colorClass}-color);"
+                       title="${point.value.toFixed(2)}%">
+                  </div>
+                `;
+              });
+              
+              return html;
+            }
+
+            // 各指標のデータポイントを描画
+            html += generatePoints(pointsStatements, 'statements');
+            html += generatePoints(pointsBranches, 'branches');
+            html += generatePoints(pointsFunctions, 'functions');
+            html += generatePoints(pointsLines, 'lines');
+
+            // ラインチャートのHTMLを閉じる
+            html += `
+                </div>
+              </div>
+            `;
+          } else {
+            html += `
+              <div id="line-chart-container" class="chart-container">
+                <p style="color: var(--nerv-orange); text-align: center;">
+                  履歴データがありません。複数回テストを実行すると履歴が表示されます。
+                </p>
+              </div>
+            `;
+          }
+
+          // カバレッジチャート部分を閉じる
+          html += `</div><!-- end coverage-charts -->`;
         } catch (error) {
           html += `
             <div class="error-section">
@@ -835,21 +1544,6 @@ class EvaNervReporter {
         `;
       }
       
-      // カバレッジチャート用のプレースホルダー - ID追加
-      html += `
-        <div id="coverage-charts" class="coverage-charts">
-          <h2>コードカバレッジチャート</h2>
-          <div id="bar-chart-container" class="chart-container">
-            <!-- バーチャートはここに挿入されます -->
-            <p style="color: var(--nerv-green);">グラフデータ解析中...</p>
-          </div>
-          <div id="line-chart-container" class="chart-container">
-            <!-- 折れ線チャートはここに挿入されます -->
-            <p style="color: var(--nerv-green);">履歴データ解析中...</p>
-          </div>
-        </div><!-- end coverage-charts -->
-      `;
-      
       // フッターと終了タグ
       html += `
             <div class="footer">
@@ -862,7 +1556,7 @@ class EvaNervReporter {
         </html>
       `;
       
-      // ファイルに書き込み - eva-nerv-report.htmlではなくvisual-report.htmlに出力
+      // ファイルに書き込み - visual-report.htmlに出力
       fs.writeFileSync(path.join(outputDir, 'visual-report.html'), html);
       this.log('エヴァンゲリオン風レポートを生成しました: ' + path.join(outputDir, 'visual-report.html'), 'INFO');
     } catch (error) {
@@ -901,77 +1595,6 @@ class EvaNervReporter {
       
       fs.writeFileSync(path.join(outputDir, 'visual-report.html'), basicHtml);
     }
-  }
-  
-  /**
-   * カバレッジバーのクラスを取得
-   * @param {number} value 現在の値
-   * @param {number} threshold 目標値
-   * @returns {string} クラス名
-   */
-  getCoverageBarClass(value, threshold) {
-    if (value >= threshold) {
-      return 'success';
-    } else if (value >= threshold * 0.7) {
-      return 'warning';
-    }
-    return 'critical';
-  }
-  
-  /**
-   * NERV風のステータス記号を取得
-   * @param {number} value 現在の値
-   * @param {number} threshold 目標値
-   * @returns {string} ステータス記号
-   */
-  getNervStatusSymbol(value, threshold) {
-    if (value >= threshold) {
-      return '<span style="color: var(--nerv-green);">ACCEPTABLE [◯]</span>';
-    }
-    return '<span style="color: var(--nerv-red); animation: blink 1s infinite;">CRITICAL [×]</span>';
-  }
-  
-  /**
-   * カバレッジ目標値を取得
-   * @param {string} level 目標レベル
-   * @returns {Object} しきい値設定
-   */
-  getCoverageThresholds(level) {
-    // デフォルトのしきい値設定
-    const thresholds = {
-      initial: {
-        statements: 30,
-        branches: 20,
-        functions: 25,
-        lines: 30
-      },
-      mid: {
-        statements: 60,
-        branches: 50,
-        functions: 60,
-        lines: 60
-      },
-      final: {
-        statements: 80,
-        branches: 70,
-        functions: 80,
-        lines: 80
-      }
-    };
-    
-    // 設定ファイルからしきい値を取得（可能であれば）
-    try {
-      const reporterConfig = require('./jest-reporter.config.js');
-      if (reporterConfig && reporterConfig.baseOptions && 
-          reporterConfig.baseOptions.coverageReport && 
-          reporterConfig.baseOptions.coverageReport.thresholds) {
-        return reporterConfig.baseOptions.coverageReport.thresholds[level] || thresholds[level];
-      }
-    } catch (error) {
-      this.log('レポーター設定の読み込みに失敗しました: ' + error.message, 'WARNING');
-    }
-    
-    return thresholds[level] || thresholds.initial;
   }
   
   // これ以下にEvaNervReporterクラスの他のメソッドを追加...

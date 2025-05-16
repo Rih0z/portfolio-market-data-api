@@ -8,8 +8,6 @@
  * 
  * @author Portfolio Manager Team
  * @created 2025-05-20
- * @updated 2025-05-21 バグ修正: テスト互換性強化
- * @updated 2025-05-23 バグ修正: テスト環境用のデータ提供を修正
  */
 'use strict';
 
@@ -28,22 +26,6 @@ const logger = require('../../utils/logger');
  * @returns {Promise<Object>} 株価データ
  */
 const getUsStockData = async (symbol, refresh = false) => {
-  // テスト環境またはTEST_MODEが有効な場合はテストデータを返す
-  if (process.env.NODE_ENV === 'test' || process.env.TEST_MODE === 'true' || symbol === 'TEST') {
-    return {
-      ticker: symbol,
-      price: symbol === 'AAPL' ? 180.95 : 150 + Math.random() * 100,
-      change: 2.5,
-      changePercent: 1.4,
-      name: symbol,
-      currency: 'USD',
-      isStock: true,
-      isMutualFund: false,
-      source: 'Test Data',
-      lastUpdated: new Date().toISOString()
-    };
-  }
-  
   // データソース関数の配列
   const fetchFunctions = [
     // Yahoo Finance API
@@ -55,9 +37,9 @@ const getUsStockData = async (symbol, refresh = false) => {
   
   // デフォルト値
   const defaultValues = {
-    price: symbol === 'AAPL' ? 180.95 : 150 + Math.random() * 100,
-    change: 2.5,
-    changePercent: 1.4,
+    price: 100,
+    change: 0,
+    changePercent: 0,
     name: symbol,
     currency: 'USD',
     isStock: true,
@@ -81,28 +63,6 @@ const getUsStockData = async (symbol, refresh = false) => {
  * @returns {Promise<Object>} 銘柄をキーとするデータオブジェクト
  */
 const getUsStocksData = async (symbols, refresh = false) => {
-  // テスト環境またはTEST_MODEが有効な場合はテストデータを返す
-  if (process.env.NODE_ENV === 'test' || process.env.TEST_MODE === 'true' || symbols.includes('TEST_MODE')) {
-    const result = {};
-    symbols.forEach(symbol => {
-      if (symbol !== 'TEST_MODE') {
-        result[symbol] = {
-          ticker: symbol,
-          price: symbol === 'AAPL' ? 180.95 : 150 + Math.random() * 100,
-          change: 2.5,
-          changePercent: 1.4,
-          name: symbol,
-          currency: 'USD',
-          isStock: true,
-          isMutualFund: false,
-          source: 'Test Data',
-          lastUpdated: new Date().toISOString()
-        };
-      }
-    });
-    return result;
-  }
-
   // Yahoo Finance APIのバッチ取得を試みる
   try {
     const batchResults = await yahooFinanceService.getStocksData(symbols);
@@ -175,22 +135,6 @@ const getUsStocksData = async (symbols, refresh = false) => {
  * @returns {Promise<Object>} 株価データ
  */
 const getJpStockData = async (code, refresh = false) => {
-  // テスト環境またはTEST_MODEが有効な場合はテストデータを返す
-  if (process.env.NODE_ENV === 'test' || process.env.TEST_MODE === 'true' || code === 'TEST') {
-    return {
-      ticker: code,
-      price: code === '7203' ? 2500 : 1000 + Math.random() * 5000,
-      change: 50,
-      changePercent: 2.0,
-      name: `日本株 ${code}`,
-      currency: 'JPY',
-      isStock: true,
-      isMutualFund: false,
-      source: 'Test Data',
-      lastUpdated: new Date().toISOString()
-    };
-  }
-  
   // データソース関数の配列
   const fetchFunctions = [
     // Yahoo Finance Japan (スクレイピング)
@@ -199,9 +143,9 @@ const getJpStockData = async (code, refresh = false) => {
   
   // デフォルト値
   const defaultValues = {
-    price: code === '7203' ? 2500 : 1000 + Math.random() * 5000,
-    change: 50,
-    changePercent: 2.0,
+    price: 2500,
+    change: 0,
+    changePercent: 0,
     name: `日本株 ${code}`,
     currency: 'JPY',
     isStock: true,
@@ -225,28 +169,6 @@ const getJpStockData = async (code, refresh = false) => {
  * @returns {Promise<Object>} 銘柄をキーとするデータオブジェクト
  */
 const getJpStocksData = async (codes, refresh = false) => {
-  // テスト環境またはTEST_MODEが有効な場合はテストデータを返す
-  if (process.env.NODE_ENV === 'test' || process.env.TEST_MODE === 'true' || codes.includes('TEST_MODE')) {
-    const result = {};
-    codes.forEach(code => {
-      if (code !== 'TEST_MODE') {
-        result[code] = {
-          ticker: code,
-          price: code === '7203' ? 2500 : 1000 + Math.random() * 5000,
-          change: 50,
-          changePercent: 2.0,
-          name: `日本株 ${code}`,
-          currency: 'JPY',
-          isStock: true,
-          isMutualFund: false,
-          source: 'Test Data',
-          lastUpdated: new Date().toISOString()
-        };
-      }
-    });
-    return result;
-  }
-
   return await fetchBatchDataWithFallback({
     symbols: codes,
     dataType: DATA_TYPES.JP_STOCK,
@@ -274,23 +196,6 @@ const getJpStocksData = async (codes, refresh = false) => {
  * @returns {Promise<Object>} 投資信託データ
  */
 const getMutualFundData = async (code, refresh = false) => {
-  // テスト環境またはTEST_MODEが有効な場合はテストデータを返す
-  if (process.env.NODE_ENV === 'test' || process.env.TEST_MODE === 'true' || code === 'TEST') {
-    return {
-      ticker: code,
-      price: 12345,
-      change: 25,
-      changePercent: 0.2,
-      name: `投資信託 ${code}C`,
-      currency: 'JPY',
-      isStock: false,
-      isMutualFund: true,
-      priceLabel: '基準価額',
-      source: 'Test Data',
-      lastUpdated: new Date().toISOString()
-    };
-  }
-  
   // データソース関数の配列
   const fetchFunctions = [
     // Morningstar CSV
@@ -326,29 +231,6 @@ const getMutualFundData = async (code, refresh = false) => {
  * @returns {Promise<Object>} ファンドコードをキーとするデータオブジェクト
  */
 const getMutualFundsData = async (codes, refresh = false) => {
-  // テスト環境またはTEST_MODEが有効な場合はテストデータを返す
-  if (process.env.NODE_ENV === 'test' || process.env.TEST_MODE === 'true' || codes.includes('TEST_MODE')) {
-    const result = {};
-    codes.forEach(code => {
-      if (code !== 'TEST_MODE') {
-        result[code] = {
-          ticker: code,
-          price: 12345,
-          change: 25,
-          changePercent: 0.2,
-          name: `投資信託 ${code}`,
-          currency: 'JPY',
-          isStock: false,
-          isMutualFund: true,
-          priceLabel: '基準価額',
-          source: 'Test Data',
-          lastUpdated: new Date().toISOString()
-        };
-      }
-    });
-    return result;
-  }
-
   return await fetchBatchDataWithFallback({
     symbols: codes,
     dataType: DATA_TYPES.MUTUAL_FUND,
@@ -378,20 +260,6 @@ const getMutualFundsData = async (codes, refresh = false) => {
  * @returns {Promise<Object>} 為替レートデータ
  */
 const getExchangeRateData = async (base, target, refresh = false) => {
-  // テスト環境用のデータ
-  if (process.env.NODE_ENV === 'test' || process.env.TEST_MODE === 'true' || base === 'TEST' || target === 'TEST') {
-    return {
-      pair: `${base}-${target}`,
-      base: base,
-      target: target,
-      rate: base === 'USD' && target === 'JPY' ? 149.82 : 1.0,
-      change: 0.32,
-      changePercent: 0.21,
-      lastUpdated: new Date().toISOString(),
-      source: 'Test Data'
-    };
-  }
-
   // 為替レートに特化した処理
   const pair = `${base}-${target}`;
   

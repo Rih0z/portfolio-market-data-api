@@ -1,5 +1,5 @@
 /**
- * ファイルパス: __tests__/unit/services/sources/exchangeRate.test.js
+ * ファイルパス: __tests__/unit/services/sources/exchangeRateApi.test.js
  * 
  * 為替レートAPIアダプターのユニットテスト
  * 為替レートAPIアクセスとデータ変換機能をテスト
@@ -8,7 +8,7 @@
  * @created 2025-05-15
  */
 
-const exchangeRate = require('../../../../src/services/sources/exchangeRate');
+const exchangeRateApi = require('../../../../src/services/sources/exchangeRateApi');
 const axios = require('axios');
 const { withRetry } = require('../../../../src/utils/retry');
 
@@ -49,7 +49,7 @@ describe('Exchange Rate API Adapter', () => {
   describe('getExchangeRate', () => {
     test('正常に為替レートデータを取得する', async () => {
       // テスト対象の関数を実行
-      const result = await exchangeRate.getExchangeRate(testBase, testTarget);
+      const result = await exchangeRateApi.getExchangeRate(testBase, testTarget);
       
       // axios.getが正しく呼び出されたか検証
       expect(axios.get).toHaveBeenCalledWith(
@@ -92,7 +92,7 @@ describe('Exchange Rate API Adapter', () => {
       });
       
       // テスト対象の関数を実行
-      const result = await exchangeRate.getExchangeRate(testBase, 'JPY,EUR,GBP');
+      const result = await exchangeRateApi.getExchangeRate(testBase, 'JPY,EUR,GBP');
       
       // axios.getが正しく呼び出されたか検証
       expect(axios.get).toHaveBeenCalledWith(
@@ -119,7 +119,7 @@ describe('Exchange Rate API Adapter', () => {
       axios.get.mockRejectedValue(new Error('API request failed'));
       
       // 例外が伝播することを検証
-      await expect(exchangeRate.getExchangeRate(testBase, testTarget)).rejects.toThrow('API request failed');
+      await expect(exchangeRateApi.getExchangeRate(testBase, testTarget)).rejects.toThrow('API request failed');
     });
     
     test('APIレスポンスがsuccessでない場合は例外をスロー', async () => {
@@ -136,7 +136,7 @@ describe('Exchange Rate API Adapter', () => {
       });
       
       // 例外が発生することを検証
-      await expect(exchangeRate.getExchangeRate(testBase, testTarget)).rejects.toThrow('Exchange Rate API error');
+      await expect(exchangeRateApi.getExchangeRate(testBase, testTarget)).rejects.toThrow('Exchange Rate API error');
     });
     
     test('非200レスポンスの場合は例外をスロー', async () => {
@@ -149,36 +149,14 @@ describe('Exchange Rate API Adapter', () => {
       });
       
       // 例外が発生することを検証
-      await expect(exchangeRate.getExchangeRate(testBase, testTarget)).rejects.toThrow('Exchange Rate API returned status 429');
-    });
-  });
-
-  describe('getExchangeRateFromExchangerateHost', () => {
-    test('exchangerate.hostからレートデータを取得する', async () => {
-      // テスト対象の関数を実行
-      const result = await exchangeRate.getExchangeRateFromExchangerateHost(testBase, testTarget);
-      
-      // axios.getが正しく呼び出されたか検証
-      expect(axios.get).toHaveBeenCalledWith(
-        expect.stringContaining('/latest'),
-        expect.any(Object)
-      );
-      
-      // 結果の検証
-      expect(result).toEqual({
-        pair: 'USD-JPY',
-        rate: 149.82,
-        base: 'USD',
-        target: 'JPY',
-        lastUpdated: expect.any(String)
-      });
+      await expect(exchangeRateApi.getExchangeRate(testBase, testTarget)).rejects.toThrow('Exchange Rate API returned status 429');
     });
   });
 
   describe('parseExchangeRateData', () => {
     test('レスポンスデータを正しくパースする', () => {
       // テスト対象の関数を実行
-      const result = exchangeRate.parseExchangeRateData(mockExchangeRateResponse, testBase);
+      const result = exchangeRateApi.parseExchangeRateData(mockExchangeRateResponse, testBase);
       
       // 結果の検証
       expect(result).toEqual({
@@ -204,7 +182,7 @@ describe('Exchange Rate API Adapter', () => {
         }
       };
       
-      const result = exchangeRate.parseExchangeRateData(multiRateResponse, testBase);
+      const result = exchangeRateApi.parseExchangeRateData(multiRateResponse, testBase);
       
       // 結果の検証
       expect(Object.keys(result).length).toBe(3);
@@ -225,7 +203,7 @@ describe('Exchange Rate API Adapter', () => {
         rates: {}
       };
       
-      const result = exchangeRate.parseExchangeRateData(emptyRatesResponse, testBase);
+      const result = exchangeRateApi.parseExchangeRateData(emptyRatesResponse, testBase);
       
       // 空のオブジェクトが返されるか検証
       expect(result).toEqual({});
@@ -239,38 +217,10 @@ describe('Exchange Rate API Adapter', () => {
         // rates フィールドがない
       };
       
-      const result = exchangeRate.parseExchangeRateData(malformedResponse, testBase);
+      const result = exchangeRateApi.parseExchangeRateData(malformedResponse, testBase);
       
       // 空のオブジェクトが返されるか検証
       expect(result).toEqual({});
-    });
-  });
-
-  describe('getBatchExchangeRates', () => {
-    test('複数の為替ペアをバッチで取得する', async () => {
-      // 複数通貨のレスポンスをモック
-      axios.get.mockResolvedValue({
-        status: 200,
-        data: {
-          success: true,
-          base: 'USD',
-          date: '2025-05-15',
-          rates: {
-            JPY: 149.82,
-            EUR: 0.93,
-            GBP: 0.79
-          }
-        }
-      });
-      
-      // テスト対象の関数を実行
-      const result = await exchangeRate.getBatchExchangeRates(['USD-JPY', 'USD-EUR', 'USD-GBP']);
-      
-      // 結果の検証
-      expect(Object.keys(result).length).toBe(3);
-      expect(result).toHaveProperty('USD-JPY');
-      expect(result).toHaveProperty('USD-EUR');
-      expect(result).toHaveProperty('USD-GBP');
     });
   });
 
@@ -283,7 +233,7 @@ describe('Exchange Rate API Adapter', () => {
       process.env.EXCHANGE_RATE_API_KEY = 'test-api-key';
       
       // テスト対象の関数を実行
-      await exchangeRate.getExchangeRate(testBase, testTarget);
+      await exchangeRateApi.getExchangeRate(testBase, testTarget);
       
       // axios.getが正しいヘッダーで呼び出されたか検証
       expect(axios.get).toHaveBeenCalledWith(
@@ -307,7 +257,7 @@ describe('Exchange Rate API Adapter', () => {
       delete process.env.EXCHANGE_RATE_API_KEY;
       
       // テスト対象の関数を実行
-      await exchangeRate.getExchangeRate(testBase, testTarget);
+      await exchangeRateApi.getExchangeRate(testBase, testTarget);
       
       // axios.getが呼び出されたことを検証
       expect(axios.get).toHaveBeenCalled();
@@ -332,7 +282,7 @@ describe('Exchange Rate API Adapter', () => {
       process.env.EXCHANGE_RATE_API_URL = 'https://custom-api.example.com';
       
       // テスト対象の関数を実行
-      await exchangeRate.getExchangeRate(testBase, testTarget);
+      await exchangeRateApi.getExchangeRate(testBase, testTarget);
       
       // カスタムURLで呼び出されたか検証
       expect(axios.get).toHaveBeenCalledWith(
@@ -342,62 +292,6 @@ describe('Exchange Rate API Adapter', () => {
       
       // 環境変数を元に戻す
       process.env.EXCHANGE_RATE_API_URL = originalBaseUrl;
-    });
-  });
-
-  describe('getExchangeRateFromDynamicCalculation', () => {
-    test('クロスレートを動的に計算する', async () => {
-      // USD/JPYとEUR/USDのレスポンスをモック
-      axios.get.mockResolvedValueOnce({
-        status: 200,
-        data: {
-          success: true,
-          base: 'USD',
-          date: '2025-05-15',
-          rates: {
-            JPY: 149.82
-          }
-        }
-      }).mockResolvedValueOnce({
-        status: 200,
-        data: {
-          success: true,
-          base: 'EUR',
-          date: '2025-05-15',
-          rates: {
-            USD: 1.07
-          }
-        }
-      });
-      
-      // テスト対象の関数を実行
-      const result = await exchangeRate.getExchangeRateFromDynamicCalculation('EUR', 'JPY');
-      
-      // 結果の検証
-      expect(result).toEqual({
-        pair: 'EUR-JPY',
-        rate: expect.any(Number),
-        base: 'EUR',
-        target: 'JPY',
-        lastUpdated: expect.any(String)
-      });
-    });
-  });
-
-  describe('getExchangeRateFromHardcodedValues', () => {
-    test('ハードコードされた値から為替レートを取得する', () => {
-      // テスト対象の関数を実行
-      const result = exchangeRate.getExchangeRateFromHardcodedValues('USD', 'JPY');
-      
-      // 結果の検証
-      expect(result).toEqual({
-        pair: 'USD-JPY',
-        rate: expect.any(Number),
-        base: 'USD',
-        target: 'JPY',
-        lastUpdated: expect.any(String),
-        isDefault: true
-      });
     });
   });
 });

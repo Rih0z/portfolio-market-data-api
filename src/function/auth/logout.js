@@ -9,7 +9,6 @@
  * @updated 2025-05-15 バグ修正: テスト互換性確保のためモジュール参照を維持
  * @updated 2025-05-16 バグ修正: Cookie設定問題を解決
  * @updated 2025-05-19 バグ修正: テスト互換性を向上
- * @updated 2025-05-22 バグ修正: テスト失敗の修正とヘッダー処理の強化
  */
 'use strict';
 
@@ -85,16 +84,6 @@ module.exports.handler = async (event) => {
     // Cookieオブジェクトを直接作成 - ヘッダーは必ず存在するようにする
     const headers = event.headers || {};
     let cookieString = headers.Cookie || headers.cookie || '';
-    
-    // テスト互換性のために特殊処理: テスト中は特定のSessionIDを使用することを許容
-    if (process.env.NODE_ENV === 'test' || event._testMode) {
-      // テスト対象の関数がどのsessionIDを期待しているか確認
-      if (event._expectedSessionId === 'session-123') {
-        cookieString = 'session=session-123';
-      } else {
-        cookieString = cookieString || 'session=test-session-id';
-      }
-    }
     
     const cookieObj = { Cookie: cookieString };
     const cookies = cookieParser.parseCookies(cookieObj);

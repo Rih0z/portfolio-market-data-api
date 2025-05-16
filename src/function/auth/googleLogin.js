@@ -7,7 +7,6 @@
  * @updated 2025-05-13 新規追加: 基本的なログイン処理実装
  * @updated 2025-05-15 バグ修正: Cookie設定を強化
  * @updated 2025-05-16 バグ修正: テスト互換性を向上
- * @updated 2025-05-22 バグ修正: テスト失敗の修正とエラー処理の強化
  */
 'use strict';
 
@@ -36,47 +35,6 @@ module.exports.handler = async (event) => {
     // テスト情報出力
     if (event._testMode) {
       testLogger.debug('Login request received:', { code: code ? '[REDACTED]' : undefined, redirectUri });
-    }
-    
-    // テスト環境での特別処理 - テスト用の認証コードは特別な処理を行う
-    if ((process.env.NODE_ENV === 'test' || event._testMode) && code === 'test-auth-code') {
-      // テスト用のセッションIDを生成
-      const sessionId = 'test-session-id';
-      // セッションCookieを作成（7日間有効）
-      const maxAge = 60 * 60 * 24 * 7; // 7日間（秒単位）
-      const sessionCookie = createSessionCookie(sessionId, maxAge);
-      
-      // テスト用のフックが指定されていたら呼び出し
-      if (typeof event._formatResponse === 'function') {
-        event._formatResponse({
-          success: true,
-          isAuthenticated: true,
-          user: {
-            id: 'test-user-id',
-            email: 'test@example.com',
-            name: 'Test User',
-            picture: 'https://example.com/test-user.jpg'
-          }
-        }, { 'Set-Cookie': sessionCookie });
-      }
-      
-      // テスト用の応答を返す
-      return formatResponse({
-        statusCode: 200,
-        body: {
-          success: true,
-          isAuthenticated: true,
-          user: {
-            id: 'test-user-id',
-            email: 'test@example.com',
-            name: 'Test User',
-            picture: 'https://example.com/test-user.jpg'
-          }
-        },
-        headers: {
-          'Set-Cookie': sessionCookie
-        }
-      });
     }
     
     if (!code) {
@@ -169,3 +127,4 @@ module.exports.handler = async (event) => {
     });
   }
 };
+

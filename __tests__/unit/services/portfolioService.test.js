@@ -1,14 +1,14 @@
 /**
- * ファイルパス: __tests__/unit/services/googleDriveService.test.js
+ * ファイルパス: __tests__/unit/services/portfolioService.test.js
  * 
- * Google Drive連携サービスのユニットテスト
+ * ポートフォリオサービスのユニットテスト
  * ポートフォリオ保存・読込機能をテスト
  * 
  * @author Portfolio Manager Team
  * @created 2025-05-15
  */
 
-// インポートパスを修正
+const portfolioService = require('../../../src/services/portfolioService');
 const googleDriveService = require('../../../src/services/googleDriveService');
 const { withRetry } = require('../../../src/utils/retry');
 
@@ -16,7 +16,7 @@ const { withRetry } = require('../../../src/utils/retry');
 jest.mock('../../../src/services/googleDriveService');
 jest.mock('../../../src/utils/retry');
 
-describe('Google Drive Service', () => {
+describe('Portfolio Service', () => {
   // テスト用データ
   const mockUserId = 'user-123';
   const mockAccessToken = 'access-token-xyz';
@@ -75,7 +75,7 @@ describe('Google Drive Service', () => {
   describe('savePortfolio', () => {
     test('新しいポートフォリオを保存する', async () => {
       // テスト対象の関数を実行
-      const result = await googleDriveService.savePortfolio(
+      const result = await portfolioService.savePortfolio(
         mockPortfolio,
         mockUserId,
         mockAccessToken
@@ -103,7 +103,7 @@ describe('Google Drive Service', () => {
     
     test('既存のポートフォリオを更新する（ファイルID指定）', async () => {
       // テスト対象の関数を実行
-      const result = await googleDriveService.savePortfolio(
+      const result = await portfolioService.savePortfolio(
         mockPortfolio,
         mockUserId,
         mockAccessToken,
@@ -135,7 +135,7 @@ describe('Google Drive Service', () => {
       
       // 例外がスローされることを検証
       await expect(
-        googleDriveService.savePortfolio(
+        portfolioService.savePortfolio(
           mockPortfolio,
           mockUserId,
           mockAccessToken
@@ -151,7 +151,7 @@ describe('Google Drive Service', () => {
       };
       
       // テスト対象の関数を実行
-      const result = await googleDriveService.savePortfolio(
+      const result = await portfolioService.savePortfolio(
         incompletePortfolio,
         mockUserId,
         mockAccessToken
@@ -168,7 +168,7 @@ describe('Google Drive Service', () => {
   describe('getPortfolio', () => {
     test('ファイルIDを指定して正常にポートフォリオを取得する', async () => {
       // テスト対象の関数を実行
-      const result = await googleDriveService.getPortfolio(mockFileId, mockAccessToken);
+      const result = await portfolioService.getPortfolio(mockFileId, mockAccessToken);
       
       // Google Driveサービスが正しく呼び出されたか検証
       expect(googleDriveService.getFile).toHaveBeenCalledWith(mockFileId, mockAccessToken);
@@ -185,7 +185,7 @@ describe('Google Drive Service', () => {
       
       // 例外がスローされることを検証
       await expect(
-        googleDriveService.getPortfolio(mockFileId, mockAccessToken)
+        portfolioService.getPortfolio(mockFileId, mockAccessToken)
       ).rejects.toThrow('File not found');
     });
     
@@ -195,7 +195,7 @@ describe('Google Drive Service', () => {
       
       // 例外がスローされることを検証
       await expect(
-        googleDriveService.getPortfolio(mockFileId, mockAccessToken)
+        portfolioService.getPortfolio(mockFileId, mockAccessToken)
       ).rejects.toThrow('Invalid portfolio data format');
     });
     
@@ -216,7 +216,7 @@ describe('Google Drive Service', () => {
       );
       
       // テスト対象の関数を実行
-      const result = await googleDriveService.getPortfolio(mockFileId, mockAccessToken);
+      const result = await portfolioService.getPortfolio(mockFileId, mockAccessToken);
       
       // 結果の検証（新しい形式に変換されている）
       expect(result).toHaveProperty('name', 'Legacy Portfolio');
@@ -230,7 +230,7 @@ describe('Google Drive Service', () => {
   describe('listPortfolios', () => {
     test('ユーザーのポートフォリオ一覧を取得する', async () => {
       // テスト対象の関数を実行
-      const result = await googleDriveService.listPortfolios(mockAccessToken);
+      const result = await portfolioService.listPortfolios(mockAccessToken);
       
       // Google Driveサービスが正しく呼び出されたか検証
       expect(googleDriveService.listFiles).toHaveBeenCalledWith(
@@ -251,13 +251,13 @@ describe('Google Drive Service', () => {
       
       // 例外がスローされることを検証
       await expect(
-        googleDriveService.listPortfolios(mockAccessToken)
+        portfolioService.listPortfolios(mockAccessToken)
       ).rejects.toThrow('Failed to list files');
     });
     
     test('ファイル名のフィルタリングを適用する', async () => {
       // テスト対象の関数を実行（カスタムフィルター指定）
-      await googleDriveService.listPortfolios(
+      await portfolioService.listPortfolios(
         mockAccessToken,
         'custom-portfolio'
       );
@@ -274,7 +274,7 @@ describe('Google Drive Service', () => {
   describe('deletePortfolio', () => {
     test('指定したファイルIDのポートフォリオを削除する', async () => {
       // テスト対象の関数を実行
-      const result = await googleDriveService.deletePortfolio(mockFileId, mockAccessToken);
+      const result = await portfolioService.deletePortfolio(mockFileId, mockAccessToken);
       
       // Google Driveサービスが正しく呼び出されたか検証
       expect(googleDriveService.deleteFile).toHaveBeenCalledWith(mockFileId, mockAccessToken);
@@ -291,7 +291,7 @@ describe('Google Drive Service', () => {
       
       // 例外がスローされることを検証
       await expect(
-        googleDriveService.deletePortfolio(mockFileId, mockAccessToken)
+        portfolioService.deletePortfolio(mockFileId, mockAccessToken)
       ).rejects.toThrow('Failed to delete file');
     });
   });
@@ -299,7 +299,7 @@ describe('Google Drive Service', () => {
   describe('validatePortfolioData', () => {
     test('有効なポートフォリオデータを検証する', () => {
       // テスト対象の関数を実行
-      const validatedData = googleDriveService.validatePortfolioData(mockPortfolio);
+      const validatedData = portfolioService.validatePortfolioData(mockPortfolio);
       
       // 結果の検証
       expect(validatedData).toEqual(mockPortfolio);
@@ -312,7 +312,7 @@ describe('Google Drive Service', () => {
       };
       
       // テスト対象の関数を実行
-      const validatedData = googleDriveService.validatePortfolioData(minimalData);
+      const validatedData = portfolioService.validatePortfolioData(minimalData);
       
       // 結果の検証
       expect(validatedData).toHaveProperty('name', 'Minimal Portfolio');
@@ -330,7 +330,7 @@ describe('Google Drive Service', () => {
       };
       
       // テスト対象の関数を実行
-      const validatedData = googleDriveService.validatePortfolioData(invalidData);
+      const validatedData = portfolioService.validatePortfolioData(invalidData);
       
       // 結果の検証
       expect(validatedData.holdings).toEqual([]);
@@ -344,7 +344,7 @@ describe('Google Drive Service', () => {
       };
       
       // テスト対象の関数を実行
-      const validatedData = googleDriveService.validatePortfolioData(noNameData);
+      const validatedData = portfolioService.validatePortfolioData(noNameData);
       
       // 結果の検証
       expect(validatedData.name).toContain('Portfolio');
@@ -361,7 +361,7 @@ describe('Google Drive Service', () => {
       };
       
       // テスト対象の関数を実行
-      const validatedData = googleDriveService.validatePortfolioData(incompleteHoldings);
+      const validatedData = portfolioService.validatePortfolioData(incompleteHoldings);
       
       // 結果の検証
       expect(validatedData.holdings[0]).toHaveProperty('symbol', 'AAPL');

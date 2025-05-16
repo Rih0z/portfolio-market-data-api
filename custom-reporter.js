@@ -1,24 +1,22 @@
 /**
  * ファイルパス: custom-reporter.js
  * 
- * Jestカスタムレポーター - エヴァンゲリオン風NERV視覚化システム
- * テスト結果の詳細情報を収集し、エヴァンゲリオン風ビジュアルレポートを生成
+ * Jestカスタムレポーター
+ * テスト結果の詳細情報を収集し、ビジュアルレポートとJSONデータを生成する
  * 
- * @author Portfolio Manager Team / NERV
- * @created 2025-05-26
- * @updated 2025-05-15 - 出力ファイル名を visual-report.html に変更
- * @updated 2025-05-16 - グラフ部分をCSS/HTMLのみで実装し、外部スクリプト不要に変更
+ * @author Portfolio Manager Team
+ * @created 2025-05-12
+ * @updated 2025-05-17 - カバレッジデータをファイルから直接読み込む機能を追加
  */
 
 const fs = require('fs');
 const path = require('path');
 
 /**
- * エヴァンゲリオン風Jestレポータークラス
+ * カスタムJestレポータークラス
  */
-class EvaNervReporter {
+class CustomReporter {
   constructor(globalConfig, options = {}) {
-    // 基本設定
     this.globalConfig = globalConfig;
     this.options = options;
     this.startTime = Date.now();
@@ -31,157 +29,1206 @@ class EvaNervReporter {
       testResults: [],
       coverageMap: null
     };
-    
-    // 出力設定
-    this.quietMode = process.env.CI !== 'true' && 
-                     process.env.DEBUG !== 'true' && 
-                     process.env.VERBOSE_MODE !== 'true';
-    
-    this.superQuietMode = process.env.QUIET_MODE === 'true'; 
-    
-    // ログディレクトリの設定
-    this.logDir = './test-results/logs';
-    if (!fs.existsSync(this.logDir)) {
-      fs.mkdirSync(this.logDir, { recursive: true });
-    }
-    
-    // テスト実行のログファイル
-    this.logFile = `${this.logDir}/nerv-test-${new Date().toISOString().replace(/:/g, '-').slice(0, 19)}.log`;
-    this.errorLogFile = `${this.logDir}/nerv-error-${new Date().toISOString().replace(/:/g, '-').slice(0, 19)}.log`;
-    
-    // 初期ログ
-    fs.writeFileSync(this.logFile, `=== NERV TEST SYSTEM ACTIVATED: ${new Date().toISOString()} ===\n\n`);
-    fs.writeFileSync(this.errorLogFile, `=== NERV ERROR MONITORING SYSTEM: ${new Date().toISOString()} ===\n\n`);
-    
-    // オリジナルのコンソール出力を保存
-    this.originalConsole = {
-      log: console.log,
-      info: console.info,
-      warn: console.warn,
-      error: console.error
-    };
-    
-    // 色の設定 - エヴァ風のカラースキーム
-    this.colors = {
-      green: '\x1b[38;5;46m',    // NERV緑（明るい緑）
-      orange: '\x1b[38;5;208m',  // NERV橙（明るいオレンジ）
-      red: '\x1b[38;5;196m',     // 警告用赤
-      blue: '\x1b[38;5;39m',     // 淡い青（MAGI系）
-      cyan: '\x1b[38;5;51m',     // 明るい水色
-      yellow: '\x1b[38;5;226m',  // 明るい黄色
-      purple: '\x1b[38;5;93m',   // 紫（SEELE関連）
-      dim: '\x1b[2m',
-      bold: '\x1b[1m',
-      blink: '\x1b[5m',          // 点滅（警告用）
-      inverse: '\x1b[7m',        // 反転（重要警告用）
-      reset: '\x1b[0m'
-    };
-
-    // カバレッジ履歴データ
-    this.coverageHistory = [];
-    // 履歴データファイルを確認して読み込む
-    this.loadCoverageHistory();
   }
   
   /**
-   * ログをファイルに書き込む
-   * @param {string} message メッセージ
-   * @param {string} level ログレベル
+   * テスト実行開始時に呼び出される
    */
-  log(message, level = 'INFO') {
-    const timestamp = new Date().toISOString();
-    fs.appendFileSync(this.logFile, `[${timestamp}] [${level}] ${message}\n`);
-    
-    if (level === 'ERROR') {
-      fs.appendFileSync(this.errorLogFile, `[${timestamp}] ${message}\n`);
-    }
+  onRunStart(results, options) {
+    this.startTime = Date.now();
+    console.log('\n🚀 テスト実行を開始します...');
   }
   
   /**
-   * コンソールに出力
-   * @param {string} message メッセージ
-   * @param {string} type メッセージタイプ
+   * テストファイル実行完了時に呼び出される
    */
-  print(message, type = 'info') {
-    // ログにも記録
-    this.log(message, type.toUpperCase());
-    
-    // 超静音モードでは最小限の出力のみ
-    if (this.superQuietMode && type !== 'error' && type !== 'success' && type !== 'result') {
-      return;
+  onTestFileResult(test, testResult, aggregatedResult) {
+    // カバレッジ情報が利用可能な場合は保存
+    if (testResult.coverage) {
+      this.results.coverageMap = aggregatedResult.coverageMap;
     }
     
-    let color = this.colors.reset;
-    let prefix = '';
+    // テスト結果を整形して保存
+    const formattedResult = {
+      testFilePath: testResult.testFilePath,
+      testResults: testResult.testResults.map(result => ({
+        title: result.title,
+        status: result.status,
+        duration: result.duration,
+        failureMessages: result.failureMessages
+      })),
+      numFailingTests: testResult.numFailingTests,
+      numPassingTests: testResult.numPassingTests,
+      numPendingTests: testResult.numPendingTests
+    };
     
-    switch (type) {
-      case 'success':
-        color = this.colors.green;
-        prefix = '[PASS] ';
-        break;
-      case 'warning':
-        color = this.colors.orange;
-        prefix = '[WARNING] ';
-        break;
-      case 'error':
-        color = this.colors.red;
-        prefix = '[CRITICAL] ';
-        break;
-      case 'info':
-        color = this.colors.blue;
-        prefix = '[NERV] ';
-        break;
-      case 'step':
-        color = this.colors.cyan;
-        prefix = '[MAGI] ';
-        break;
-      case 'result':
-        // 結果出力は常に表示
-        this.originalConsole.log(message);
+    this.results.testResults.push(formattedResult);
+  }
+  
+  /**
+   * テスト実行完了時に呼び出される
+   */
+  onRunComplete(contexts, results) {
+    this.endTime = Date.now();
+    
+    // 結果の集計
+    this.results.numTotalTests = results.numTotalTests;
+    this.results.numFailedTests = results.numFailedTests;
+    this.results.numPassedTests = results.numPassedTests;
+    this.results.numPendingTests = results.numPendingTests;
+    
+    // カバレッジ情報を含める
+    if (results.coverageMap) {
+      this.results.coverageMap = results.coverageMap;
+    } else {
+      // カバレッジマップがない場合は、ファイルから直接読み込む
+      this.loadCoverageFromFile();
+    }
+    
+    // テスト結果ディレクトリを作成
+    const outputDir = path.resolve('./test-results');
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+    
+    // 詳細結果をJSONファイルに保存
+    fs.writeFileSync(
+      path.join(outputDir, 'detailed-results.json'),
+      JSON.stringify(this.results, null, 2)
+    );
+    
+    // マークダウン形式のレポートを生成
+    this.generateMarkdownReport(outputDir);
+    
+    // HTMLビジュアルレポートを生成
+    this.generateVisualReport(outputDir);
+    
+    // 結果サマリーを表示
+    this.printSummary(results);
+  }
+  
+  /**
+   * カバレッジ情報をファイルから読み込む
+   */
+  loadCoverageFromFile() {
+    try {
+      console.log('\n🔍 カバレッジ情報をファイルから読み込みます...');
+      
+      // カバレッジデータファイルのパス
+      const coveragePath = path.resolve('./coverage/coverage-final.json');
+      
+      // ファイルが存在するか確認
+      if (!fs.existsSync(coveragePath)) {
+        console.warn('⚠ カバレッジデータファイルが見つかりません:', coveragePath);
+        
+        // 別の可能性のあるファイルを探す
+        const alternateFiles = [
+          './coverage/lcov.info',
+          './coverage/coverage-summary.json',
+          './coverage/clover.xml'
+        ];
+        
+        let foundAlternate = false;
+        for (const file of alternateFiles) {
+          const filePath = path.resolve(file);
+          if (fs.existsSync(filePath)) {
+            console.log(`✓ 代替カバレッジファイルが見つかりました: ${file}`);
+            foundAlternate = true;
+            
+            // summaryファイルからの読み込みを試みる
+            if (file === './coverage/coverage-summary.json') {
+              try {
+                const summaryData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+                // 簡易的なカバレッジマップを構築
+                this.createSimpleCoverageMap(summaryData);
+                console.log('✓ カバレッジサマリーからデータを読み込みました');
+                return;
+              } catch (e) {
+                console.warn(`⚠ サマリーファイルの解析に失敗しました: ${e.message}`);
+              }
+            }
+            break;
+          }
+        }
+        
+        if (!foundAlternate) {
+          console.warn('⚠ 代替カバレッジファイルも見つかりません。');
+          console.warn('⚠ Jest実行時に --coverage オプションが指定されているか確認してください。');
+        }
+        
         return;
-      default:
-        color = this.colors.reset;
-        break;
+      }
+      
+      // カバレッジデータを読み込む
+      const coverageData = JSON.parse(fs.readFileSync(coveragePath, 'utf8'));
+      
+      // カバレッジマップを作成
+      this.createCoverageMapFromData(coverageData);
+      console.log('✓ カバレッジデータをファイルから読み込みました');
+    } catch (error) {
+      console.warn(`⚠ カバレッジデータの読み込みに失敗しました: ${error.message}`);
+    }
+  }
+  
+  /**
+   * カバレッジデータからカバレッジマップを作成
+   * @param {Object} coverageData 
+   */
+  createCoverageMapFromData(coverageData) {
+    // 簡易的なカバレッジマップを構築
+    const fileCoverageInfo = [];
+    let totalStatements = { covered: 0, total: 0, pct: 0 };
+    let totalBranches = { covered: 0, total: 0, pct: 0 };
+    let totalFunctions = { covered: 0, total: 0, pct: 0 };
+    let totalLines = { covered: 0, total: 0, pct: 0 };
+    
+    // 各ファイルのカバレッジデータを処理
+    for (const [filePath, fileData] of Object.entries(coverageData)) {
+      // ステートメント
+      const statementCovered = Object.values(fileData.s).filter(v => v > 0).length;
+      const statementTotal = Object.keys(fileData.s).length;
+      const statementPct = statementTotal ? (statementCovered / statementTotal) * 100 : 0;
+      
+      // ブランチ
+      const branchData = fileData.b || {};
+      let branchCovered = 0;
+      let branchTotal = 0;
+      
+      for (const counts of Object.values(branchData)) {
+        branchTotal += counts.length;
+        branchCovered += counts.filter(c => c > 0).length;
+      }
+      
+      const branchPct = branchTotal ? (branchCovered / branchTotal) * 100 : 0;
+      
+      // 関数
+      const functionCovered = Object.values(fileData.f).filter(v => v > 0).length;
+      const functionTotal = Object.keys(fileData.f).length;
+      const functionPct = functionTotal ? (functionCovered / functionTotal) * 100 : 0;
+      
+      // 行
+      const lineCovered = Object.values(fileData.l || {}).filter(v => v > 0).length;
+      const lineTotal = Object.keys(fileData.l || {}).length;
+      const linePct = lineTotal ? (lineCovered / lineTotal) * 100 : 0;
+      
+      // ファイル情報を追加
+      fileCoverageInfo.push({
+        filename: filePath,
+        statements: { covered: statementCovered, total: statementTotal, pct: statementPct },
+        branches: { covered: branchCovered, total: branchTotal, pct: branchPct },
+        functions: { covered: functionCovered, total: functionTotal, pct: functionPct },
+        lines: { covered: lineCovered, total: lineTotal, pct: linePct }
+      });
+      
+      // 合計に加算
+      totalStatements.covered += statementCovered;
+      totalStatements.total += statementTotal;
+      
+      totalBranches.covered += branchCovered;
+      totalBranches.total += branchTotal;
+      
+      totalFunctions.covered += functionCovered;
+      totalFunctions.total += functionTotal;
+      
+      totalLines.covered += lineCovered;
+      totalLines.total += lineTotal;
     }
     
-    this.originalConsole.log(`${color}${prefix}${message}${this.colors.reset}`);
+    // パーセンテージを計算
+    totalStatements.pct = totalStatements.total ? (totalStatements.covered / totalStatements.total) * 100 : 0;
+    totalBranches.pct = totalBranches.total ? (totalBranches.covered / totalBranches.total) * 100 : 0;
+    totalFunctions.pct = totalFunctions.total ? (totalFunctions.covered / totalFunctions.total) * 100 : 0;
+    totalLines.pct = totalLines.total ? (totalLines.covered / totalLines.total) * 100 : 0;
+    
+    // カバレッジマップを設定
+    this.results.coverageMap = {
+      getFileCoverageInfo: () => fileCoverageInfo,
+      getCoverageSummary: () => ({
+        toJSON: () => ({
+          statements: totalStatements,
+          branches: totalBranches,
+          functions: totalFunctions,
+          lines: totalLines
+        })
+      }),
+      total: {
+        statements: totalStatements,
+        branches: totalBranches,
+        functions: totalFunctions,
+        lines: totalLines
+      }
+    };
   }
   
   /**
-   * カバレッジバーのクラスを取得
-   * @param {number} value 現在の値
-   * @param {number} threshold 目標値
-   * @returns {string} クラス名
+   * サマリーデータから簡易的なカバレッジマップを作成
+   * @param {Object} summaryData 
    */
-  getCoverageBarClass(value, threshold) {
-    if (value >= threshold) {
-      return 'success';
-    } else if (value >= threshold * 0.7) {
-      return 'warning';
+  createSimpleCoverageMap(summaryData) {
+    const fileCoverageInfo = [];
+    
+    // totalデータを取得
+    const total = summaryData.total || {};
+    
+    // ファイルデータを処理
+    for (const [filePath, fileData] of Object.entries(summaryData)) {
+      if (filePath === 'total') continue;
+      
+      fileCoverageInfo.push({
+        filename: filePath,
+        statements: fileData.statements || { covered: 0, total: 0, pct: 0 },
+        branches: fileData.branches || { covered: 0, total: 0, pct: 0 },
+        functions: fileData.functions || { covered: 0, total: 0, pct: 0 },
+        lines: fileData.lines || { covered: 0, total: 0, pct: 0 }
+      });
     }
-    return 'critical';
+    
+    // カバレッジマップを設定
+    this.results.coverageMap = {
+      getFileCoverageInfo: () => fileCoverageInfo,
+      getCoverageSummary: () => ({
+        toJSON: () => ({
+          statements: total.statements || { covered: 0, total: 0, pct: 0 },
+          branches: total.branches || { covered: 0, total: 0, pct: 0 },
+          functions: total.functions || { covered: 0, total: 0, pct: 0 },
+          lines: total.lines || { covered: 0, total: 0, pct: 0 }
+        })
+      }),
+      total: {
+        statements: total.statements || { covered: 0, total: 0, pct: 0 },
+        branches: total.branches || { covered: 0, total: 0, pct: 0 },
+        functions: total.functions || { covered: 0, total: 0, pct: 0 },
+        lines: total.lines || { covered: 0, total: 0, pct: 0 }
+      }
+    };
   }
   
   /**
-   * NERV風のステータス記号を取得
-   * @param {number} value 現在の値
-   * @param {number} threshold 目標値
-   * @returns {string} ステータス記号
+   * マークダウン形式のレポートを生成
+   * @param {string} outputDir 出力ディレクトリ
    */
-  getNervStatusSymbol(value, threshold) {
-    if (value >= threshold) {
-      return '<span style="color: var(--nerv-green);">ACCEPTABLE [◯]</span>';
+  generateMarkdownReport(outputDir) {
+    let md = `# テスト実行結果\n\n`;
+    md += `実行日時: ${new Date().toLocaleString('ja-JP')}\n\n`;
+    md += `合計時間: ${((this.endTime - this.startTime) / 1000).toFixed(2)}秒\n\n`;
+    
+    // 結果サマリー
+    md += `## サマリー\n\n`;
+    md += `- 合計テスト数: ${this.results.numTotalTests}\n`;
+    md += `- 成功: ${this.results.numPassedTests}\n`;
+    md += `- 失敗: ${this.results.numFailedTests}\n`;
+    md += `- スキップ: ${this.results.numPendingTests}\n\n`;
+    
+    // カバレッジ情報
+    if (this.results.coverageMap) {
+      md += `## カバレッジ\n\n`;
+      
+      try {
+        const total = this.results.coverageMap.getCoverageSummary().toJSON();
+        
+        md += `| メトリクス     | カバード | 合計 | パーセント |\n`;
+        md += `|--------------|------:|-----:|--------:|\n`;
+        md += `| ステートメント | ${total.statements.covered} | ${total.statements.total} | ${total.statements.pct.toFixed(2)}% |\n`;
+        md += `| ブランチ      | ${total.branches.covered} | ${total.branches.total} | ${total.branches.pct.toFixed(2)}% |\n`;
+        md += `| 関数         | ${total.functions.covered} | ${total.functions.total} | ${total.functions.pct.toFixed(2)}% |\n`;
+        md += `| 行           | ${total.lines.covered} | ${total.lines.total} | ${total.lines.pct.toFixed(2)}% |\n\n`;
+        
+        // カバレッジ目標ステータス
+        const targetLevel = process.env.COVERAGE_TARGET || 'initial';
+        
+        md += `### カバレッジ目標ステータス (${targetLevel})\n\n`;
+        
+        const targetThresholds = this.getCoverageThresholds(targetLevel);
+        
+        md += `| メトリクス     | 現在    | 目標    | ステータス |\n`;
+        md += `|--------------|-------:|-------:|----------|\n`;
+        md += `| ステートメント | ${total.statements.pct.toFixed(2)}% | ${targetThresholds.statements}% | ${this.getStatusSymbol(total.statements.pct, targetThresholds.statements)} |\n`;
+        md += `| ブランチ      | ${total.branches.pct.toFixed(2)}% | ${targetThresholds.branches}% | ${this.getStatusSymbol(total.branches.pct, targetThresholds.branches)} |\n`;
+        md += `| 関数         | ${total.functions.pct.toFixed(2)}% | ${targetThresholds.functions}% | ${this.getStatusSymbol(total.functions.pct, targetThresholds.functions)} |\n`;
+        md += `| 行           | ${total.lines.pct.toFixed(2)}% | ${targetThresholds.lines}% | ${this.getStatusSymbol(total.lines.pct, targetThresholds.lines)} |\n\n`;
+        
+        // ファイルごとのカバレッジ情報
+        md += `### ファイルごとのカバレッジ\n\n`;
+        
+        const fileCoverage = this.results.coverageMap.getFileCoverageInfo();
+        fileCoverage.sort((a, b) => a.filename.localeCompare(b.filename));
+        
+        md += `| ファイル | ステートメント | ブランチ | 関数 | 行 |\n`;
+        md += `|---------|------------:|-------:|-----:|----:|\n`;
+        
+        fileCoverage.forEach(file => {
+          const filename = path.relative(process.cwd(), file.filename);
+          md += `| ${filename} | ${file.statements.pct.toFixed(2)}% | ${file.branches.pct.toFixed(2)}% | ${file.functions.pct.toFixed(2)}% | ${file.lines.pct.toFixed(2)}% |\n`;
+        });
+        
+        md += `\n`;
+      } catch (error) {
+        md += `カバレッジ情報の取得に失敗しました: ${error.message}\n\n`;
+      }
+    } else {
+      md += `## カバレッジ\n\n`;
+      md += `カバレッジ情報が利用できません。テスト実行時に--coverageオプションを付けてください。\n\n`;
     }
-    return '<span style="color: var(--nerv-red); animation: blink 1s infinite;">CRITICAL [×]</span>';
+    
+    // エラーがある場合はエラーサマリーを追加
+    if (this.results.numFailedTests > 0) {
+      md += `## エラーサマリー\n\n`;
+      
+      const failedTests = this.results.testResults.flatMap(fileResult =>
+        fileResult.testResults
+          .filter(test => test.status === 'failed')
+          .map(test => ({
+            testFilePath: fileResult.testFilePath,
+            title: test.title,
+            failureMessages: test.failureMessages
+          }))
+      );
+      
+      failedTests.forEach((test, index) => {
+        const relativePath = path.relative(process.cwd(), test.testFilePath);
+        md += `### ${index + 1}. ${test.title}\n\n`;
+        md += `ファイル: \`${relativePath}\`\n\n`;
+        md += `エラーメッセージ:\n\n`;
+        md += `\`\`\`\n${test.failureMessages.join('\n')}\n\`\`\`\n\n`;
+      });
+    }
+    
+    // マークダウンファイルに書き込み
+    fs.writeFileSync(path.join(outputDir, 'test-log.md'), md);
+  }
+  
+  /**
+   * HTMLビジュアルレポートを生成
+   * @param {string} outputDir 出力ディレクトリ
+   */
+  generateVisualReport(outputDir) {
+    // Portfolio Wise ダッシュボードスタイルを適用したレポートを生成
+    try {
+      // カバレッジ情報取得
+      let coverageData = [];
+      let total = { 
+        statements: { pct: 0, covered: 0, total: 0 }, 
+        branches: { pct: 0, covered: 0, total: 0 }, 
+        functions: { pct: 0, covered: 0, total: 0 }, 
+        lines: { pct: 0, covered: 0, total: 0 } 
+      };
+      let fileCoverage = [];
+      const targetLevel = process.env.COVERAGE_TARGET || 'initial';
+      const targetThresholds = this.getCoverageThresholds(targetLevel);
+      
+      if (this.results.coverageMap) {
+        total = this.results.coverageMap.getCoverageSummary().toJSON();
+        fileCoverage = this.results.coverageMap.getFileCoverageInfo();
+        fileCoverage.sort((a, b) => a.filename.localeCompare(b.filename));
+        
+        coverageData = [
+          { name: 'ステートメント', value: total.statements.pct, target: targetThresholds.statements },
+          { name: 'ブランチ', value: total.branches.pct, target: targetThresholds.branches },
+          { name: 'ファンクション', value: total.functions.pct, target: targetThresholds.functions },
+          { name: '行', value: total.lines.pct, target: targetThresholds.lines }
+        ];
+      }
+      
+      // エラー情報取得
+      const failedTests = this.results.testResults.flatMap(fileResult =>
+        fileResult.testResults
+          .filter(test => test.status === 'failed')
+          .map(test => ({
+            id: Math.floor(Math.random() * 1000), // 一意のIDを生成
+            testFilePath: fileResult.testFilePath,
+            title: test.title,
+            file: path.relative(process.cwd(), fileResult.testFilePath),
+            failureMessages: test.failureMessages,
+            message: test.failureMessages.join('\n')
+          }))
+      );
+
+      // CSS定義
+      const styles = `
+        * {
+          margin: 0;
+          padding: 0;
+          box-sizing: border-box;
+        }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+          background-color: #1a1a1a;
+          color: #e6e6e6;
+          font-size: 14px;
+          line-height: 1.5;
+        }
+        .container {
+          width: 100%;
+          max-width: 1400px;
+          margin: 0 auto;
+        }
+        .header {
+          position: relative;
+          padding: 20px;
+          border-bottom: 1px solid #ff6600;
+          background-color: #000;
+          overflow: hidden;
+        }
+        .header-content {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          position: relative;
+          z-index: 2;
+        }
+        .header-title {
+          display: flex;
+          align-items: center;
+        }
+        .header-title h1 {
+          font-size: 24px;
+          font-weight: bold;
+          color: #ff6600;
+          margin-right: 10px;
+        }
+        .header-title span {
+          font-size: 20px;
+        }
+        .header-info {
+          display: flex;
+          align-items: center;
+        }
+        .header-status {
+          background-color: #0d0d0d;
+          padding: 5px 15px;
+          border-radius: 3px;
+          margin-right: 15px;
+        }
+        .header-date {
+          text-align: right;
+        }
+        .hexagon-pattern {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          opacity: 0.1;
+          pointer-events: none;
+        }
+        .hexagon {
+          position: absolute;
+          border: 1px solid #00ffff;
+          width: 100px;
+          height: 116px;
+          clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+        }
+        .tabs {
+          display: flex;
+          border-bottom: 1px solid #333;
+        }
+        .tab {
+          padding: 10px 15px;
+          font-weight: bold;
+          cursor: pointer;
+          background: transparent;
+          border: none;
+          color: #e6e6e6;
+          font-family: inherit;
+          font-size: 14px;
+        }
+        .tab.active {
+          border-bottom: 2px solid #00ffff;
+          color: #00ffff;
+        }
+        .tab.error-tab.active {
+          border-bottom-color: #ff3333;
+          color: #ff3333;
+        }
+        .main-content {
+          padding: 20px;
+        }
+        .terminal {
+          background-color: #0d0d0d;
+          border: 1px solid #ff6600;
+          padding: 15px;
+          border-radius: 3px;
+          margin-bottom: 20px;
+        }
+        .terminal-header {
+          display: flex;
+          align-items: center;
+          margin-bottom: 10px;
+        }
+        .status-indicator {
+          width: 12px;
+          height: 12px;
+          border-radius: 50%;
+          margin-right: 10px;
+        }
+        .status-success {
+          background-color: #00cc00;
+        }
+        .status-warning {
+          background-color: #ff3333;
+          animation: blink 1s infinite;
+        }
+        .terminal-output {
+          font-size: 12px;
+          line-height: 1.4;
+        }
+        .terminal-label {
+          color: #00ffff;
+        }
+        .warning-text {
+          color: #ff3333;
+          font-weight: bold;
+        }
+        .success-text {
+          color: #00cc00;
+        }
+        .dashboard-grid {
+          display: grid;
+          grid-template-columns: 1fr 2fr;
+          gap: 20px;
+        }
+        .card {
+          background-color: #0d0d0d;
+          border-radius: 3px;
+          padding: 15px;
+        }
+        .card-title {
+          font-weight: bold;
+          margin-bottom: 15px;
+        }
+        .summary-card {
+          border: 1px solid #00ffff;
+        }
+        .summary-card .card-title {
+          color: #00ffff;
+        }
+        .coverage-card {
+          border: 1px solid #7cfc00;
+        }
+        .coverage-card .card-title {
+          color: #7cfc00;
+        }
+        .chart-container {
+          height: 250px;
+          width: 100%;
+          margin-bottom: 20px;
+        }
+        .stat-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 10px;
+          margin-top: 15px;
+        }
+        .stat-box {
+          text-align: center;
+          padding: 10px;
+          border-radius: 3px;
+        }
+        .stat-box-success {
+          background-color: rgba(0, 204, 0, 0.2);
+          border: 1px solid #00cc00;
+        }
+        .stat-box-failure {
+          background-color: rgba(255, 51, 51, 0.2);
+          border: 1px solid #ff3333;
+        }
+        .stat-box-pending {
+          background-color: rgba(255, 102, 0, 0.2);
+          border: 1px solid #ff6600;
+        }
+        .stat-box-number {
+          font-size: 24px;
+          font-weight: bold;
+          margin-bottom: 5px;
+        }
+        .stat-box-success .stat-box-number {
+          color: #00cc00;
+        }
+        .stat-box-failure .stat-box-number {
+          color: #ff3333;
+        }
+        .stat-box-pending .stat-box-number {
+          color: #ff6600;
+        }
+        .error-container {
+          background-color: #0d0d0d;
+          border: 1px solid #ff3333;
+          border-radius: 3px;
+          padding: 15px;
+        }
+        .error-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 15px;
+        }
+        .error-title {
+          display: flex;
+          align-items: center;
+        }
+        .error-title-text {
+          font-weight: bold;
+          color: #ff3333;
+          margin-left: 10px;
+        }
+        .copy-button {
+          background-color: rgba(0, 255, 255, 0.2);
+          color: #00ffff;
+          border: none;
+          border-radius: 3px;
+          padding: 5px 10px;
+          font-size: 12px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+        }
+        .copy-button svg {
+          margin-right: 5px;
+        }
+        .error-list {
+          display: flex;
+          flex-direction: column;
+          gap: 20px;
+        }
+        .error-item {
+          background-color: rgba(255, 51, 51, 0.1);
+          border: 1px solid #ff3333;
+          border-radius: 3px;
+          padding: 15px;
+        }
+        .error-item-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          margin-bottom: 10px;
+        }
+        .error-item-title {
+          font-weight: bold;
+          margin-top: 5px;
+        }
+        .error-item-id {
+          font-weight: bold;
+          color: #ff3333;
+          margin-bottom: 5px;
+        }
+        .error-item-file {
+          font-size: 12px;
+          margin-top: 10px;
+        }
+        .error-item-file span {
+          color: #00ffff;
+        }
+        .error-item-message {
+          margin-top: 10px;
+          padding: 15px;
+          background-color: rgba(0, 0, 0, 0.3);
+          font-family: monospace;
+          font-size: 12px;
+          border-radius: 3px;
+          overflow-x: auto;
+          white-space: pre-wrap;
+        }
+        .footer {
+          margin-top: 20px;
+          padding-top: 15px;
+          border-top: 1px solid #ff6600;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          font-size: 12px;
+        }
+        .footer-center {
+          color: #ff6600;
+        }
+        .tab-content {
+          display: none;
+        }
+        .tab-content.active {
+          display: block;
+        }
+        .coverage-info {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 10px;
+        }
+        .legend {
+          display: flex;
+          font-size: 12px;
+        }
+        .legend-item {
+          display: flex;
+          align-items: center;
+          margin-right: 10px;
+        }
+        .legend-color {
+          width: 12px;
+          height: 12px;
+          margin-right: 5px;
+        }
+        .legend-current {
+          background-color: #7cfc00;
+        }
+        .legend-target {
+          background-color: rgba(0, 255, 255, 0.5);
+        }
+        .target-level {
+          color: #00ffff;
+          font-weight: bold;
+        }
+        .no-errors {
+          padding: 30px;
+          text-align: center;
+          color: #00cc00;
+        }
+        .coverage-warning {
+          padding: 15px;
+          border: 1px dashed #ff6600;
+          margin-bottom: 20px;
+          background-color: rgba(255, 102, 0, 0.1);
+          border-radius: 3px;
+          text-align: center;
+        }
+        @keyframes blink {
+          0% { opacity: 1; }
+          50% { opacity: 0.3; }
+          100% { opacity: 1; }
+        }
+        @media (max-width: 768px) {
+          .dashboard-grid {
+            grid-template-columns: 1fr;
+          }
+          .header-content {
+            flex-direction: column;
+            align-items: flex-start;
+          }
+          .header-info {
+            margin-top: 10px;
+          }
+        }
+      `;
+
+      // チャート用のスクリプト
+      const scripts = `
+        // タブ切り替え機能
+        document.addEventListener('DOMContentLoaded', function() {
+          const tabs = document.querySelectorAll('.tab');
+          const tabContents = document.querySelectorAll('.tab-content');
+          
+          tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+              // タブのアクティブ状態を切り替え
+              tabs.forEach(t => t.classList.remove('active'));
+              tab.classList.add('active');
+              
+              // コンテンツの表示を切り替え
+              const target = tab.getAttribute('data-target');
+              tabContents.forEach(content => {
+                content.classList.remove('active');
+                if (content.id === target) {
+                  content.classList.add('active');
+                }
+              });
+            });
+          });
+
+          // グラフ描画 - テスト結果のパイチャート
+          const pieCtx = document.getElementById('test-results-chart').getContext('2d');
+          const testResultsChart = new Chart(pieCtx, {
+            type: 'doughnut',
+            data: {
+              labels: ['成功', '失敗', '保留'],
+              datasets: [{
+                data: [${this.results.numPassedTests}, ${this.results.numFailedTests}, ${this.results.numPendingTests}],
+                backgroundColor: ['#00cc00', '#ff3333', '#ff6600'],
+                borderWidth: 0,
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              cutout: '50%',
+              plugins: {
+                legend: {
+                  position: 'bottom',
+                  labels: {
+                    color: '#e6e6e6',
+                    padding: 10,
+                    usePointStyle: true,
+                    pointStyle: 'circle'
+                  }
+                },
+                tooltip: {
+                  callbacks: {
+                    label: function(context) {
+                      const label = context.label || '';
+                      const value = context.raw || 0;
+                      const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                      const percentage = ((value / total) * 100).toFixed(1);
+                      return \`\${label}: \${value}件 (\${percentage}%)\`;
+                    }
+                  }
+                }
+              }
+            }
+          });
+
+          // カバレッジの棒グラフ描画
+          ${this.results.coverageMap ? `
+          const coverageCtx = document.getElementById('coverage-chart').getContext('2d');
+          const coverageChart = new Chart(coverageCtx, {
+            type: 'bar',
+            data: {
+              labels: ['ステートメント', 'ブランチ', 'ファンクション', '行'],
+              datasets: [
+                {
+                  label: '現在のカバレッジ',
+                  data: [
+                    ${total.statements.pct.toFixed(1)}, 
+                    ${total.branches.pct.toFixed(1)}, 
+                    ${total.functions.pct.toFixed(1)}, 
+                    ${total.lines.pct.toFixed(1)}
+                  ],
+                  backgroundColor: [
+                    ${total.statements.pct >= targetThresholds.statements ? "'#00cc00'" : "'#ff3333'"},
+                    ${total.branches.pct >= targetThresholds.branches ? "'#00cc00'" : "'#ff3333'"},
+                    ${total.functions.pct >= targetThresholds.functions ? "'#00cc00'" : "'#ff3333'"},
+                    ${total.lines.pct >= targetThresholds.lines ? "'#00cc00'" : "'#ff3333'"}
+                  ]
+                },
+                {
+                  label: '目標値',
+                  data: [
+                    ${targetThresholds.statements}, 
+                    ${targetThresholds.branches}, 
+                    ${targetThresholds.functions}, 
+                    ${targetThresholds.lines}
+                  ],
+                  backgroundColor: 'rgba(0, 255, 255, 0.5)'
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              scales: {
+                y: {
+                  beginAtZero: true,
+                  max: 100,
+                  grid: {
+                    color: '#333333'
+                  },
+                  ticks: {
+                    color: '#e6e6e6',
+                    callback: function(value) {
+                      return value + '%';
+                    }
+                  }
+                },
+                x: {
+                  grid: {
+                    color: '#333333'
+                  },
+                  ticks: {
+                    color: '#e6e6e6'
+                  }
+                }
+              },
+              plugins: {
+                legend: {
+                  position: 'top',
+                  labels: {
+                    color: '#e6e6e6'
+                  }
+                },
+                tooltip: {
+                  callbacks: {
+                    label: function(context) {
+                      return context.dataset.label + ': ' + context.raw + '%';
+                    }
+                  }
+                }
+              }
+            }
+          });
+          ` : ''}
+
+          // エラーログコピー機能
+          document.querySelectorAll('.copy-button').forEach(button => {
+            button.addEventListener('click', function() {
+              let textToCopy = '';
+              const type = this.getAttribute('data-type');
+              
+              if (type === 'all') {
+                const errorItems = document.querySelectorAll('.error-item');
+                errorItems.forEach(item => {
+                  const id = item.querySelector('.error-item-id').textContent;
+                  const title = item.querySelector('.error-item-title').textContent;
+                  const file = item.querySelector('.error-item-file').textContent.replace('ファイル:', '').trim();
+                  const message = item.querySelector('.error-item-message').textContent;
+                  
+                  textToCopy += \`\${id}\nタイトル: \${title}\n\${file}\nエラーメッセージ: \${message}\n\n\`;
+                });
+              } else {
+                const errorItem = this.closest('.error-item');
+                const id = errorItem.querySelector('.error-item-id').textContent;
+                const title = errorItem.querySelector('.error-item-title').textContent;
+                const file = errorItem.querySelector('.error-item-file').textContent.replace('ファイル:', '').trim();
+                const message = errorItem.querySelector('.error-item-message').textContent;
+                
+                textToCopy = \`\${id}\nタイトル: \${title}\n\${file}\nエラーメッセージ: \${message}\`;
+              }
+              
+              navigator.clipboard.writeText(textToCopy)
+                .then(() => {
+                  alert('エラーログをクリップボードにコピーしました');
+                })
+                .catch(err => {
+                  console.error('コピーに失敗しました:', err);
+                });
+            });
+          });
+        });
+      `;
+
+      // 六角形パターン生成
+      const generateHexagons = () => {
+        let hexagons = '';
+        for (let i = 0; i < 30; i++) {
+          const top = Math.floor(i / 5) * 90 - 50;
+          const left = (i % 5) * 100 - 50 + (Math.floor(i / 5) % 2) * 50;
+          hexagons += `<div class="hexagon" style="top: ${top}px; left: ${left}px;"></div>`;
+        }
+        return hexagons;
+      };
+
+      // カバレッジターゲットレベル名を取得
+      const getTargetLevelName = targetLevel => {
+        const names = {
+          initial: '初期段階 (20-30%)',
+          mid: '中間段階 (40-60%)',
+          final: '最終段階 (70-80%)'
+        };
+        return names[targetLevel] || names.initial;
+      };
+
+      // HTML構造構築
+      let html = `
+      <!DOCTYPE html>
+      <html lang="ja">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Portfolio Wise - テスト結果ダッシュボード</title>
+        <style>${styles}</style>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+      </head>
+      <body>
+        <div class="container">
+          <!-- ヘッダー -->
+          <header class="header">
+            <div class="header-content">
+              <div class="header-title">
+                <h1>Portfolio Wise</h1>
+                <span>開発チーム テスト システム</span>
+              </div>
+              <div class="header-info">
+                <div class="header-status">
+                  システム - ステータス: アクティブ
+                </div>
+                <div class="header-date">
+                  <div>実行日: ${new Date().toLocaleString('ja-JP').split(' ')[0]}</div>
+                  <div>カバレッジレベル: ${getTargetLevelName(targetLevel)}</div>
+                </div>
+              </div>
+            </div>
+            <div class="hexagon-pattern">
+              ${generateHexagons()}
+            </div>
+          </header>
+          
+          <!-- タブナビゲーション -->
+          <div class="tabs">
+            <button class="tab active" data-target="dashboard-tab">グラフダッシュボード</button>
+            <button class="tab error-tab" data-target="errors-tab">エラーログ</button>
+          </div>
+          
+          <div class="main-content">
+            <!-- コマンドターミナル (常に表示) -->
+            <div class="terminal">
+              <div class="terminal-header">
+                <div class="status-indicator ${this.results.numFailedTests > 0 ? 'status-warning' : 'status-success'}"></div>
+                <div class="terminal-title">システムステータス</div>
+              </div>
+              <div class="terminal-output">
+                <span class="terminal-label">実行開始:</span> ポートフォリオ市場データAPIテストスイート<br>
+                <span class="terminal-label">実行完了:</span> ${((this.endTime - this.startTime) / 1000).toFixed(2)} 秒<br>
+                <span class="terminal-label">テスト分析:</span> ${this.results.numTotalTests}件のテストを検証<br>
+                ${this.results.numFailedTests > 0 
+                  ? `<div class="warning-text">警告: ${this.results.numFailedTests}件のテストが要件を満たしていません。即時修正が必要です。</div>`
+                  : `<div class="success-text">ステータス良好: すべてのテストが要件を満たしています。</div>`
+                }
+              </div>
+            </div>
+            
+            <!-- ダッシュボードタブ -->
+            <div id="dashboard-tab" class="tab-content active">
+              <div class="dashboard-grid">
+                <!-- テスト結果サマリー -->
+                <div class="card summary-card">
+                  <div class="card-title">テスト結果サマリー</div>
+                  <div class="chart-container">
+                    <canvas id="test-results-chart"></canvas>
+                  </div>
+                  <div class="stat-grid">
+                    <div class="stat-box stat-box-success">
+                      <div class="stat-box-number">${this.results.numPassedTests}</div>
+                      <div class="stat-box-label">成功</div>
+                    </div>
+                    <div class="stat-box stat-box-failure">
+                      <div class="stat-box-number">${this.results.numFailedTests}</div>
+                      <div class="stat-box-label">失敗</div>
+                    </div>
+                    <div class="stat-box stat-box-pending">
+                      <div class="stat-box-number">${this.results.numPendingTests}</div>
+                      <div class="stat-box-label">保留</div>
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- カバレッジ分析 -->
+                ${this.results.coverageMap ? `
+                <div class="card coverage-card">
+                  <div class="card-title">コードカバレッジ分析</div>
+                  <div class="coverage-info">
+                    <div>目標段階: <span class="target-level">${getTargetLevelName(targetLevel)}</span></div>
+                    <div class="legend">
+                      <div class="legend-item">
+                        <div class="legend-color legend-current"></div>
+                        <span>現在値</span>
+                      </div>
+                      <div class="legend-item">
+                        <div class="legend-color legend-target"></div>
+                        <span>目標値</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="chart-container">
+                    <canvas id="coverage-chart"></canvas>
+                  </div>
+                </div>
+                ` : `
+                <div class="card coverage-card">
+                  <div class="card-title">コードカバレッジ分析</div>
+                  <div class="coverage-warning">
+                    <p>カバレッジ情報が利用できません。テスト実行時に以下のコマンドを使用してください：</p>
+                    <pre style="margin-top: 10px; background: #000; padding: 10px; border-radius: 3px;">JEST_COVERAGE=true ./scripts/run-tests.sh ${process.argv.slice(2).join(' ')}</pre>
+                  </div>
+                </div>
+                `}
+              </div>
+            </div>
+            
+            <!-- エラーログタブ -->
+            <div id="errors-tab" class="tab-content">
+              <div class="error-container">
+                <div class="error-header">
+                  <div class="error-title">
+                    <div class="status-indicator ${this.results.numFailedTests > 0 ? 'status-warning' : 'status-success'}"></div>
+                    <div class="error-title-text">エラーログ詳細</div>
+                  </div>
+                  ${this.results.numFailedTests > 0 ? `
+                  <button class="copy-button" data-type="all">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                      <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+                    </svg>
+                    全てコピー
+                  </button>
+                  ` : ''}
+                </div>
+                
+                ${this.results.numFailedTests > 0 ? `
+                <div class="error-list">
+                  ${failedTests.map(failure => `
+                  <div class="error-item">
+                    <div class="error-item-header">
+                      <div>
+                        <div class="error-item-id">エラーID: ${failure.id.toString().padStart(3, '0')}</div>
+                        <div class="error-item-title">${failure.title}</div>
+                      </div>
+                      <button class="copy-button" data-type="single">
+                        コピー
+                      </button>
+                    </div>
+                    <div class="error-item-file"><span>ファイル:</span> ${failure.file}</div>
+                    <div class="error-item-message">${failure.message.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+                  </div>
+                  `).join('')}
+                </div>
+                ` : `
+                <div class="no-errors">
+                  エラーはありません。すべてのテストが成功しています。
+                </div>
+                `}
+              </div>
+            </div>
+            
+            <!-- フッター -->
+            <footer class="footer">
+              <div class="footer-left">
+                目標達成率: ${coverageData.filter(item => item.pct >= item.target).length} / ${coverageData.length}
+              </div>
+              <div class="footer-center">
+                Portfolio Wise開発チーム - Quality Assurance System
+              </div>
+              <div class="footer-right">
+                Version 1.0.0
+              </div>
+            </footer>
+          </div>
+        </div>
+        
+        <script>${scripts}</script>
+      </body>
+      </html>
+      `;
+
+      // HTMLファイルに書き込み
+      fs.writeFileSync(path.join(outputDir, 'visual-report.html'), html);
+      
+    } catch (error) {
+      console.error('ビジュアルレポート生成中にエラーが発生しました:', error);
+      
+      // 最小限のエラーレポートを生成
+      const basicHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>テスト結果 - エラー</title>
+          <style>
+            body { font-family: sans-serif; margin: 20px; }
+            .error { color: red; }
+          </style>
+        </head>
+        <body>
+          <h1>テスト結果レポート生成エラー</h1>
+          <p class="error">${error.message}</p>
+          <p>詳細結果は ./test-results/detailed-results.json を確認してください。</p>
+        </body>
+        </html>
+      `;
+      
+      fs.writeFileSync(path.join(outputDir, 'visual-report.html'), basicHtml);
+    }
   }
   
   /**
    * カバレッジ目標値を取得
-   * @param {string} level 目標レベル
-   * @returns {Object} しきい値設定
+   * @param {string} targetLevel 目標レベル（'initial', 'mid', 'final'）
+   * @returns {Object} 閾値オブジェクト
    */
-  getCoverageThresholds(level) {
-    // デフォルトのしきい値設定
+  getCoverageThresholds(targetLevel) {
     const thresholds = {
       initial: {
         statements: 30,
@@ -203,1503 +1250,145 @@ class EvaNervReporter {
       }
     };
     
-    // 設定ファイルからしきい値を取得（可能であれば）
-    try {
-      const reporterConfig = require('./jest-reporter.config.js');
-      if (reporterConfig && reporterConfig.baseOptions && 
-          reporterConfig.baseOptions.coverageReport && 
-          reporterConfig.baseOptions.coverageReport.thresholds) {
-        return reporterConfig.baseOptions.coverageReport.thresholds[level] || thresholds[level];
-      }
-    } catch (error) {
-      this.log('レポーター設定の読み込みに失敗しました: ' + error.message, 'WARNING');
-    }
-    
-    return thresholds[level] || thresholds.initial;
-  }
-
-  /**
-   * カバレッジ履歴データを読み込む
-   * @returns {void}
-   */
-  loadCoverageHistory() {
-    const historyFile = path.resolve('./test-results/coverage-history.json');
-    
-    if (!fs.existsSync(historyFile)) {
-      // 履歴ファイルがない場合は空配列をセット
-      this.coverageHistory = [];
-      return;
-    }
-    
-    try {
-      const data = JSON.parse(fs.readFileSync(historyFile, 'utf8'));
-      this.coverageHistory = Array.isArray(data) ? data : [];
-      this.log(`カバレッジ履歴データを読み込みました: ${this.coverageHistory.length}件`, 'INFO');
-    } catch (error) {
-      this.log('カバレッジ履歴データの読み込みに失敗しました: ' + error.message, 'WARNING');
-      this.coverageHistory = [];
-    }
-  }
-
-  /**
-   * カバレッジ履歴データを保存する
-   * @param {Object} currentData 現在のカバレッジデータ
-   */
-  saveCoverageHistory(currentData) {
-    const historyFile = path.resolve('./test-results/coverage-history.json');
-    
-    // 現在の日付
-    const today = new Date().toISOString().split('T')[0];
-    
-    // 同じ日付のデータがあれば上書き、なければ追加
-    const existingIndex = this.coverageHistory.findIndex(item => item.date === today);
-    
-    const newDataPoint = {
-      date: today,
-      statements: currentData.statements.pct,
-      branches: currentData.branches.pct,
-      functions: currentData.functions.pct,
-      lines: currentData.lines.pct
-    };
-    
-    if (existingIndex >= 0) {
-      this.coverageHistory[existingIndex] = newDataPoint;
-    } else {
-      this.coverageHistory.push(newDataPoint);
-    }
-    
-    // 履歴を最大30日分に制限
-    const limitedHistory = this.coverageHistory.slice(-30);
-    
-    try {
-      // 出力ディレクトリがない場合は作成
-      if (!fs.existsSync(path.dirname(historyFile))) {
-        fs.mkdirSync(path.dirname(historyFile), { recursive: true });
-      }
-      
-      fs.writeFileSync(historyFile, JSON.stringify(limitedHistory, null, 2));
-      this.log('カバレッジ履歴データを保存しました', 'INFO');
-    } catch (error) {
-      this.log('カバレッジ履歴データの保存に失敗しました: ' + error.message, 'WARNING');
-    }
-  }
-
-  /**
-   * 数値を小数点以下2桁に丸める
-   * @param {number} num 丸める数値
-   * @returns {number} 丸められた数値
-   */
-  roundToTwo(num) {
-    return Math.round((num + Number.EPSILON) * 100) / 100;
-  }
-
-  /**
-   * HTMLビジュアルレポートを生成
-   * @param {string} outputDir 出力ディレクトリ
-   */
-  generateEvaVisualReport(outputDir) {
-    try {
-      // 出力ディレクトリがなければ作成
-      if (!fs.existsSync(outputDir)) {
-        fs.mkdirSync(outputDir, { recursive: true });
-      }
-      
-      // 基本的なHTMLテンプレート - エヴァンゲリオン風
-      let html = `
-        <!DOCTYPE html>
-        <html lang="ja">
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>NERV MAGI SYSTEM - テスト結果解析</title>
-          <link rel="preconnect" href="https://fonts.googleapis.com">
-          <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-          <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
-          <style>
-            :root {
-              --nerv-black: #000000;
-              --nerv-dark: #111111;
-              --nerv-green: #00FF00;
-              --nerv-orange: #FF6600;
-              --nerv-red: #FF0000;
-              --nerv-blue: #3399FF;
-              --nerv-purple: #9933CC;
-              --nerv-white: #CCCCCC;
-              --grid-line: #333333;
-              --statements-color: #4285F4;
-              --branches-color: #34A853;
-              --functions-color: #FBBC05;
-              --lines-color: #EA4335;
-            }
-            
-            @keyframes scanline {
-              0% { transform: translateY(0px); }
-              100% { transform: translateY(100vh); }
-            }
-            
-            @keyframes blink {
-              0%, 100% { opacity: 1; }
-              50% { opacity: 0.3; }
-            }
-            
-            @keyframes fadeIn {
-              from { opacity: 0; }
-              to { opacity: 1; }
-            }
-            
-            @keyframes glitch {
-              0%, 100% { transform: translate(0); }
-              25% { transform: translate(-2px, 2px); }
-              50% { transform: translate(2px, -2px); }
-              75% { transform: translate(-1px, -1px); }
-            }
-
-            @keyframes growRight {
-              from { width: 0; }
-              to { width: 100%; }
-            }
-
-            @keyframes appear {
-              from { opacity: 0; transform: translateY(10px); }
-              to { opacity: 1; transform: translateY(0); }
-            }
-            
-            * {
-              box-sizing: border-box;
-              margin: 0;
-              padding: 0;
-              font-family: 'Share Tech Mono', monospace;
-            }
-            
-            body {
-              background-color: var(--nerv-black);
-              color: var(--nerv-white);
-              line-height: 1.6;
-              padding: 0;
-              margin: 0;
-              overflow-x: hidden;
-              position: relative;
-            }
-            
-            body::before {
-              content: "";
-              position: fixed;
-              top: 0;
-              left: 0;
-              width: 100%;
-              height: 100%;
-              background: 
-                repeating-linear-gradient(
-                  0deg, 
-                  rgba(0,0,0, 0.15), 
-                  rgba(0,0,0, 0.15) 1px, 
-                  transparent 1px, 
-                  transparent 2px
-                );
-              pointer-events: none;
-              z-index: 10;
-            }
-            
-            body::after {
-              content: "";
-              position: fixed;
-              top: 0;
-              left: 0;
-              width: 100%;
-              height: 2px;
-              background-color: rgba(0, 255, 0, 0.5);
-              animation: scanline 8s linear infinite;
-              pointer-events: none;
-              z-index: 11;
-            }
-            
-            .container {
-              max-width: 95%;
-              margin: 0 auto;
-              padding: 20px;
-              position: relative;
-              animation: fadeIn 1s ease-in;
-            }
-            
-            h1, h2, h3 {
-              color: var(--nerv-orange);
-              text-transform: uppercase;
-              letter-spacing: 2px;
-              margin-top: 30px;
-              margin-bottom: 20px;
-              border-bottom: 1px solid var(--nerv-orange);
-              padding-bottom: 5px;
-              position: relative;
-            }
-            
-            h1 {
-              color: var(--nerv-green);
-              font-size: 2rem;
-              text-align: center;
-              margin-top: 10px;
-              border-bottom: 2px solid var(--nerv-green);
-            }
-            
-            h1::before, h1::after {
-              content: "//";
-              color: var(--nerv-green);
-              margin: 0 10px;
-            }
-            
-            h2::before {
-              content: ">";
-              color: var(--nerv-orange);
-              margin-right: 10px;
-            }
-            
-            p {
-              margin-bottom: 15px;
-              position: relative;
-            }
-            
-            .timestamp {
-              color: var(--nerv-blue);
-              font-size: 0.9rem;
-              margin-bottom: 30px;
-              text-align: center;
-            }
-            
-            .nerv-logo {
-              text-align: center;
-              margin: 20px 0;
-              color: var(--nerv-red);
-              font-size: 24px;
-              font-weight: bold;
-              letter-spacing: 8px;
-              text-shadow: 0 0 5px var(--nerv-red);
-              animation: blink 4s infinite;
-            }
-            
-            .nerv-logo .half-leaf {
-              display: inline-block;
-              transform: scale(1.2);
-              margin: 0 5px;
-            }
-            
-            .summary {
-              display: grid;
-              grid-template-columns: repeat(4, 1fr);
-              gap: 15px;
-              margin: 30px 0;
-            }
-            
-            .summary-box {
-              border: 1px solid var(--grid-line);
-              padding: 15px;
-              text-align: center;
-              background-color: rgba(0, 0, 0, 0.7);
-              position: relative;
-              box-shadow: 0 0 10px rgba(0, 255, 0, 0.2);
-            }
-            
-            .summary-box::before {
-              content: "";
-              position: absolute;
-              top: 0;
-              left: 0;
-              width: 100%;
-              height: 100%;
-              background: 
-                linear-gradient(45deg, transparent 48%, var(--grid-line) 49%, var(--grid-line) 51%, transparent 52%),
-                linear-gradient(-45deg, transparent 48%, var(--grid-line) 49%, var(--grid-line) 51%, transparent 52%);
-              background-size: 30px 30px;
-              pointer-events: none;
-              opacity: 0.3;
-            }
-            
-            .summary-box h2 {
-              font-size: 2.5rem;
-              margin: 0;
-              border: none;
-            }
-            
-            .summary-box p {
-              margin: 5px 0 0;
-              font-size: 1rem;
-              text-transform: uppercase;
-            }
-            
-            .summary-box.total h2, .summary-box.total p {
-              color: var(--nerv-blue);
-            }
-            
-            .summary-box.passed h2, .summary-box.passed p {
-              color: var(--nerv-green);
-            }
-            
-            .summary-box.failed h2, .summary-box.failed p {
-              color: var(--nerv-red);
-              animation: blink 2s infinite;
-            }
-            
-            .summary-box.skipped h2, .summary-box.skipped p {
-              color: var(--nerv-orange);
-            }
-            
-            .magi-system {
-              margin: 40px 0;
-              background-color: rgba(0, 0, 0, 0.7);
-              border: 1px solid var(--grid-line);
-              padding: 20px;
-              position: relative;
-            }
-            
-            .magi-system::before {
-              content: "MAGI SYSTEM";
-              position: absolute;
-              top: -12px;
-              left: 20px;
-              background-color: var(--nerv-black);
-              padding: 0 10px;
-              color: var(--nerv-green);
-              font-size: 0.9rem;
-            }
-            
-            .magi-header {
-              display: flex;
-              justify-content: space-between;
-              align-items: center;
-              margin-bottom: 20px;
-              border-bottom: 1px solid var(--grid-line);
-              padding-bottom: 10px;
-            }
-            
-            .magi-title {
-              color: var(--nerv-green);
-              font-size: 1.2rem;
-            }
-            
-            .magi-status {
-              color: var(--nerv-green);
-              background-color: rgba(0, 255, 0, 0.1);
-              padding: 3px 8px;
-              border-radius: 3px;
-              font-size: 0.9rem;
-            }
-            
-            .coverage-row {
-              display: flex;
-              align-items: center;
-              margin: 15px 0;
-              position: relative;
-            }
-            
-            .coverage-label {
-              width: 150px;
-              font-weight: bold;
-              color: var(--nerv-white);
-              text-transform: uppercase;
-              font-size: 0.9rem;
-            }
-            
-            .coverage-bar {
-              flex: 1;
-              height: 25px;
-              background-color: rgba(51, 51, 51, 0.5);
-              position: relative;
-              margin: 0 15px;
-              overflow: hidden;
-            }
-            
-            .coverage-bar::before {
-              content: "";
-              position: absolute;
-              top: 0;
-              left: 0;
-              width: 100%;
-              height: 100%;
-              background: 
-                repeating-linear-gradient(
-                  -45deg, 
-                  transparent, 
-                  transparent 10px, 
-                  rgba(0, 0, 0, 0.1) 10px, 
-                  rgba(0, 0, 0, 0.1) 20px
-                );
-              pointer-events: none;
-            }
-            
-            .coverage-bar-fill {
-              height: 100%;
-              animation: growRight 1.5s ease-out;
-            }
-            
-            .coverage-bar-fill.success {
-              background-color: var(--nerv-green);
-            }
-            
-            .coverage-bar-fill.warning {
-              background-color: var(--nerv-orange);
-            }
-            
-            .coverage-bar-fill.critical {
-              background-color: var(--nerv-red);
-              animation: blink 2s infinite, growRight 1.5s ease-out;
-            }
-            
-            .coverage-percentage {
-              width: 70px;
-              font-weight: bold;
-              text-align: right;
-              color: var(--nerv-white);
-            }
-            
-            .coverage-counts {
-              width: 100px;
-              text-align: right;
-              font-size: 0.9rem;
-              color: var(--nerv-blue);
-            }
-            
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              margin: 20px 0;
-              background-color: rgba(0, 0, 0, 0.7);
-              animation: fadeIn 1s ease-in;
-            }
-            
-            table, th, td {
-              border: 1px solid var(--grid-line);
-            }
-            
-            th, td {
-              padding: 10px 15px;
-              text-align: left;
-            }
-            
-            th {
-              background-color: rgba(255, 102, 0, 0.2);
-              color: var(--nerv-orange);
-              text-transform: uppercase;
-              font-size: 0.9rem;
-            }
-            
-            tr:nth-child(even) {
-              background-color: rgba(0, 0, 0, 0.3);
-            }
-            
-            tr:hover {
-              background-color: rgba(0, 255, 0, 0.1);
-            }
-            
-            .file-path {
-              font-family: monospace;
-              font-size: 0.9rem;
-              color: var(--nerv-blue);
-            }
-            
-            .error-section {
-              margin: 30px 0;
-              padding: 20px;
-              background-color: rgba(255, 0, 0, 0.1);
-              border: 1px solid var(--nerv-red);
-              position: relative;
-              animation: glitch 0.5s ease-in-out infinite alternate;
-            }
-            
-            .error-section h2 {
-              color: var(--nerv-red);
-              border-color: var(--nerv-red);
-              animation: blink 1s infinite;
-            }
-            
-            .error-message {
-              font-family: monospace;
-              padding: 15px;
-              background-color: rgba(0, 0, 0, 0.7);
-              color: var(--nerv-red);
-              overflow-x: auto;
-              max-height: 300px;
-              border: 1px solid var(--nerv-red);
-            }
-            
-            .footer {
-              margin-top: 50px;
-              text-align: center;
-              color: var(--nerv-white);
-              font-size: 0.9rem;
-              border-top: 1px solid var(--grid-line);
-              padding-top: 20px;
-            }
-            
-            .footer .magi-sign {
-              color: var(--nerv-orange);
-              animation: blink 4s infinite;
-            }
-            
-            .pattern-bg {
-              position: fixed;
-              top: 0;
-              left: 0;
-              width: 100%;
-              height: 100%;
-              background-image: 
-                linear-gradient(to right, rgba(0, 255, 0, 0.05) 1px, transparent 1px),
-                linear-gradient(to bottom, rgba(0, 255, 0, 0.05) 1px, transparent 1px);
-              background-size: 20px 20px;
-              pointer-events: none;
-              z-index: -1;
-            }
-            
-            /* カバレッジチャートのスタイル */
-            .coverage-charts {
-              margin-top: 30px;
-              border-top: 1px solid var(--grid-line);
-              padding-top: 20px;
-            }
-            .coverage-charts h2 {
-              text-align: center;
-              margin-bottom: 20px;
-            }
-            .chart-container {
-              display: flex;
-              flex-direction: column;
-              justify-content: center;
-              margin-bottom: 30px;
-              padding: 20px;
-              background-color: rgba(0, 0, 0, 0.6);
-              border: 1px solid var(--grid-line);
-            }
-
-            /* バーチャートのスタイル（CSSのみ） */
-            .css-bar-chart {
-              display: grid;
-              grid-template-columns: 160px 1fr 80px 100px;
-              gap: 10px;
-              margin-bottom: 20px;
-            }
-
-            .css-bar-chart-header {
-              grid-column: 1 / -1;
-              display: flex;
-              justify-content: space-between;
-              align-items: center;
-              padding-bottom: 10px;
-              border-bottom: 1px solid var(--grid-line);
-              margin-bottom: 15px;
-            }
-
-            .css-bar-chart-title {
-              font-size: 1.2rem;
-              color: var(--nerv-green);
-            }
-
-            .css-bar-chart-date {
-              font-size: 0.9rem;
-              color: var(--nerv-blue);
-            }
-
-            .css-bar-label {
-              color: var(--nerv-white);
-              font-weight: bold;
-              padding: 5px;
-              text-transform: uppercase;
-            }
-
-            .css-bar-container {
-              position: relative;
-              height: 40px;
-              background-color: rgba(20, 20, 20, 0.5);
-              border: 1px solid var(--grid-line);
-            }
-
-            .css-bar-fill {
-              height: 100%;
-              width: 0;
-              position: absolute;
-              top: 0;
-              left: 0;
-              z-index: 1;
-              transition: width 1.5s ease-out;
-              animation: growRight 1.5s ease-out forwards;
-            }
-
-            .css-bar-target {
-              position: absolute;
-              top: 0;
-              height: 100%;
-              border-right: 2px dashed rgba(255, 255, 255, 0.3);
-              z-index: 2;
-            }
-
-            .css-bar-target::after {
-              content: attr(data-target);
-              position: absolute;
-              top: -20px;
-              right: -15px;
-              font-size: 0.8rem;
-              color: var(--nerv-white);
-            }
-
-            .css-bar-fill.statements {
-              background-color: var(--statements-color);
-            }
-
-            .css-bar-fill.branches {
-              background-color: var(--branches-color);
-            }
-
-            .css-bar-fill.functions {
-              background-color: var(--functions-color);
-            }
-
-            .css-bar-fill.lines {
-              background-color: var(--lines-color);
-            }
-
-            .css-bar-percentage {
-              font-weight: bold;
-              text-align: right;
-              color: var(--nerv-white);
-              padding: 5px;
-            }
-
-            .css-bar-counts {
-              font-size: 0.9rem;
-              text-align: right;
-              color: var(--nerv-blue);
-              padding: 5px;
-            }
-
-            /* ラインチャートのスタイル（CSSのみ） */
-            .css-line-chart {
-              height: 300px;
-              position: relative;
-              border: 1px solid var(--grid-line);
-              margin-top: 40px;
-              background-color: rgba(20, 20, 20, 0.5);
-              padding: 20px 30px 30px 60px;
-            }
-
-            .css-line-chart-header {
-              position: absolute;
-              top: -30px;
-              left: 0;
-              width: 100%;
-              display: flex;
-              justify-content: space-between;
-              padding: 5px 30px 5px 60px;
-            }
-
-            .css-line-chart-title {
-              font-size: 1.2rem;
-              color: var(--nerv-green);
-            }
-
-            .css-line-chart-legend {
-              display: flex;
-              gap: 20px;
-            }
-
-            .css-legend-item {
-              display: flex;
-              align-items: center;
-              gap: 5px;
-              font-size: 0.9rem;
-            }
-
-            .css-legend-color {
-              width: 12px;
-              height: 12px;
-              border-radius: 2px;
-            }
-
-            .css-legend-color.statements {
-              background-color: var(--statements-color);
-            }
-
-            .css-legend-color.branches {
-              background-color: var(--branches-color);
-            }
-
-            .css-legend-color.functions {
-              background-color: var(--functions-color);
-            }
-
-            .css-legend-color.lines {
-              background-color: var(--lines-color);
-            }
-
-            .css-line-chart-grid {
-              position: absolute;
-              top: 0;
-              left: 0;
-              width: 100%;
-              height: 100%;
-              z-index: 1;
-            }
-
-            .css-line-chart-y-axis {
-              position: absolute;
-              top: 0;
-              left: 0;
-              height: 100%;
-              width: 60px;
-              display: flex;
-              flex-direction: column;
-              justify-content: space-between;
-              padding: 20px 0;
-            }
-
-            .css-line-chart-y-label {
-              position: relative;
-              font-size: 0.8rem;
-              color: var(--nerv-white);
-              text-align: right;
-              width: 100%;
-              padding-right: 10px;
-            }
-
-            .css-line-chart-x-axis {
-              position: absolute;
-              bottom: 0;
-              left: 60px;
-              width: calc(100% - 60px);
-              height: 30px;
-              display: flex;
-              justify-content: space-between;
-            }
-
-            .css-line-chart-x-label {
-              font-size: 0.8rem;
-              color: var(--nerv-white);
-              text-align: center;
-              transform: rotate(-45deg);
-              transform-origin: top left;
-              position: absolute;
-              bottom: -25px;
-              width: 100px;
-            }
-
-            .css-line-chart-horizontal-line {
-              position: absolute;
-              left: 60px;
-              width: calc(100% - 60px);
-              height: 1px;
-              background-color: rgba(255, 255, 255, 0.1);
-              z-index: 1;
-            }
-
-            .css-line-chart-vertical-line {
-              position: absolute;
-              top: 20px;
-              height: calc(100% - 50px);
-              width: 1px;
-              background-color: rgba(255, 255, 255, 0.1);
-              z-index: 1;
-            }
-
-            .css-line-chart-line {
-              position: absolute;
-              z-index: 2;
-              stroke-width: 2px;
-              fill: none;
-              animation: appear 1s ease-out forwards;
-            }
-
-            .css-line-chart-dot {
-              position: absolute;
-              width: 6px;
-              height: 6px;
-              border-radius: 50%;
-              z-index: 3;
-              transform: translate(-3px, -3px);
-              animation: appear 1s ease-out forwards;
-            }
-
-            .css-line-chart-target-line {
-              position: absolute;
-              left: 60px;
-              width: calc(100% - 60px);
-              height: 1px;
-              background-color: rgba(255, 255, 255, 0.3);
-              z-index: 2;
-              border-top: 1px dashed;
-            }
-
-            .css-line-chart-target-line.statements {
-              border-color: var(--statements-color);
-            }
-
-            .css-line-chart-target-line.branches {
-              border-color: var(--branches-color);
-            }
-
-            .css-line-chart-target-line.functions {
-              border-color: var(--functions-color);
-            }
-
-            .css-line-chart-target-line.lines {
-              border-color: var(--lines-color);
-            }
-
-            .css-line-chart-target-label {
-              position: absolute;
-              right: 10px;
-              font-size: 0.8rem;
-              transform: translateY(-50%);
-            }
-
-            /* レスポンシブ対応 */
-            @media (max-width: 768px) {
-              .summary {
-                grid-template-columns: repeat(2, 1fr);
-              }
-              
-              .coverage-row {
-                flex-direction: column;
-                align-items: flex-start;
-              }
-              
-              .coverage-bar {
-                width: 100%;
-                margin: 10px 0;
-              }
-              
-              .coverage-percentage, .coverage-counts {
-                text-align: left;
-                width: auto;
-                margin-top: 5px;
-              }
-
-              .css-bar-chart {
-                grid-template-columns: 100px 1fr;
-                grid-template-rows: auto auto;
-              }
-
-              .css-bar-percentage, .css-bar-counts {
-                grid-column: 2;
-                text-align: left;
-              }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="pattern-bg"></div>
-          <div class="container">
-            <div class="nerv-logo">
-              <span class="half-leaf">◢</span>NERV<span class="half-leaf">◣</span>
-            </div>
-            <h1>MAGI システム解析結果</h1>
-            <div class="timestamp">実行日時: ${new Date().toLocaleString('ja-JP')}</div>
-            <p style="text-align: center; color: var(--nerv-green);">実行時間: ${((this.endTime - this.startTime) / 1000).toFixed(2)}秒</p>
-            
-            <div class="summary">
-              <div class="summary-box total">
-                <h2>${this.results.numTotalTests}</h2>
-                <p>総テスト数</p>
-              </div>
-              <div class="summary-box passed">
-                <h2>${this.results.numPassedTests}</h2>
-                <p>成功</p>
-              </div>
-              <div class="summary-box failed">
-                <h2>${this.results.numFailedTests}</h2>
-                <p>失敗</p>
-              </div>
-              <div class="summary-box skipped">
-                <h2>${this.results.numPendingTests}</h2>
-                <p>保留</p>
-              </div>
-            </div>
-      `;
-      
-      // カバレッジ情報がある場合
-      if (this.results.coverageMap) {
-        try {
-          const total = this.results.coverageMap.getCoverageSummary().toJSON();
-          const targetLevel = process.env.COVERAGE_TARGET || 'initial';
-          const targetThresholds = this.getCoverageThresholds(targetLevel);
-          
-          html += `
-            <div class="magi-system">
-              <div class="magi-header">
-                <div class="magi-title">MAGI-SYSTEM/MELCHIOR - カバレッジ解析</div>
-                <div class="magi-status">OPERATIONAL</div>
-              </div>
-              
-              <div class="coverage-row">
-                <div class="coverage-label">ステートメント</div>
-                <div class="coverage-bar">
-                  <div class="coverage-bar-fill ${this.getCoverageBarClass(total.statements.pct, targetThresholds.statements)}" style="width: ${total.statements.pct}%;"></div>
-                </div>
-                <div class="coverage-percentage">${total.statements.pct.toFixed(2)}%</div>
-                <div class="coverage-counts">${total.statements.covered}/${total.statements.total}</div>
-              </div>
-              
-              <div class="coverage-row">
-                <div class="coverage-label">ブランチ</div>
-                <div class="coverage-bar">
-                  <div class="coverage-bar-fill ${this.getCoverageBarClass(total.branches.pct, targetThresholds.branches)}" style="width: ${total.branches.pct}%;"></div>
-                </div>
-                <div class="coverage-percentage">${total.branches.pct.toFixed(2)}%</div>
-                <div class="coverage-counts">${total.branches.covered}/${total.branches.total}</div>
-              </div>
-              
-              <div class="coverage-row">
-                <div class="coverage-label">関数</div>
-                <div class="coverage-bar">
-                  <div class="coverage-bar-fill ${this.getCoverageBarClass(total.functions.pct, targetThresholds.functions)}" style="width: ${total.functions.pct}%;"></div>
-                </div>
-                <div class="coverage-percentage">${total.functions.pct.toFixed(2)}%</div>
-                <div class="coverage-counts">${total.functions.covered}/${total.functions.total}</div>
-              </div>
-              
-              <div class="coverage-row">
-                <div class="coverage-label">コード行</div>
-                <div class="coverage-bar">
-                  <div class="coverage-bar-fill ${this.getCoverageBarClass(total.lines.pct, targetThresholds.lines)}" style="width: ${total.lines.pct}%;"></div>
-                </div>
-                <div class="coverage-percentage">${total.lines.pct.toFixed(2)}%</div>
-                <div class="coverage-counts">${total.lines.covered}/${total.lines.total}</div>
-              </div>
-            </div>
-            
-            <div class="magi-system">
-              <div class="magi-header">
-                <div class="magi-title">MAGI-SYSTEM/BALTHASAR - 目標達成度解析</div>
-                <div class="magi-status">OPERATIONAL</div>
-              </div>
-              
-              <table>
-                <thead>
-                  <tr>
-                    <th>メトリクス</th>
-                    <th>現在値</th>
-                    <th>目標値</th>
-                    <th>ステータス</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>ステートメント</td>
-                    <td>${total.statements.pct.toFixed(2)}%</td>
-                    <td>${targetThresholds.statements}%</td>
-                    <td>${this.getNervStatusSymbol(total.statements.pct, targetThresholds.statements)}</td>
-                  </tr>
-                  <tr>
-                    <td>ブランチ</td>
-                    <td>${total.branches.pct.toFixed(2)}%</td>
-                    <td>${targetThresholds.branches}%</td>
-                    <td>${this.getNervStatusSymbol(total.branches.pct, targetThresholds.branches)}</td>
-                  </tr>
-                  <tr>
-                    <td>関数</td>
-                    <td>${total.functions.pct.toFixed(2)}%</td>
-                    <td>${targetThresholds.functions}%</td>
-                    <td>${this.getNervStatusSymbol(total.functions.pct, targetThresholds.functions)}</td>
-                  </tr>
-                  <tr>
-                    <td>コード行</td>
-                    <td>${total.lines.pct.toFixed(2)}%</td>
-                    <td>${targetThresholds.lines}%</td>
-                    <td>${this.getNervStatusSymbol(total.lines.pct, targetThresholds.lines)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            
-            <div class="magi-system">
-              <div class="magi-header">
-                <div class="magi-title">MAGI-SYSTEM/CASPER - ファイル詳細解析</div>
-                <div class="magi-status">OPERATIONAL</div>
-              </div>
-              
-              <table>
-                <thead>
-                  <tr>
-                    <th>ファイル</th>
-                    <th>ステートメント</th>
-                    <th>ブランチ</th>
-                    <th>関数</th>
-                    <th>コード行</th>
-                  </tr>
-                </thead>
-                <tbody>
-          `;
-          
-          const fileCoverage = this.results.coverageMap.getFileCoverageInfo();
-          fileCoverage.sort((a, b) => a.filename.localeCompare(b.filename));
-          
-          fileCoverage.forEach(file => {
-            const filename = path.relative(process.cwd(), file.filename);
-            html += `
-              <tr>
-                <td class="file-path">${filename}</td>
-                <td>${file.statements.pct.toFixed(2)}%</td>
-                <td>${file.branches.pct.toFixed(2)}%</td>
-                <td>${file.functions.pct.toFixed(2)}%</td>
-                <td>${file.lines.pct.toFixed(2)}%</td>
-              </tr>
-            `;
-          });
-          
-          html += `
-                </tbody>
-              </table>
-            </div>
-          `;
-
-          // 現在のカバレッジデータを保存
-          const currentData = {
-            statements: {
-              pct: total.statements.pct,
-              covered: total.statements.covered,
-              total: total.statements.total
-            },
-            branches: {
-              pct: total.branches.pct,
-              covered: total.branches.covered,
-              total: total.branches.total
-            },
-            functions: {
-              pct: total.functions.pct,
-              covered: total.functions.covered,
-              total: total.functions.total
-            },
-            lines: {
-              pct: total.lines.pct,
-              covered: total.lines.covered,
-              total: total.lines.total
-            }
-          };
-
-          // 履歴データを保存
-          this.saveCoverageHistory(currentData);
-
-          // CSSのみのバーチャートを作成
-          html += `
-            <div id="coverage-charts" class="coverage-charts">
-              <h2>コードカバレッジチャート</h2>
-              <div id="bar-chart-container" class="chart-container">
-                <div class="css-bar-chart">
-                  <div class="css-bar-chart-header">
-                    <div class="css-bar-chart-title">コードカバレッジ詳細</div>
-                    <div class="css-bar-chart-date">${new Date().toLocaleDateString('ja-JP')}</div>
-                  </div>
-
-                  <div class="css-bar-label">ステートメント</div>
-                  <div class="css-bar-container">
-                    <div class="css-bar-fill statements" style="width: ${total.statements.pct}%;"></div>
-                    <div class="css-bar-target" style="left: ${targetThresholds.statements}%;" data-target="${targetThresholds.statements}%"></div>
-                  </div>
-                  <div class="css-bar-percentage">${total.statements.pct.toFixed(2)}%</div>
-                  <div class="css-bar-counts">${total.statements.covered}/${total.statements.total}</div>
-
-                  <div class="css-bar-label">ブランチ</div>
-                  <div class="css-bar-container">
-                    <div class="css-bar-fill branches" style="width: ${total.branches.pct}%;"></div>
-                    <div class="css-bar-target" style="left: ${targetThresholds.branches}%;" data-target="${targetThresholds.branches}%"></div>
-                  </div>
-                  <div class="css-bar-percentage">${total.branches.pct.toFixed(2)}%</div>
-                  <div class="css-bar-counts">${total.branches.covered}/${total.branches.total}</div>
-
-                  <div class="css-bar-label">関数</div>
-                  <div class="css-bar-container">
-                    <div class="css-bar-fill functions" style="width: ${total.functions.pct}%;"></div>
-                    <div class="css-bar-target" style="left: ${targetThresholds.functions}%;" data-target="${targetThresholds.functions}%"></div>
-                  </div>
-                  <div class="css-bar-percentage">${total.functions.pct.toFixed(2)}%</div>
-                  <div class="css-bar-counts">${total.functions.covered}/${total.functions.total}</div>
-
-                  <div class="css-bar-label">コード行</div>
-                  <div class="css-bar-container">
-                    <div class="css-bar-fill lines" style="width: ${total.lines.pct}%;"></div>
-                    <div class="css-bar-target" style="left: ${targetThresholds.lines}%;" data-target="${targetThresholds.lines}%"></div>
-                  </div>
-                  <div class="css-bar-percentage">${total.lines.pct.toFixed(2)}%</div>
-                  <div class="css-bar-counts">${total.lines.covered}/${total.lines.total}</div>
-                </div>
-              </div>
-          `;
-
-          // 履歴データがある場合はラインチャートを追加
-          if (this.coverageHistory.length > 0) {
-            // Y軸の最大値を計算（最大値 + 10％ または 100％のいずれか大きい方）
-            const allValues = [
-              ...this.coverageHistory.map(d => d.statements),
-              ...this.coverageHistory.map(d => d.branches),
-              ...this.coverageHistory.map(d => d.functions),
-              ...this.coverageHistory.map(d => d.lines),
-              total.statements.pct,
-              total.branches.pct, 
-              total.functions.pct,
-              total.lines.pct
-            ];
-            
-            const maxValue = Math.max(100, Math.ceil((Math.max(...allValues) + 10) / 10) * 10);
-            
-            // 表示する日付データを制限（最新の7件）
-            const displayedHistory = [...this.coverageHistory].slice(-6);
-            
-            // 現在のデータを追加
-            displayedHistory.push({
-              date: new Date().toISOString().split('T')[0],
-              statements: total.statements.pct,
-              branches: total.branches.pct,
-              functions: total.functions.pct,
-              lines: total.lines.pct
-            });
-
-            // Y軸のラベルを生成
-            let yAxisHtml = '';
-            for (let i = 0; i <= 100; i += 20) {
-              yAxisHtml += `
-                <div class="css-line-chart-y-label" style="bottom: ${i}%;">${i}%</div>
-                <div class="css-line-chart-horizontal-line" style="bottom: ${i}%;"></div>
-              `;
-            }
-
-            // X軸のラベルとデータポイントの生成
-            let xAxisHtml = '';
-            const pointsStatements = [];
-            const pointsBranches = [];
-            const pointsFunctions = [];
-            const pointsLines = [];
-            
-            displayedHistory.forEach((item, index) => {
-              const xPercentage = (index / (displayedHistory.length - 1)) * 100;
-              xAxisHtml += `
-                <div class="css-line-chart-x-label" style="left: ${xPercentage}%;">${item.date.substring(5)}</div>
-                <div class="css-line-chart-vertical-line" style="left: calc(60px + ${xPercentage}% * (100% - 60px) / 100);"></div>
-              `;
-              
-              // データポイント座標の計算
-              const xPos = `calc(60px + ${xPercentage}% * (100% - 60px) / 100)`;
-              pointsStatements.push({
-                x: xPos,
-                y: `calc(100% - ${item.statements / maxValue * 100}% - 30px)`,
-                value: item.statements
-              });
-              
-              pointsBranches.push({
-                x: xPos,
-                y: `calc(100% - ${item.branches / maxValue * 100}% - 30px)`,
-                value: item.branches
-              });
-              
-              pointsFunctions.push({
-                x: xPos,
-                y: `calc(100% - ${item.functions / maxValue * 100}% - 30px)`,
-                value: item.functions
-              });
-              
-              pointsLines.push({
-                x: xPos,
-                y: `calc(100% - ${item.lines / maxValue * 100}% - 30px)`,
-                value: item.lines
-              });
-            });
-
-            // ターゲットラインの位置を計算
-            const targetStatementsPos = `calc(100% - ${targetThresholds.statements / maxValue * 100}% - 30px)`;
-            const targetBranchesPos = `calc(100% - ${targetThresholds.branches / maxValue * 100}% - 30px)`;
-            const targetFunctionsPos = `calc(100% - ${targetThresholds.functions / maxValue * 100}% - 30px)`;
-            const targetLinesPos = `calc(100% - ${targetThresholds.lines / maxValue * 100}% - 30px)`;
-
-            // ラインチャートのHTMLを生成
-            html += `
-              <div id="line-chart-container" class="chart-container">
-                <div class="css-line-chart">
-                  <div class="css-line-chart-header">
-                    <div class="css-line-chart-title">カバレッジ履歴</div>
-                    <div class="css-line-chart-legend">
-                      <div class="css-legend-item">
-                        <div class="css-legend-color statements"></div>
-                        <div>ステートメント</div>
-                      </div>
-                      <div class="css-legend-item">
-                        <div class="css-legend-color branches"></div>
-                        <div>ブランチ</div>
-                      </div>
-                      <div class="css-legend-item">
-                        <div class="css-legend-color functions"></div>
-                        <div>関数</div>
-                      </div>
-                      <div class="css-legend-item">
-                        <div class="css-legend-color lines"></div>
-                        <div>コード行</div>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div class="css-line-chart-y-axis">
-                    ${yAxisHtml}
-                  </div>
-                  
-                  <div class="css-line-chart-x-axis">
-                    ${xAxisHtml}
-                  </div>
-                  
-                  <!-- ターゲットライン -->
-                  <div class="css-line-chart-target-line statements" style="top: ${targetStatementsPos};">
-                    <span class="css-line-chart-target-label" style="color: var(--statements-color);">
-                      ステートメント: ${targetThresholds.statements}%
-                    </span>
-                  </div>
-                  <div class="css-line-chart-target-line branches" style="top: ${targetBranchesPos};">
-                    <span class="css-line-chart-target-label" style="color: var(--branches-color);">
-                      ブランチ: ${targetThresholds.branches}%
-                    </span>
-                  </div>
-                  <div class="css-line-chart-target-line functions" style="top: ${targetFunctionsPos};">
-                    <span class="css-line-chart-target-label" style="color: var(--functions-color);">
-                      関数: ${targetThresholds.functions}%
-                    </span>
-                  </div>
-                  <div class="css-line-chart-target-line lines" style="top: ${targetLinesPos};">
-                    <span class="css-line-chart-target-label" style="color: var(--lines-color);">
-                      コード行: ${targetThresholds.lines}%
-                    </span>
-                  </div>
-            `;
-
-            // データポイントとライン描画
-            function generatePoints(points, colorClass) {
-              let html = '';
-              
-              // 点を描画
-              points.forEach((point, index) => {
-                html += `
-                  <div class="css-line-chart-dot ${colorClass}"
-                       style="left: ${point.x}; top: ${point.y}; background-color: var(--${colorClass}-color);"
-                       title="${point.value.toFixed(2)}%">
-                  </div>
-                `;
-              });
-              
-              return html;
-            }
-
-            // 各指標のデータポイントを描画
-            html += generatePoints(pointsStatements, 'statements');
-            html += generatePoints(pointsBranches, 'branches');
-            html += generatePoints(pointsFunctions, 'functions');
-            html += generatePoints(pointsLines, 'lines');
-
-            // ラインチャートのHTMLを閉じる
-            html += `
-                </div>
-              </div>
-            `;
-          } else {
-            html += `
-              <div id="line-chart-container" class="chart-container">
-                <p style="color: var(--nerv-orange); text-align: center;">
-                  履歴データがありません。複数回テストを実行すると履歴が表示されます。
-                </p>
-              </div>
-            `;
-          }
-
-          // カバレッジチャート部分を閉じる
-          html += `</div><!-- end coverage-charts -->`;
-        } catch (error) {
-          html += `
-            <div class="error-section">
-              <h2>カバレッジデータ解析エラー</h2>
-              <p>エラーコード: ${error.message}</p>
-              <p>MAGIシステム: データ解析不能</p>
-            </div>
-          `;
-        }
-      } else {
-        html += `
-          <div class="magi-system">
-            <div class="magi-header">
-              <div class="magi-title">MAGI-SYSTEM - 警告</div>
-              <div class="magi-status" style="color: var(--nerv-orange);">WARNING</div>
-            </div>
-            <p style="color: var(--nerv-orange);">カバレッジデータが取得できません。テスト実行時に--coverageオプションを有効化してください。</p>
-          </div>
-        `;
-      }
-      
-      // エラーがある場合
-      if (this.results.numFailedTests > 0) {
-        html += `
-          <div class="error-section">
-            <h2>シナリオ実行エラー ［パターンブルー］</h2>
-        `;
-        
-        const failedTests = this.results.testResults.flatMap(fileResult =>
-          fileResult.testResults
-            .filter(test => test.status === 'failed')
-            .map(test => ({
-              testFilePath: fileResult.testFilePath,
-              title: test.title,
-              failureMessages: test.failureMessages
-            }))
-        );
-        
-        failedTests.forEach((test, index) => {
-          const relativePath = path.relative(process.cwd(), test.testFilePath);
-          html += `
-            <h3>${index + 1}. ${test.title}</h3>
-            <p class="file-path">場所: ${relativePath}</p>
-            <div class="error-message">
-              <pre>${test.failureMessages.join('\n')}</pre>
-            </div>
-          `;
-        });
-        
-        html += `
-          </div>
-        `;
-      }
-      
-      // フッターと終了タグ
-      html += `
-            <div class="footer">
-              <p>テスト実行: ${new Date().toLocaleString('ja-JP')}</p>
-              <p class="magi-sign">MAGI SYSTEM v.1.15 - AT FIELD STABILITY: 100%</p>
-              <p>NERV HQ - 第3新東京市</p>
-            </div>
-          </div>
-        </body>
-        </html>
-      `;
-      
-      // ファイルに書き込み - visual-report.htmlに出力
-      fs.writeFileSync(path.join(outputDir, 'visual-report.html'), html);
-      this.log('エヴァンゲリオン風レポートを生成しました: ' + path.join(outputDir, 'visual-report.html'), 'INFO');
-    } catch (error) {
-      this.log('ビジュアルレポート生成中にエラーが発生しました: ' + error.message, 'ERROR');
-      
-      // 最小限のエラーレポートを生成
-      const basicHtml = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>NERV SYSTEM ERROR</title>
-          <style>
-            body { 
-              font-family: monospace; 
-              background-color: black; 
-              color: red;
-              margin: 20px;
-            }
-            .error { 
-              animation: blink 1s infinite; 
-            }
-            @keyframes blink {
-              0%, 100% { opacity: 1; }
-              50% { opacity: 0.5; }
-            }
-          </style>
-        </head>
-        <body>
-          <h1>NERV SYSTEM CRITICAL ERROR</h1>
-          <p class="error">${error.message}</p>
-          <p>詳細結果は ./test-results/detailed-results.json を確認してください。</p>
-          <p>エラーコード: 601 - MAGI SYSTEM FAILURE</p>
-        </body>
-        </html>
-      `;
-      
-      fs.writeFileSync(path.join(outputDir, 'visual-report.html'), basicHtml);
-    }
+    return thresholds[targetLevel] || thresholds.initial;
   }
   
   /**
-   * テスト実行開始時のハンドラ
+   * 目標レベルの名前を取得
+   * @param {string} targetLevel 目標レベル
+   * @returns {string} 目標レベルの名前
+   */
+  getTargetLevelName(targetLevel) {
+    const names = {
+      initial: '初期段階 (20-30%)',
+      mid: '中間段階 (40-60%)',
+      final: '最終段階 (70-80%)'
+    };
+    
+    return names[targetLevel] || names.initial;
+  }
+  
+  /**
+   * ステータス記号を取得
+   * @param {number} value 現在の値
+   * @param {number} threshold 目標値
+   * @returns {string} ステータス記号
+   */
+  getStatusSymbol(value, threshold) {
+    return value >= threshold ? '✅ 達成' : '❌ 未達成';
+  }
+  
+  /**
+   * ステータス絵文字を取得
+   * @param {number} value 現在の値
+   * @param {number} threshold 目標値
+   * @returns {string} ステータス絵文字
+   */
+  getStatusEmoji(value, threshold) {
+    return value >= threshold ? '✅' : '❌';
+  }
+  
+  /**
+   * 結果サマリーをコンソールに表示
    * @param {Object} results テスト結果
-   * @param {Object} options オプション
    */
-  onRunStart(results, options) {
-    this.print('テスト実行を開始します...', 'info');
-    this.print(`実行日時: ${new Date().toLocaleString('ja-JP')}`, 'info');
+  printSummary(results) {
+    // テキスト装飾
+    const green = '\x1b[32m';
+    const red = '\x1b[31m';
+    const yellow = '\x1b[33m';
+    const blue = '\x1b[34m';
+    const reset = '\x1b[0m';
     
-    // 結果オブジェクトを初期化
-    this.results = {
-      numTotalTests: 0,
-      numFailedTests: 0,
-      numPassedTests: 0,
-      numPendingTests: 0,
-      testResults: [],
-      coverageMap: null
-    };
-  }
-  
-  /**
-   * 各テスト結果のハンドラ
-   * @param {Object} test テスト情報
-   * @param {Object} testResult テスト結果
-   */
-  onTestResult(test, testResult) {
-    // 結果を集計
-    this.results.testResults.push(testResult);
-    this.results.numTotalTests += testResult.numPassingTests + testResult.numFailingTests + testResult.numPendingTests;
-    this.results.numFailedTests += testResult.numFailingTests;
-    this.results.numPassedTests += testResult.numPassingTests;
-    this.results.numPendingTests += testResult.numPendingTests;
+    console.log('\n========================================');
+    console.log(`${blue}テスト実行結果${reset}`);
+    console.log('========================================');
     
-    // テスト結果をログに出力
-    const testPath = testResult.testFilePath;
-    const relativePath = path.relative(process.cwd(), testPath);
+    // 基本情報
+    console.log(`実行時間: ${((this.endTime - this.startTime) / 1000).toFixed(2)}秒`);
+    console.log(`テスト数: ${results.numTotalTests}`);
+    console.log(`成功: ${green}${results.numPassedTests}${reset}`);
     
-    if (testResult.numFailingTests > 0) {
-      this.print(`${relativePath}: ${testResult.numFailingTests} 件のテストが失敗`, 'error');
-    } else if (testResult.numPendingTests > 0) {
-      this.print(`${relativePath}: ${testResult.numPassingTests} 件成功, ${testResult.numPendingTests} 件保留`, 'warning');
+    if (results.numFailedTests > 0) {
+      console.log(`失敗: ${red}${results.numFailedTests}${reset}`);
     } else {
-      this.print(`${relativePath}: ${testResult.numPassingTests} 件のテストがすべて成功`, 'success');
-    }
-  }
-  
-  /**
-   * テスト実行完了時のハンドラ
-   * @param {Object} contexts コンテキスト
-   * @param {Object} results 最終結果
-   */
-  onRunComplete(contexts, results) {
-    this.endTime = Date.now();
-    const executionTime = (this.endTime - this.startTime) / 1000;
-    
-    this.print(`テスト実行が完了しました (${executionTime.toFixed(2)}秒)`, 'info');
-    
-    // 結果を集計
-    this.results.numTotalTests = results.numTotalTests;
-    this.results.numFailedTests = results.numFailedTests;
-    this.results.numPassedTests = results.numPassedTests;
-    this.results.numPendingTests = results.numPendingTests;
-    
-    // カバレッジ情報があれば設定
-    if (results.coverageMap) {
-      this.results.coverageMap = results.coverageMap;
+      console.log(`失敗: ${results.numFailedTests}`);
     }
     
-    // 結果サマリーを出力
-    const summary = [
-      `総テスト数: ${this.results.numTotalTests}`,
-      `成功: ${this.results.numPassedTests}`,
-      `失敗: ${this.results.numFailedTests}`,
-      `保留: ${this.results.numPendingTests}`,
-      `実行時間: ${executionTime.toFixed(2)}秒`
-    ].join(', ');
-    
-    this.print(summary, 'result');
-    
-    // 出力ディレクトリの確認と作成
-    const outputDir = './test-results';
-    if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
+    if (results.numPendingTests > 0) {
+      console.log(`スキップ: ${yellow}${results.numPendingTests}${reset}`);
+    } else {
+      console.log(`スキップ: ${results.numPendingTests}`);
     }
     
-    // レポートを生成
-    try {
-      this.generateEvaVisualReport(outputDir);
-      this.print(`エヴァンゲリオン風ビジュアルレポートを生成しました: ${path.join(outputDir, 'visual-report.html')}`, 'success');
-    } catch (error) {
-      this.print(`レポート生成中にエラーが発生しました: ${error.message}`, 'error');
+    console.log('----------------------------------------');
+    
+    // カバレッジ情報
+    if (this.results.coverageMap) {
+      try {
+        const total = this.results.coverageMap.getCoverageSummary().toJSON();
+        
+        console.log(`${blue}カバレッジ情報:${reset}`);
+        console.log(`ステートメント: ${total.statements.pct.toFixed(2)}% (${total.statements.covered}/${total.statements.total})`);
+        console.log(`ブランチ: ${total.branches.pct.toFixed(2)}% (${total.branches.covered}/${total.branches.total})`);
+        console.log(`関数: ${total.functions.pct.toFixed(2)}% (${total.functions.covered}/${total.functions.total})`);
+        console.log(`行: ${total.lines.pct.toFixed(2)}% (${total.lines.covered}/${total.lines.total})`);
+        
+        // 目標ステータス
+        const targetLevel = process.env.COVERAGE_TARGET || 'initial';
+        const targetThresholds = this.getCoverageThresholds(targetLevel);
+        console.log(`\n${blue}カバレッジ目標 (${this.getTargetLevelName(targetLevel)}):${reset}`);
+        
+        const statementsStatus = total.statements.pct >= targetThresholds.statements;
+        const branchesStatus = total.branches.pct >= targetThresholds.branches;
+        const functionsStatus = total.functions.pct >= targetThresholds.functions;
+        const linesStatus = total.lines.pct >= targetThresholds.lines;
+        
+        console.log(`ステートメント: ${statementsStatus ? green + '✓' : red + '✗'} ${total.statements.pct.toFixed(2)}% / 目標 ${targetThresholds.statements}%${reset}`);
+        console.log(`ブランチ: ${branchesStatus ? green + '✓' : red + '✗'} ${total.branches.pct.toFixed(2)}% / 目標 ${targetThresholds.branches}%${reset}`);
+        console.log(`関数: ${functionsStatus ? green + '✓' : red + '✗'} ${total.functions.pct.toFixed(2)}% / 目標 ${targetThresholds.functions}%${reset}`);
+        console.log(`行: ${linesStatus ? green + '✓' : red + '✗'} ${total.lines.pct.toFixed(2)}% / 目標 ${targetThresholds.lines}%${reset}`);
+        
+        // 目標達成状況
+        const allTargetsMet = statementsStatus && branchesStatus && functionsStatus && linesStatus;
+        
+        if (allTargetsMet) {
+          console.log(`\n${green}✓ 現在の目標段階(${targetLevel})のすべての目標を達成しています！${reset}`);
+          
+          // 次の目標を提案
+          if (targetLevel === 'initial') {
+            console.log(`${blue}次のステップ: ${yellow}-t mid${reset} オプションで中間段階の目標に挑戦しましょう`);
+          } else if (targetLevel === 'mid') {
+            console.log(`${blue}次のステップ: ${yellow}-t final${reset} オプションで最終段階の目標に挑戦しましょう`);
+          } else if (targetLevel === 'final') {
+            console.log(`${green}おめでとうございます！最終段階の目標を達成しました！${reset}`);
+          }
+        } else {
+          console.log(`\n${yellow}⚠ 現在の目標段階(${targetLevel})のいくつかの目標がまだ達成されていません${reset}`);
+        }
+      } catch (error) {
+        console.log(`${red}カバレッジ情報の取得に失敗しました: ${error.message}${reset}`);
+      }
+    } else {
+      console.log(`${yellow}⚠ カバレッジデータが結果ファイルに含まれていません。${reset}`);
+      console.log(`${blue}次回のテスト実行時には以下のコマンドを使用してください：${reset}`);
+      console.log(`${yellow}JEST_COVERAGE=true ./scripts/run-tests.sh ${process.argv.slice(2).join(' ')}${reset}`);
+    }
+    
+    console.log('========================================');
+    
+    // レポートファイルの場所
+    console.log(`詳細結果は以下のファイルで確認できます:`);
+    console.log(`- ビジュアルレポート: ${blue}./test-results/visual-report.html${reset}`);
+    console.log(`- マークダウンログ: ${blue}./test-results/test-log.md${reset}`);
+    console.log(`- JSONデータ: ${blue}./test-results/detailed-results.json${reset}`);
+    
+    if (results.numFailedTests > 0) {
+      console.log(`\n${red}⚠ テスト失敗があります。上記のレポートファイルで詳細を確認してください。${reset}`);
+    } else {
+      console.log(`\n${green}✓ すべてのテストが成功しました！${reset}`);
     }
   }
 }
 
-module.exports = EvaNervReporter;
+module.exports = CustomReporter;

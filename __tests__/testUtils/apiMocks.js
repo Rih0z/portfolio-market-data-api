@@ -1047,4 +1047,3 @@ module.exports = {
   getConfigValue,
   API_CONFIG
 };
-

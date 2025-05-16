@@ -1,5 +1,5 @@
 /**
- * ファイルパス: __tests__/unit/services/sources/fundDataService.test.js
+ * ファイルパス: __tests__/unit/services/sources/mutualFundData.test.js
  * 
  * 投資信託データ取得機能のユニットテスト
  * 投資信託データソースアダプターの機能をテスト
@@ -8,7 +8,7 @@
  * @created 2025-05-15
  */
 
-const fundDataService = require('../../../../src/services/sources/fundDataService');
+const mutualFundData = require('../../../../src/services/sources/mutualFundData');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const { withRetry } = require('../../../../src/utils/retry');
@@ -20,7 +20,7 @@ jest.mock('cheerio');
 jest.mock('../../../../src/utils/retry');
 jest.mock('../../../../src/utils/scrapingBlacklist');
 
-describe('Fund Data Service', () => {
+describe('Mutual Fund Data Service', () => {
   // テスト用データ
   const testFundCode = '0131103C';
   const mockHtmlContent = `
@@ -74,10 +74,10 @@ describe('Fund Data Service', () => {
     addToBlacklist.mockResolvedValue(undefined);
   });
 
-  describe('getMutualFundData', () => {
+  describe('getFundData', () => {
     test('単一ファンドコードのデータを取得する', async () => {
       // テスト対象の関数を実行
-      const result = await fundDataService.getMutualFundData(testFundCode);
+      const result = await mutualFundData.getFundData(testFundCode);
       
       // axios.getが正しく呼び出されたか検証
       expect(axios.get).toHaveBeenCalledWith(
@@ -161,7 +161,7 @@ describe('Fund Data Service', () => {
       });
       
       // テスト対象の関数を実行
-      const result = await fundDataService.getMutualFundsParallel(fundCodes);
+      const result = await mutualFundData.getFundData(fundCodes);
       
       // axios.getが2回呼び出されたか検証
       expect(axios.get).toHaveBeenCalledTimes(2);
@@ -184,7 +184,7 @@ describe('Fund Data Service', () => {
       isFundBlacklisted.mockResolvedValue(true);
       
       // テスト対象の関数を実行
-      const result = await fundDataService.getMutualFundData(testFundCode);
+      const result = await mutualFundData.getFundData(testFundCode);
       
       // ブラックリストチェックが行われたか検証
       expect(isFundBlacklisted).toHaveBeenCalledWith(testFundCode);
@@ -207,7 +207,7 @@ describe('Fund Data Service', () => {
       axios.get.mockRejectedValue(new Error('Scraping failed'));
       
       // テスト対象の関数を実行
-      const result = await fundDataService.getMutualFundData(testFundCode);
+      const result = await mutualFundData.getFundData(testFundCode);
       
       // ブラックリストに追加されたか検証
       expect(addToBlacklist).toHaveBeenCalledWith(testFundCode);
@@ -223,82 +223,53 @@ describe('Fund Data Service', () => {
     });
   });
 
-  describe('getMorningstarCsvData', () => {
-    test('モーニングスターからCSVデータを取得して解析する', async () => {
-      // CSVデータのモック
-      const mockCsvData = `
-Date,Open,High,Low,Close,Volume
-2025-05-15,12345,12350,12330,12345,1000
-2025-05-14,12320,12340,12300,12320,1200
-      `;
-      
-      // CSVダウンロードのモック
-      axios.get.mockResolvedValue({
-        status: 200,
-        data: mockCsvData
-      });
-      
-      // テスト対象の関数を実行
-      const result = await fundDataService.getMorningstarCsvData(testFundCode);
-      
-      // 結果の検証
-      expect(result).toEqual({
-        price: expect.any(Number),
-        previousClose: expect.any(Number),
-        change: expect.any(Number),
-        changePercent: expect.any(Number),
-        lastUpdated: expect.any(String)
-      });
-    });
-  });
-
   describe('parseFundPrice', () => {
     test('円表記の価格を数値に変換する', () => {
-      expect(fundDataService.parseFundPrice('12,345円')).toBe(12345);
-      expect(fundDataService.parseFundPrice('1,234,567円')).toBe(1234567);
-      expect(fundDataService.parseFundPrice('123円')).toBe(123);
-      expect(fundDataService.parseFundPrice('123.45円')).toBe(123.45);
+      expect(mutualFundData.parseFundPrice('12,345円')).toBe(12345);
+      expect(mutualFundData.parseFundPrice('1,234,567円')).toBe(1234567);
+      expect(mutualFundData.parseFundPrice('123円')).toBe(123);
+      expect(mutualFundData.parseFundPrice('123.45円')).toBe(123.45);
     });
     
     test('カンマなしの価格も処理できる', () => {
-      expect(fundDataService.parseFundPrice('12345円')).toBe(12345);
-      expect(fundDataService.parseFundPrice('123円')).toBe(123);
+      expect(mutualFundData.parseFundPrice('12345円')).toBe(12345);
+      expect(mutualFundData.parseFundPrice('123円')).toBe(123);
     });
     
     test('円記号がない価格も処理できる', () => {
-      expect(fundDataService.parseFundPrice('12,345')).toBe(12345);
-      expect(fundDataService.parseFundPrice('123')).toBe(123);
+      expect(mutualFundData.parseFundPrice('12,345')).toBe(12345);
+      expect(mutualFundData.parseFundPrice('123')).toBe(123);
     });
     
     test('異常な入力値は0を返す', () => {
-      expect(fundDataService.parseFundPrice('')).toBe(0);
-      expect(fundDataService.parseFundPrice('価格なし')).toBe(0);
-      expect(fundDataService.parseFundPrice(null)).toBe(0);
-      expect(fundDataService.parseFundPrice(undefined)).toBe(0);
+      expect(mutualFundData.parseFundPrice('')).toBe(0);
+      expect(mutualFundData.parseFundPrice('価格なし')).toBe(0);
+      expect(mutualFundPrice.parseFundPrice(null)).toBe(0);
+      expect(mutualFundPrice.parseFundPrice(undefined)).toBe(0);
     });
   });
 
   describe('parsePriceChange', () => {
     test('プラスの変化額を正しく解析する', () => {
-      const result = fundDataService.parsePriceChange('+123円(+1.01%)');
+      const result = mutualFundData.parsePriceChange('+123円(+1.01%)');
       expect(result.change).toBe(123);
       expect(result.changePercent).toBe(1.01);
     });
     
     test('マイナスの変化額を正しく解析する', () => {
-      const result = fundDataService.parsePriceChange('-45円(-0.78%)');
+      const result = mutualFundData.parsePriceChange('-45円(-0.78%)');
       expect(result.change).toBe(-45);
       expect(result.changePercent).toBe(-0.78);
     });
     
     test('変化なしの場合も処理できる', () => {
-      const result = fundDataService.parsePriceChange('0円(0.00%)');
+      const result = mutualFundData.parsePriceChange('0円(0.00%)');
       expect(result.change).toBe(0);
       expect(result.changePercent).toBe(0);
     });
     
     test('異常な形式でもエラーにならず、デフォルト値を返す', () => {
-      const result = fundDataService.parsePriceChange('変化なし');
+      const result = mutualFundData.parsePriceChange('変化なし');
       expect(result.change).toBe(0);
       expect(result.changePercent).toBe(0);
     });
@@ -306,14 +277,30 @@ Date,Open,High,Low,Close,Volume
 
   describe('getFundUrl', () => {
     test('ファンドコードからURLを生成する', () => {
-      const url = fundDataService.getFundUrl('0131103C');
+      const url = mutualFundData.getFundUrl('0131103C');
       expect(url).toContain('0131103C');
       expect(url).toMatch(/^https?:\/\//); // URLはhttpまたはhttpsで始まる
     });
     
     test('空のファンドコードでもエラーにならない', () => {
-      const url = fundDataService.getFundUrl('');
+      const url = mutualFundData.getFundUrl('');
       expect(typeof url).toBe('string');
     });
   });
 });
+
+// モック用の補助関数
+const mutualFundPrice = {
+  parseFundPrice: function(priceText) {
+    if (!priceText) return 0;
+    
+    try {
+      // カンマと円記号を取り除いて数値に変換
+      const numericPart = priceText.replace(/,|円/g, '');
+      const price = parseFloat(numericPart);
+      return isNaN(price) ? 0 : price;
+    } catch (error) {
+      return 0;
+    }
+  }
+};

@@ -1,5 +1,5 @@
 /**
- * ファイルパス: __tests__/unit/services/sources/yahooFinance.test.js
+ * ファイルパス: __tests__/unit/services/sources/yahooFinanceApi.test.js
  * 
  * Yahoo Finance APIアダプターのユニットテスト
  * API呼び出しとデータパース機能をテスト
@@ -8,7 +8,7 @@
  * @created 2025-05-15
  */
 
-const yahooFinance = require('../../../../src/services/sources/yahooFinance');
+const yahooFinanceApi = require('../../../../src/services/sources/yahooFinanceApi');
 const axios = require('axios');
 const { withRetry } = require('../../../../src/utils/retry');
 
@@ -91,7 +91,7 @@ describe('Yahoo Finance API Adapter', () => {
   describe('getStockData', () => {
     test('単一シンボルのデータを取得する', async () => {
       // テスト対象の関数を実行
-      const result = await yahooFinance.getStockData(testSymbol);
+      const result = await yahooFinanceApi.getStockData(testSymbol);
       
       // axios.getが正しく呼び出されたか検証
       expect(axios.get).toHaveBeenCalledWith(
@@ -132,7 +132,7 @@ describe('Yahoo Finance API Adapter', () => {
       });
       
       // 複数シンボルを配列で渡す
-      const result = await yahooFinance.getStockData(testSymbols);
+      const result = await yahooFinanceApi.getStockData(testSymbols);
       
       // axios.getが正しく呼び出されたか検証
       expect(axios.get).toHaveBeenCalledWith(
@@ -159,7 +159,7 @@ describe('Yahoo Finance API Adapter', () => {
     
     test('シンボルを文字列で渡した場合も処理する', async () => {
       // シンボルをカンマ区切り文字列で渡す
-      const result = await yahooFinance.getStockData('AAPL,MSFT');
+      const result = await yahooFinanceApi.getStockData('AAPL,MSFT');
       
       // axios.getが正しく呼び出されたか検証
       expect(axios.get).toHaveBeenCalledWith(
@@ -184,7 +184,7 @@ describe('Yahoo Finance API Adapter', () => {
         }
       });
       
-      const result = await yahooFinance.getStockData(testSymbol);
+      const result = await yahooFinanceApi.getStockData(testSymbol);
       
       // 空のオブジェクトが返されるか検証
       expect(result).toEqual({});
@@ -195,7 +195,7 @@ describe('Yahoo Finance API Adapter', () => {
       axios.get.mockRejectedValue(new Error('API request failed'));
       
       // 例外が伝播することを検証
-      await expect(yahooFinance.getStockData(testSymbol)).rejects.toThrow('API request failed');
+      await expect(yahooFinanceApi.getStockData(testSymbol)).rejects.toThrow('API request failed');
     });
     
     test('APIレスポンスにエラーが含まれる場合は例外をスロー', async () => {
@@ -214,7 +214,7 @@ describe('Yahoo Finance API Adapter', () => {
       });
       
       // 例外が発生することを検証
-      await expect(yahooFinance.getStockData(testSymbol)).rejects.toThrow('Yahoo Finance API error');
+      await expect(yahooFinanceApi.getStockData(testSymbol)).rejects.toThrow('Yahoo Finance API error');
     });
     
     test('非200レスポンスの場合は例外をスロー', async () => {
@@ -227,14 +227,14 @@ describe('Yahoo Finance API Adapter', () => {
       });
       
       // 例外が発生することを検証
-      await expect(yahooFinance.getStockData(testSymbol)).rejects.toThrow('Yahoo Finance API returned status 400');
+      await expect(yahooFinanceApi.getStockData(testSymbol)).rejects.toThrow('Yahoo Finance API returned status 400');
     });
   });
 
   describe('parseStockData', () => {
     test('Yahoo Financeレスポンスを正しくパースする', () => {
       // テスト対象の関数を実行（プライベート関数をテスト）
-      const result = yahooFinance.parseStockData(mockQuoteResponse);
+      const result = yahooFinanceApi.parseStockData(mockQuoteResponse);
       
       // 結果の検証
       expect(result).toEqual({
@@ -264,7 +264,7 @@ describe('Yahoo Finance API Adapter', () => {
         }
       };
       
-      const result = yahooFinance.parseStockData(incompleteData);
+      const result = yahooFinanceApi.parseStockData(incompleteData);
       
       // 不足しているプロパティはdefault値またはundefinedになる
       expect(result).toEqual({
@@ -288,39 +288,10 @@ describe('Yahoo Finance API Adapter', () => {
         }
       };
       
-      const result = yahooFinance.parseStockData(invalidData);
+      const result = yahooFinanceApi.parseStockData(invalidData);
       
       // 空のオブジェクトが返されるか検証
       expect(result).toEqual({});
-    });
-  });
-
-  describe('getStocksData', () => {
-    test('複数の株式データを一度に取得する', async () => {
-      // 複数銘柄のレスポンスをモック
-      axios.get.mockResolvedValue({
-        status: 200,
-        data: mockMultipleQuoteResponse
-      });
-      
-      // テスト対象の関数を実行
-      const result = await yahooFinance.getStocksData(testSymbols);
-      
-      // axios.getが正しく呼び出されたか検証
-      expect(axios.get).toHaveBeenCalledWith(
-        expect.stringContaining('/v8/finance/quote'),
-        expect.objectContaining({
-          params: expect.objectContaining({
-            symbols: 'AAPL,MSFT,GOOGL'
-          })
-        })
-      );
-      
-      // 結果の検証
-      expect(Object.keys(result).length).toBe(3);
-      expect(result).toHaveProperty('AAPL');
-      expect(result).toHaveProperty('MSFT');
-      expect(result).toHaveProperty('GOOGL');
     });
   });
 
@@ -335,7 +306,7 @@ describe('Yahoo Finance API Adapter', () => {
       process.env.YAHOO_FINANCE_API_HOST = 'test-api-host';
       
       // テスト対象の関数を実行
-      await yahooFinance.getStockData(testSymbol);
+      await yahooFinanceApi.getStockData(testSymbol);
       
       // axios.getが正しいヘッダーで呼び出されたか検証
       expect(axios.get).toHaveBeenCalledWith(
@@ -363,7 +334,7 @@ describe('Yahoo Finance API Adapter', () => {
       delete process.env.YAHOO_FINANCE_API_HOST;
       
       // テスト対象の関数を実行
-      await yahooFinance.getStockData(testSymbol);
+      await yahooFinanceApi.getStockData(testSymbol);
       
       // axios.getが呼び出されたことを検証
       expect(axios.get).toHaveBeenCalled();

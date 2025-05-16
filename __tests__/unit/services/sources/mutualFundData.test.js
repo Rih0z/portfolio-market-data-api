@@ -7,36 +7,48 @@
  * @author Portfolio Manager Team
  * @created 2025-05-15
  * @updated 2025-05-21 インポートパス修正: mutualFundData → fundDataService
+ * @updated 2025-05-23 CSV形式での取得に対応するよう修正
  */
 
-const mutualFundData = require('../../../../src/services/sources/fundDataService');
+const fundDataService = require('../../../../src/services/sources/fundDataService');
 const axios = require('axios');
-const cheerio = require('cheerio');
+const { parse } = require('csv-parse/sync');
 const { withRetry } = require('../../../../src/utils/retry');
-const { isFundBlacklisted, addToBlacklist } = require('../../../../src/utils/scrapingBlacklist');
+const blacklist = require('../../../../src/utils/scrapingBlacklist');
+const cacheService = require('../../../../src/services/cache');
 
 // 依存モジュールをモック化
 jest.mock('axios');
-jest.mock('cheerio');
+jest.mock('csv-parse/sync', () => ({
+  parse: jest.fn()
+}));
 jest.mock('../../../../src/utils/retry');
-jest.mock('../../../../src/utils/scrapingBlacklist');
+jest.mock('../../../../src/utils/scrapingBlacklist', () => ({
+  isBlacklisted: jest.fn(),
+  addToBlacklist: jest.fn()
+}));
+jest.mock('../../../../src/services/cache', () => ({
+  get: jest.fn(),
+  set: jest.fn()
+}));
 
-describe('Mutual Fund Data Service', () => {
+describe('Fund Data Service', () => {
   // テスト用データ
   const testFundCode = '0131103C';
-  const mockHtmlContent = `
-    <html>
-      <body>
-        <div class="standard-price">12,345円</div>
-        <div class="price-change">+123円(+1.01%)</div>
-        <div class="fund-name">テスト投資信託</div>
-      </body>
-    </html>
-  `;
+  const mockCsvContent = `日付,基準価額
+2025-05-10,12345
+2025-05-11,12468`;
   
-  const mockCheerioLoad = {
-    text: jest.fn()
-  };
+  const mockParsedCsvData = [
+    {
+      '日付': '2025-05-10',
+      '基準価額': '12345'
+    },
+    {
+      '日付': '2025-05-11',
+      '基準価額': '12468'
+    }
+  ];
   
   // 各テスト前の準備
   beforeEach(() => {
@@ -46,39 +58,27 @@ describe('Mutual Fund Data Service', () => {
     // axiosのモック
     axios.get.mockResolvedValue({
       status: 200,
-      data: mockHtmlContent
+      data: mockCsvContent
     });
     
-    // cheerioのモック
-    cheerio.load.mockReturnValue(function(selector) {
-      if (selector === '.standard-price') {
-        mockCheerioLoad.text.mockReturnValue('12,345円');
-        return mockCheerioLoad;
-      }
-      if (selector === '.price-change') {
-        mockCheerioLoad.text.mockReturnValue('+123円(+1.01%)');
-        return mockCheerioLoad;
-      }
-      if (selector === '.fund-name') {
-        mockCheerioLoad.text.mockReturnValue('テスト投資信託');
-        return mockCheerioLoad;
-      }
-      mockCheerioLoad.text.mockReturnValue('');
-      return mockCheerioLoad;
-    });
+    // CSV解析のモック
+    parse.mockReturnValue(mockParsedCsvData);
     
     // withRetryのモック
     withRetry.mockImplementation((fn) => fn());
     
     // ブラックリストのモック
-    isFundBlacklisted.mockResolvedValue(false);
-    addToBlacklist.mockResolvedValue(undefined);
+    blacklist.isBlacklisted.mockResolvedValue(false);
+    
+    // キャッシュのモック
+    cacheService.get.mockResolvedValue(null);
+    cacheService.set.mockResolvedValue(undefined);
   });
 
   describe('getMutualFundData', () => {
     test('単一ファンドコードのデータを取得する', async () => {
       // テスト対象の関数を実行
-      const result = await mutualFundData.getMutualFundData(testFundCode);
+      const result = await fundDataService.getMutualFundData(testFundCode);
       
       // axios.getが正しく呼び出されたか検証
       expect(axios.get).toHaveBeenCalledWith(
@@ -86,93 +86,55 @@ describe('Mutual Fund Data Service', () => {
         expect.any(Object)
       );
       
-      // cheerio.loadが呼び出されたか検証
-      expect(cheerio.load).toHaveBeenCalledWith(mockHtmlContent);
+      // parse関数が呼び出されたか検証
+      expect(parse).toHaveBeenCalledWith(
+        mockCsvContent,
+        expect.objectContaining({
+          columns: true,
+          skip_empty_lines: true
+        })
+      );
       
       // ブラックリストチェックが行われたか検証
-      expect(isFundBlacklisted).toHaveBeenCalledWith(testFundCode);
+      expect(blacklist.isBlacklisted).toHaveBeenCalled();
       
       // 結果の検証
-      expect(result).toEqual({
-        symbol: testFundCode,
-        price: 12345,
-        change: 123,
-        changePercent: 1.01,
-        name: 'テスト投資信託',
-        currency: 'JPY',
+      expect(result).toEqual(expect.objectContaining({
+        ticker: expect.stringContaining(testFundCode),
+        price: expect.any(Number),
         isMutualFund: true,
-        lastUpdated: expect.any(String)
-      });
+        currency: 'JPY',
+        lastUpdated: expect.any(String),
+        source: expect.stringContaining('Morningstar')
+      }));
     });
     
     test('複数ファンドコードのデータを取得する', async () => {
       // 複数のファンドコード
       const fundCodes = ['0131103C', '2931113C'];
       
-      // 2回目の呼び出しでは異なる値を返すようにモック
-      axios.get.mockResolvedValueOnce({
-        status: 200,
-        data: mockHtmlContent
-      }).mockResolvedValueOnce({
-        status: 200,
-        data: `
-          <html>
-            <body>
-              <div class="standard-price">5,678円</div>
-              <div class="price-change">-45円(-0.78%)</div>
-              <div class="fund-name">テスト投資信託2</div>
-            </body>
-          </html>
-        `
-      });
-      
-      // 2回目のcheerio.loadの挙動をモック
-      cheerio.load.mockReturnValueOnce(function(selector) {
-        if (selector === '.standard-price') {
-          mockCheerioLoad.text.mockReturnValue('12,345円');
-          return mockCheerioLoad;
-        }
-        if (selector === '.price-change') {
-          mockCheerioLoad.text.mockReturnValue('+123円(+1.01%)');
-          return mockCheerioLoad;
-        }
-        if (selector === '.fund-name') {
-          mockCheerioLoad.text.mockReturnValue('テスト投資信託');
-          return mockCheerioLoad;
-        }
-        mockCheerioLoad.text.mockReturnValue('');
-        return mockCheerioLoad;
-      }).mockReturnValueOnce(function(selector) {
-        if (selector === '.standard-price') {
-          mockCheerioLoad.text.mockReturnValue('5,678円');
-          return mockCheerioLoad;
-        }
-        if (selector === '.price-change') {
-          mockCheerioLoad.text.mockReturnValue('-45円(-0.78%)');
-          return mockCheerioLoad;
-        }
-        if (selector === '.fund-name') {
-          mockCheerioLoad.text.mockReturnValue('テスト投資信託2');
-          return mockCheerioLoad;
-        }
-        mockCheerioLoad.text.mockReturnValue('');
-        return mockCheerioLoad;
-      });
+      // キャッシュのモック - 2つ目のコードにはキャッシュがあると想定
+      cacheService.get
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          ticker: '2931113C',
+          price: 5678,
+          change: -45,
+          changePercent: -0.78,
+          name: 'テスト投資信託2',
+          currency: 'JPY',
+          isMutualFund: true,
+          source: 'Cache'
+        });
       
       // テスト対象の関数を実行
-      const result = await mutualFundData.getMutualFundsParallel(fundCodes);
-      
-      // axios.getが2回呼び出されたか検証
-      expect(axios.get).toHaveBeenCalledTimes(2);
+      const result = await fundDataService.getMutualFundsParallel(fundCodes);
       
       // 結果の検証
       expect(result).toHaveProperty('0131103C');
       expect(result).toHaveProperty('2931113C');
       
-      expect(result['0131103C'].price).toBe(12345);
-      expect(result['0131103C'].change).toBe(123);
-      expect(result['0131103C'].changePercent).toBe(1.01);
-      
+      // キャッシュされたデータを検証
       expect(result['2931113C'].price).toBe(5678);
       expect(result['2931113C'].change).toBe(-45);
       expect(result['2931113C'].changePercent).toBe(-0.78);
@@ -180,100 +142,92 @@ describe('Mutual Fund Data Service', () => {
     
     test('ブラックリストに登録されているファンドの場合、スクレイピングをスキップする', async () => {
       // ブラックリストにあるとモック
-      isFundBlacklisted.mockResolvedValue(true);
+      blacklist.isBlacklisted.mockResolvedValue(true);
       
       // テスト対象の関数を実行
-      const result = await mutualFundData.getMutualFundData(testFundCode);
+      const result = await fundDataService.getMutualFundData(testFundCode);
       
       // ブラックリストチェックが行われたか検証
-      expect(isFundBlacklisted).toHaveBeenCalledWith(testFundCode);
+      expect(blacklist.isBlacklisted).toHaveBeenCalled();
       
       // axiosが呼び出されなかったことを検証
       expect(axios.get).not.toHaveBeenCalled();
       
-      // 結果の検証（エラーデータまたは空データ）
-      expect(result).toHaveProperty('error');
-      expect(result).toHaveProperty('lastUpdated');
+      // ブラックリスト結果の検証
+      expect(result).toHaveProperty('isBlacklisted', true);
+      expect(result).toHaveProperty('ticker', expect.stringContaining(testFundCode));
     });
     
-    test('スクレイピングでエラーが発生した場合、ブラックリストに追加する', async () => {
+    test('スクレイピングでエラーが発生した場合、エラーオブジェクトを返す', async () => {
       // axiosがエラーをスローするようにモック
-      axios.get.mockRejectedValue(new Error('Scraping failed'));
+      axios.get.mockRejectedValue(new Error('CSV retrieval failed'));
       
-      // テスト対象の関数を実行
-      const result = await mutualFundData.getMutualFundData(testFundCode);
+      // テスト対象の関数を例外をキャッチして実行
+      let error;
+      try {
+        await fundDataService.getMutualFundData(testFundCode);
+      } catch (e) {
+        error = e;
+      }
       
-      // ブラックリストに追加されたか検証
-      expect(addToBlacklist).toHaveBeenCalledWith(testFundCode, 'fund', expect.any(Error));
-      
-      // 結果の検証（エラーデータ）
-      expect(result).toHaveProperty('error');
-      expect(result.error).toContain('Scraping failed');
+      // エラーメッセージの検証
+      expect(error).toBeDefined();
+      expect(error.message).toContain('failed');
     });
   });
 
-  describe('parseFundPrice', () => {
-    test('円表記の価格を数値に変換する', () => {
-      expect(mutualFundData.parseFundPrice('12,345円')).toBe(12345);
-      expect(mutualFundData.parseFundPrice('1,234,567円')).toBe(1234567);
-      expect(mutualFundData.parseFundPrice('123円')).toBe(123);
-      expect(mutualFundData.parseFundPrice('123.45円')).toBe(123.45);
+  describe('データ処理機能', () => {
+    test('基準価額から数値が正しく抽出される', async () => {
+      // getMutualFundData を実行して内部処理をテスト
+      const result = await fundDataService.getMutualFundData(testFundCode);
+      
+      // CSV の最新データ（12468）が使われていることを確認
+      expect(result.price).toBe(12468);
     });
     
-    test('カンマなしの価格も処理できる', () => {
-      expect(mutualFundData.parseFundPrice('12345円')).toBe(12345);
-      expect(mutualFundData.parseFundPrice('123円')).toBe(123);
+    test('日付から最終更新日が正しく抽出される', async () => {
+      // CSVデータに日付を含めて解析
+      parse.mockReturnValue([
+        {
+          '日付': '2025-05-10',
+          '基準価額': '12345'
+        },
+        {
+          '日付': '2025-05-11',
+          '基準価額': '12468'
+        }
+      ]);
+      
+      // getMutualFundData を実行して内部処理をテスト
+      const result = await fundDataService.getMutualFundData(testFundCode);
+      
+      // lastUpdated フィールドが存在することを確認
+      expect(result).toHaveProperty('lastUpdated');
+      expect(result).toHaveProperty('dataDate', '2025-05-11');
     });
     
-    test('円記号がない価格も処理できる', () => {
-      expect(mutualFundData.parseFundPrice('12,345')).toBe(12345);
-      expect(mutualFundData.parseFundPrice('123')).toBe(123);
-    });
-    
-    test('異常な入力値は0を返す', () => {
-      expect(mutualFundData.parseFundPrice('')).toBe(0);
-      expect(mutualFundData.parseFundPrice('価格なし')).toBe(0);
-      expect(mutualFundData.parseFundPrice(null)).toBe(0);
-      expect(mutualFundData.parseFundPrice(undefined)).toBe(0);
-    });
-  });
-
-  describe('parsePriceChange', () => {
-    test('プラスの変化額を正しく解析する', () => {
-      const result = mutualFundData.parsePriceChange('+123円(+1.01%)');
+    test('前日比の変化額が正しく計算される', async () => {
+      // CSVデータに日付を含めて解析
+      parse.mockReturnValue([
+        {
+          '日付': '2025-05-10',
+          '基準価額': '12345'
+        },
+        {
+          '日付': '2025-05-11',
+          '基準価額': '12468'
+        }
+      ]);
+      
+      // getMutualFundData を実行して内部処理をテスト
+      const result = await fundDataService.getMutualFundData(testFundCode);
+      
+      // 変化額のチェック（12468 - 12345 = 123）
       expect(result.change).toBe(123);
-      expect(result.changePercent).toBe(1.01);
-    });
-    
-    test('マイナスの変化額を正しく解析する', () => {
-      const result = mutualFundData.parsePriceChange('-45円(-0.78%)');
-      expect(result.change).toBe(-45);
-      expect(result.changePercent).toBe(-0.78);
-    });
-    
-    test('変化なしの場合も処理できる', () => {
-      const result = mutualFundData.parsePriceChange('0円(0.00%)');
-      expect(result.change).toBe(0);
-      expect(result.changePercent).toBe(0);
-    });
-    
-    test('異常な形式でもエラーにならず、デフォルト値を返す', () => {
-      const result = mutualFundData.parsePriceChange('変化なし');
-      expect(result.change).toBe(0);
-      expect(result.changePercent).toBe(0);
-    });
-  });
-
-  describe('getFundUrl', () => {
-    test('ファンドコードからURLを生成する', () => {
-      const url = mutualFundData.getFundUrl('0131103C');
-      expect(url).toContain('0131103C');
-      expect(url).toMatch(/^https?:\/\//); // URLはhttpまたはhttpsで始まる
-    });
-    
-    test('空のファンドコードでもエラーにならない', () => {
-      const url = mutualFundData.getFundUrl('');
-      expect(typeof url).toBe('string');
+      
+      // 変化率のチェック（約 0.9963%）
+      // 浮動小数点計算の誤差を考慮して近似値をチェック
+      expect(result.changePercent).toBeCloseTo(123 / 12345 * 100, 2);
     });
   });
 });

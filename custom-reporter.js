@@ -772,3 +772,4 @@ class CustomReporter {
 }
 
 module.exports = CustomReporter;
+

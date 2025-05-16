@@ -1,13 +1,13 @@
 /**
  * ファイルパス: custom-reporter.js
  * 
- * Jestカスタムレポーター
+ * Jestカスタムレポーター - 最適化版
  * テスト結果の詳細情報を収集し、ビジュアルレポートとJSONデータを生成する
+ * コマンドライン出力を最適化
  * 
  * @author Portfolio Manager Team
  * @created 2025-05-12
- * @updated 2025-05-17 - カバレッジデータをファイルから直接読み込む機能を追加
- * @updated 2025-05-20 - コマンドライン出力を最小限に抑える機能を追加
+ * @updated 2025-05-22 - コマンドライン出力とエラー表示を大幅に改善
  */
 
 const fs = require('fs');
@@ -31,13 +31,26 @@ class CustomReporter {
       coverageMap: null
     };
     
-    // コンソール出力の設定
+    // 出力設定 - 環境変数から取得
     this.quietMode = process.env.CI !== 'true' && 
                      process.env.DEBUG !== 'true' && 
                      process.env.VERBOSE_MODE !== 'true';
     
-    // 強制的に最小限出力を有効化
     this.superQuietMode = process.env.QUIET_MODE === 'true'; 
+    
+    // ログディレクトリの設定
+    this.logDir = './test-results/logs';
+    if (!fs.existsSync(this.logDir)) {
+      fs.mkdirSync(this.logDir, { recursive: true });
+    }
+    
+    // テスト実行のログファイル
+    this.logFile = `${this.logDir}/test-run-${new Date().toISOString().replace(/:/g, '-').slice(0, 19)}.log`;
+    this.errorLogFile = `${this.logDir}/test-errors-${new Date().toISOString().replace(/:/g, '-').slice(0, 19)}.log`;
+    
+    // 初期ログ
+    fs.writeFileSync(this.logFile, `=== テスト実行開始: ${new Date().toISOString()} ===\n\n`);
+    fs.writeFileSync(this.errorLogFile, `=== エラーログ: ${new Date().toISOString()} ===\n\n`);
     
     // オリジナルのコンソール出力を保存
     this.originalConsole = {
@@ -54,48 +67,75 @@ class CustomReporter {
       red: '\x1b[31m',
       blue: '\x1b[34m',
       cyan: '\x1b[36m',
+      magenta: '\x1b[35m',
+      dim: '\x1b[2m',
+      bold: '\x1b[1m',
       reset: '\x1b[0m'
     };
   }
   
   /**
-   * 進捗状況を表示（最小限の出力）
+   * ログをファイルに書き込む
    * @param {string} message メッセージ
-   * @param {string} type メッセージのタイプ（info, success, warn, error）
+   * @param {string} level ログレベル
    */
-  printProgress(message, type = 'info') {
-    if (this.quietMode) {
-      // 最小限モードでも失敗と重要なメッセージは表示
-      if (type === 'error' || (this.superQuietMode && type === 'error')) {
-        let color = this.colors.reset;
-        let prefix = '';
-        
-        switch (type) {
-          case 'success':
-            color = this.colors.green;
-            prefix = '✓ ';
-            break;
-          case 'warn':
-            color = this.colors.yellow;
-            prefix = '⚠ ';
-            break;
-          case 'error':
-            color = this.colors.red;
-            prefix = '✗ ';
-            break;
-          case 'info':
-          default:
-            color = this.colors.blue;
-            prefix = '• ';
-            break;
-        }
-        
-        this.originalConsole.log(`${color}${prefix}${message}${this.colors.reset}`);
-      }
-    } else {
-      // 通常モードでは全て表示
-      this.originalConsole.log(message);
+  log(message, level = 'INFO') {
+    const timestamp = new Date().toISOString();
+    fs.appendFileSync(this.logFile, `[${timestamp}] [${level}] ${message}\n`);
+    
+    if (level === 'ERROR') {
+      fs.appendFileSync(this.errorLogFile, `[${timestamp}] ${message}\n`);
     }
+  }
+  
+  /**
+   * コンソールに出力
+   * @param {string} message メッセージ
+   * @param {string} type メッセージタイプ
+   */
+  print(message, type = 'info') {
+    // ログにも記録
+    this.log(message, type.toUpperCase());
+    
+    // 超静音モードでは最小限の出力のみ
+    if (this.superQuietMode && type !== 'error' && type !== 'success' && type !== 'result') {
+      return;
+    }
+    
+    let color = this.colors.reset;
+    let prefix = '';
+    
+    switch (type) {
+      case 'success':
+        color = this.colors.green;
+        prefix = '✓ ';
+        break;
+      case 'warning':
+        color = this.colors.yellow;
+        prefix = '⚠ ';
+        break;
+      case 'error':
+        color = this.colors.red;
+        prefix = '✗ ';
+        break;
+      case 'info':
+        color = this.colors.blue;
+        prefix = 'ℹ ';
+        break;
+      case 'step':
+        color = this.colors.cyan;
+        prefix = '➤ ';
+        break;
+      case 'result':
+        // 結果出力は常に表示
+        this.originalConsole.log(message);
+        return;
+      default:
+        color = this.colors.reset;
+        break;
+    }
+    
+    this.originalConsole.log(`${color}${prefix}${message}${this.colors.reset}`);
   }
   
   /**
@@ -104,26 +144,7 @@ class CustomReporter {
   onRunStart(results, options) {
     this.startTime = Date.now();
     
-    // コンソールの動作を制御
-    if (this.superQuietMode) {
-      // 完全に静かなモードの場合、Jest内部の出力も抑制
-      process.stdout.write = ((write) => {
-        return (chunk, encoding, callback) => {
-          // 進捗バーと最終結果のみ表示
-          if (typeof chunk === 'string' && 
-              (chunk.startsWith('[') || 
-               chunk.includes('テスト実行') ||
-               chunk.includes('Test Suites:'))) {
-            return write.call(process.stdout, chunk, encoding, callback);
-          }
-          // その他は無視
-          if (callback) callback();
-          return true;
-        };
-      })(process.stdout.write);
-    }
-    
-    this.printProgress('テスト実行を開始します...', 'info');
+    this.print('テスト実行を開始します...', 'step');
     
     // 進捗状況を表示するためのカウンター初期化
     this.progressCount = 0;
@@ -131,8 +152,30 @@ class CustomReporter {
     this.testFiles = [];
     this.lastProgressLine = '';
     
+    // テスト環境情報を記録
+    this.log(`テスト環境: Node.js ${process.version}`, 'INFO');
+    this.log(`Jest バージョン: ${results.jestVersion || 'unknown'}`, 'INFO');
+    this.log(`テストモード: ${process.env.NODE_ENV}`, 'INFO');
+    this.log(`出力モード: ${this.superQuietMode ? '最小限' : this.quietMode ? '標準' : '詳細'}`, 'INFO');
+    
     // 進捗バーの初期表示
     this.updateProgressBar(0, 0);
+  }
+  
+  /**
+   * テストファイル実行開始時に呼び出される
+   */
+  onTestFileStart(test) {
+    const relativePath = path.relative(process.cwd(), test.path);
+    this.log(`テストファイル開始: ${relativePath}`, 'INFO');
+    
+    // ファイル名のみを取得（パスなし）
+    const fileName = path.basename(test.path);
+    
+    // 進捗バーに現在のファイル名を表示
+    if (!this.superQuietMode) {
+      this.updateProgressBar(this.progressCount, this.totalTestCount, `実行中: ${fileName}`);
+    }
   }
   
   /**
@@ -160,6 +203,12 @@ class CustomReporter {
     
     this.results.testResults.push(formattedResult);
     
+    // ファイル相対パス
+    const relativePath = path.relative(process.cwd(), testResult.testFilePath);
+    
+    // ファイル実行結果をログに記録
+    this.log(`テストファイル完了: ${relativePath} (成功: ${testResult.numPassingTests}, 失敗: ${testResult.numFailingTests}, スキップ: ${testResult.numPendingTests})`, testResult.numFailingTests > 0 ? 'ERROR' : 'INFO');
+    
     // テストファイルの数をカウント
     this.testFiles.push(testResult.testFilePath);
     this.totalTestCount = aggregatedResult.numTotalTests || 0;
@@ -171,10 +220,20 @@ class CustomReporter {
     // 進捗バーを更新
     this.updateProgressBar(this.progressCount, this.totalTestCount);
     
-    // 失敗したテストがある場合は進捗バーのみを表示
+    // 失敗したテストがある場合は詳細を表示（静音モードでなければ）
     if (testResult.numFailingTests > 0 && !this.superQuietMode) {
-      const relativePath = path.relative(process.cwd(), testResult.testFilePath);
-      process.stdout.write(`\r${this.colors.red}✗ ${relativePath}: ${testResult.numFailingTests}件失敗${this.colors.reset}\n`);
+      // 失敗したテストの情報を表示
+      this.print(`ファイル: ${relativePath} - ${testResult.numFailingTests}件のテストが失敗`, 'error');
+      
+      if (!this.quietMode) {
+        // 失敗したテストのタイトルを表示
+        testResult.testResults
+          .filter(r => r.status === 'failed')
+          .forEach((r, i) => {
+            this.print(`  ${i+1}. ${r.title}`, 'error');
+          });
+      }
+      
       // 進捗バーを再表示
       process.stdout.write(this.lastProgressLine);
     }
@@ -184,32 +243,38 @@ class CustomReporter {
    * 進捗バーを更新
    * @param {number} current 現在のテスト数
    * @param {number} total 全テスト数
+   * @param {string} status ステータスメッセージ
    */
-  updateProgressBar(current, total) {
-    if (this.quietMode) {
-      const percent = total ? Math.floor((current / total) * 100) : 0;
-      const width = 30; // 進捗バーの幅
-      const completed = Math.floor((width * current) / (total || 1));
-      const remaining = width - completed;
-      
-      // バーを作成
-      const bar = 
-        this.colors.green + '■'.repeat(completed) + 
-        this.colors.reset + '□'.repeat(remaining) + 
-        this.colors.reset;
-      
-      // 進捗情報
-      let status = '';
-      if (this.passedCount > 0) status += `${this.colors.green}✓ ${this.passedCount}${this.colors.reset} `;
-      if (this.failedCount > 0) status += `${this.colors.red}✗ ${this.failedCount}${this.colors.reset} `;
-      if (this.pendingCount > 0) status += `${this.colors.yellow}- ${this.pendingCount}${this.colors.reset} `;
-      
-      // 進捗行を作成
-      this.lastProgressLine = `\r[${bar}] ${percent}% (${current}/${total || 0}) ${status}`;
-      
-      // 前の行を上書き
-      process.stdout.write(this.lastProgressLine);
+  updateProgressBar(current, total, status = '') {
+    if (this.superQuietMode) {
+      return; // 超静音モードでは進捗バーを表示しない
     }
+    
+    const percent = total ? Math.floor((current / total) * 100) : 0;
+    const width = 30; // 進捗バーの幅
+    const completed = Math.floor((width * current) / (total || 1));
+    const remaining = width - completed;
+    
+    // バーを作成
+    const bar = 
+      this.colors.green + '█'.repeat(completed) + 
+      this.colors.reset + '░'.repeat(remaining) + 
+      this.colors.reset;
+    
+    // 進捗情報
+    let statusInfo = '';
+    if (this.passedCount > 0) statusInfo += `${this.colors.green}✓ ${this.passedCount}${this.colors.reset} `;
+    if (this.failedCount > 0) statusInfo += `${this.colors.red}✗ ${this.failedCount}${this.colors.reset} `;
+    if (this.pendingCount > 0) statusInfo += `${this.colors.yellow}- ${this.pendingCount}${this.colors.reset} `;
+    
+    // ステータスメッセージ
+    const statusText = status ? ` ${this.colors.cyan}${status}${this.colors.reset}` : '';
+    
+    // 進捗行を作成
+    this.lastProgressLine = `\r[${bar}] ${percent}% (${current}/${total || 0}) ${statusInfo}${statusText}`;
+    
+    // 前の行を上書き
+    process.stdout.write(this.lastProgressLine);
   }
   
   /**
@@ -219,7 +284,7 @@ class CustomReporter {
     this.endTime = Date.now();
     
     // 進捗バーを完了させる
-    if (this.quietMode) {
+    if (!this.superQuietMode) {
       // 改行を追加（進捗バーの後）
       process.stdout.write('\n\n');
     }
@@ -258,6 +323,20 @@ class CustomReporter {
     
     // 結果サマリーを表示
     this.printSummary(results);
+    
+    // カバレッジチャートを生成（環境変数が設定されている場合）
+    if (process.env.GENERATE_COVERAGE_CHART === 'true') {
+      try {
+        this.print('カバレッジチャートを生成しています...', 'info');
+        
+        // チャート生成スクリプトを実行
+        require('../scripts/generate-coverage-chart');
+        
+        this.print('カバレッジチャートが生成されました', 'success');
+      } catch (error) {
+        this.print(`カバレッジチャートの生成に失敗しました: ${error.message}`, 'error');
+      }
+    }
   }
   
   /**
@@ -265,60 +344,44 @@ class CustomReporter {
    */
   loadCoverageFromFile() {
     try {
-      if (!this.quietMode) {
-        this.originalConsole.log('\n🔍 カバレッジ情報をファイルから読み込みます...');
-      }
+      this.log('カバレッジ情報をファイルから読み込みます...', 'INFO');
       
       // カバレッジデータファイルのパス
       const coveragePath = path.resolve('./coverage/coverage-final.json');
       
       // ファイルが存在するか確認
       if (!fs.existsSync(coveragePath)) {
-        if (!this.quietMode) {
-          this.originalConsole.warn('⚠ カバレッジデータファイルが見つかりません:', coveragePath);
-        }
+        this.log('カバレッジデータファイルが見つかりません:', 'WARNING');
         
-        // 別の可能性のあるファイルを探す
+        // 代替ファイルのチェック
         const alternateFiles = [
           './coverage/lcov.info',
           './coverage/coverage-summary.json',
           './coverage/clover.xml'
         ];
         
-        let foundAlternate = false;
         for (const file of alternateFiles) {
           const filePath = path.resolve(file);
           if (fs.existsSync(filePath)) {
-            if (!this.quietMode) {
-              this.originalConsole.log(`✓ 代替カバレッジファイルが見つかりました: ${file}`);
-            }
-            foundAlternate = true;
+            this.log(`代替カバレッジファイルが見つかりました: ${file}`, 'INFO');
             
             // summaryファイルからの読み込みを試みる
             if (file === './coverage/coverage-summary.json') {
               try {
                 const summaryData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-                // 簡易的なカバレッジマップを構築
                 this.createSimpleCoverageMap(summaryData);
-                if (!this.quietMode) {
-                  this.originalConsole.log('✓ カバレッジサマリーからデータを読み込みました');
-                }
+                this.log('カバレッジサマリーからデータを読み込みました', 'INFO');
                 return;
               } catch (e) {
-                if (!this.quietMode) {
-                  this.originalConsole.warn(`⚠ サマリーファイルの解析に失敗しました: ${e.message}`);
-                }
+                this.log(`サマリーファイルの解析に失敗しました: ${e.message}`, 'ERROR');
               }
             }
-            break;
+            return;
           }
         }
         
-        if (!foundAlternate && !this.quietMode) {
-          this.originalConsole.warn('⚠ 代替カバレッジファイルも見つかりません。');
-          this.originalConsole.warn('⚠ Jest実行時に --coverage オプションが指定されているか確認してください。');
-        }
-        
+        this.log('代替カバレッジファイルも見つかりません', 'WARNING');
+        this.log('Jest実行時に --coverage オプションが指定されているか確認してください', 'WARNING');
         return;
       }
       
@@ -327,13 +390,9 @@ class CustomReporter {
       
       // カバレッジマップを作成
       this.createCoverageMapFromData(coverageData);
-      if (!this.quietMode) {
-        this.originalConsole.log('✓ カバレッジデータをファイルから読み込みました');
-      }
+      this.log('カバレッジデータをファイルから読み込みました', 'INFO');
     } catch (error) {
-      if (!this.quietMode) {
-        this.originalConsole.warn(`⚠ カバレッジデータの読み込みに失敗しました: ${error.message}`);
-      }
+      this.log(`カバレッジデータの読み込みに失敗しました: ${error.message}`, 'ERROR');
     }
   }
   
@@ -569,17 +628,433 @@ class CustomReporter {
    * @param {string} outputDir 出力ディレクトリ
    */
   generateVisualReport(outputDir) {
-    // ビジュアルレポート生成コードはそのまま（省略）
-    // この部分はコンソール出力に影響しないので変更不要
     try {
-      // 以下、元のコードと同じ（長いのでここでは省略）
+      // 基本的なHTMLテンプレート
+      let html = `
+        <!DOCTYPE html>
+        <html lang="ja">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Portfolio Market Data API テスト結果</title>
+          <style>
+            :root {
+              --primary-color: #4285F4;
+              --success-color: #34A853;
+              --warning-color: #FBBC05;
+              --error-color: #EA4335;
+              --background-color: #F8F9FA;
+              --text-color: #202124;
+              --border-color: #DADCE0;
+            }
+            
+            body {
+              font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+              line-height: 1.6;
+              color: var(--text-color);
+              background-color: var(--background-color);
+              margin: 0;
+              padding: 20px;
+            }
+            
+            .container {
+              max-width: 1200px;
+              margin: 0 auto;
+              background-color: white;
+              padding: 20px;
+              border-radius: 8px;
+              box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            }
+            
+            h1, h2, h3 {
+              color: var(--primary-color);
+            }
+            
+            .summary {
+              display: flex;
+              justify-content: space-between;
+              flex-wrap: wrap;
+              margin: 20px 0;
+              gap: 10px;
+            }
+            
+            .summary-box {
+              flex: 1;
+              min-width: 200px;
+              padding: 15px;
+              border-radius: 8px;
+              text-align: center;
+              box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+              color: white;
+            }
+            
+            .summary-box.total {
+              background-color: var(--primary-color);
+            }
+            
+            .summary-box.passed {
+              background-color: var(--success-color);
+            }
+            
+            .summary-box.failed {
+              background-color: var(--error-color);
+            }
+            
+            .summary-box.skipped {
+              background-color: var(--warning-color);
+            }
+            
+            .summary-box h2 {
+              margin: 0;
+              color: white;
+              font-size: 2.5rem;
+            }
+            
+            .summary-box p {
+              margin: 5px 0 0;
+              font-size: 1.1rem;
+            }
+            
+            .coverage-section {
+              margin: 30px 0;
+              padding: 20px;
+              background-color: white;
+              border-radius: 8px;
+              box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            }
+            
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin: 20px 0;
+            }
+            
+            th, td {
+              padding: 12px 15px;
+              text-align: left;
+              border-bottom: 1px solid var(--border-color);
+            }
+            
+            th {
+              background-color: var(--primary-color);
+              color: white;
+            }
+            
+            tr:nth-child(even) {
+              background-color: rgba(0, 0, 0, 0.03);
+            }
+            
+            .coverage-row {
+              display: flex;
+              align-items: center;
+              margin: 10px 0;
+            }
+            
+            .coverage-label {
+              width: 150px;
+              font-weight: bold;
+            }
+            
+            .coverage-bar {
+              flex: 1;
+              height: 30px;
+              background-color: #e0e0e0;
+              border-radius: 4px;
+              overflow: hidden;
+              margin: 0 10px;
+            }
+            
+            .coverage-bar-fill {
+              height: 100%;
+              background-color: var(--success-color);
+            }
+            
+            .coverage-percentage {
+              width: 70px;
+              font-weight: bold;
+              text-align: right;
+            }
+            
+            .file-path {
+              font-family: monospace;
+              font-size: 0.9rem;
+              color: var(--primary-color);
+            }
+            
+            .error-section {
+              margin: 30px 0;
+              padding: 20px;
+              background-color: #FFF3F3;
+              border-radius: 8px;
+              border-left: 5px solid var(--error-color);
+            }
+            
+            .error-message {
+              font-family: monospace;
+              padding: 15px;
+              background-color: #333;
+              color: #fff;
+              border-radius: 4px;
+              overflow-x: auto;
+              max-height: 300px;
+            }
+            
+            .coverage-charts {
+              margin-top: 30px;
+              border-top: 1px solid #eee;
+              padding-top: 20px;
+            }
+            
+            .coverage-charts h2 {
+              text-align: center;
+              margin-bottom: 20px;
+            }
+            
+            .chart-container {
+              display: flex;
+              justify-content: center;
+              margin-bottom: 30px;
+            }
+            
+            .footer {
+              margin-top: 30px;
+              text-align: center;
+              color: #666;
+              font-size: 0.9rem;
+              border-top: 1px solid var(--border-color);
+              padding-top: 20px;
+            }
+            
+            @media (max-width: 768px) {
+              .summary-box {
+                min-width: 100%;
+                margin-bottom: 10px;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h1>Portfolio Market Data API テスト結果</h1>
+            <p>実行日時: ${new Date().toLocaleString('ja-JP')}</p>
+            <p>実行時間: ${((this.endTime - this.startTime) / 1000).toFixed(2)}秒</p>
+            
+            <div class="summary">
+              <div class="summary-box total">
+                <h2>${this.results.numTotalTests}</h2>
+                <p>合計テスト数</p>
+              </div>
+              <div class="summary-box passed">
+                <h2>${this.results.numPassedTests}</h2>
+                <p>成功</p>
+              </div>
+              <div class="summary-box failed">
+                <h2>${this.results.numFailedTests}</h2>
+                <p>失敗</p>
+              </div>
+              <div class="summary-box skipped">
+                <h2>${this.results.numPendingTests}</h2>
+                <p>スキップ</p>
+              </div>
+            </div>
+      `;
       
-      // ...省略...
-      
-    } catch (error) {
-      if (!this.quietMode) {
-        this.originalConsole.error('ビジュアルレポート生成中にエラーが発生しました:', error);
+      // カバレッジ情報がある場合
+      if (this.results.coverageMap) {
+        try {
+          const total = this.results.coverageMap.getCoverageSummary().toJSON();
+          const targetLevel = process.env.COVERAGE_TARGET || 'initial';
+          const targetThresholds = this.getCoverageThresholds(targetLevel);
+          
+          html += `
+            <div class="coverage-section">
+              <h2>カバレッジ情報</h2>
+              
+              <div class="coverage-row">
+                <div class="coverage-label">ステートメント</div>
+                <div class="coverage-bar">
+                  <div class="coverage-bar-fill" style="width: ${total.statements.pct}%;"></div>
+                </div>
+                <div class="coverage-percentage">${total.statements.pct.toFixed(2)}%</div>
+                <div>${total.statements.covered}/${total.statements.total}</div>
+              </div>
+              
+              <div class="coverage-row">
+                <div class="coverage-label">ブランチ</div>
+                <div class="coverage-bar">
+                  <div class="coverage-bar-fill" style="width: ${total.branches.pct}%;"></div>
+                </div>
+                <div class="coverage-percentage">${total.branches.pct.toFixed(2)}%</div>
+                <div>${total.branches.covered}/${total.branches.total}</div>
+              </div>
+              
+              <div class="coverage-row">
+                <div class="coverage-label">関数</div>
+                <div class="coverage-bar">
+                  <div class="coverage-bar-fill" style="width: ${total.functions.pct}%;"></div>
+                </div>
+                <div class="coverage-percentage">${total.functions.pct.toFixed(2)}%</div>
+                <div>${total.functions.covered}/${total.functions.total}</div>
+              </div>
+              
+              <div class="coverage-row">
+                <div class="coverage-label">行</div>
+                <div class="coverage-bar">
+                  <div class="coverage-bar-fill" style="width: ${total.lines.pct}%;"></div>
+                </div>
+                <div class="coverage-percentage">${total.lines.pct.toFixed(2)}%</div>
+                <div>${total.lines.covered}/${total.lines.total}</div>
+              </div>
+              
+              <h3>カバレッジ目標ステータス (${targetLevel})</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>メトリクス</th>
+                    <th>現在</th>
+                    <th>目標</th>
+                    <th>ステータス</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>ステートメント</td>
+                    <td>${total.statements.pct.toFixed(2)}%</td>
+                    <td>${targetThresholds.statements}%</td>
+                    <td>${this.getStatusSymbol(total.statements.pct, targetThresholds.statements)}</td>
+                  </tr>
+                  <tr>
+                    <td>ブランチ</td>
+                    <td>${total.branches.pct.toFixed(2)}%</td>
+                    <td>${targetThresholds.branches}%</td>
+                    <td>${this.getStatusSymbol(total.branches.pct, targetThresholds.branches)}</td>
+                  </tr>
+                  <tr>
+                    <td>関数</td>
+                    <td>${total.functions.pct.toFixed(2)}%</td>
+                    <td>${targetThresholds.functions}%</td>
+                    <td>${this.getStatusSymbol(total.functions.pct, targetThresholds.functions)}</td>
+                  </tr>
+                  <tr>
+                    <td>行</td>
+                    <td>${total.lines.pct.toFixed(2)}%</td>
+                    <td>${targetThresholds.lines}%</td>
+                    <td>${this.getStatusSymbol(total.lines.pct, targetThresholds.lines)}</td>
+                  </tr>
+                </tbody>
+              </table>
+              
+              <h3>ファイルごとのカバレッジ</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>ファイル</th>
+                    <th>ステートメント</th>
+                    <th>ブランチ</th>
+                    <th>関数</th>
+                    <th>行</th>
+                  </tr>
+                </thead>
+                <tbody>
+          `;
+          
+          const fileCoverage = this.results.coverageMap.getFileCoverageInfo();
+          fileCoverage.sort((a, b) => a.filename.localeCompare(b.filename));
+          
+          fileCoverage.forEach(file => {
+            const filename = path.relative(process.cwd(), file.filename);
+            html += `
+              <tr>
+                <td class="file-path">${filename}</td>
+                <td>${file.statements.pct.toFixed(2)}%</td>
+                <td>${file.branches.pct.toFixed(2)}%</td>
+                <td>${file.functions.pct.toFixed(2)}%</td>
+                <td>${file.lines.pct.toFixed(2)}%</td>
+              </tr>
+            `;
+          });
+          
+          html += `
+                </tbody>
+              </table>
+            </div>
+          `;
+        } catch (error) {
+          html += `
+            <div class="error-section">
+              <h2>カバレッジ情報の取得に失敗しました</h2>
+              <p>${error.message}</p>
+            </div>
+          `;
+        }
+      } else {
+        html += `
+          <div class="coverage-section">
+            <h2>カバレッジ情報</h2>
+            <p>カバレッジ情報が利用できません。テスト実行時に--coverageオプションを付けてください。</p>
+          </div>
+        `;
       }
+      
+      // エラーがある場合
+      if (this.results.numFailedTests > 0) {
+        html += `
+          <div class="error-section">
+            <h2>エラーサマリー</h2>
+        `;
+        
+        const failedTests = this.results.testResults.flatMap(fileResult =>
+          fileResult.testResults
+            .filter(test => test.status === 'failed')
+            .map(test => ({
+              testFilePath: fileResult.testFilePath,
+              title: test.title,
+              failureMessages: test.failureMessages
+            }))
+        );
+        
+        failedTests.forEach((test, index) => {
+          const relativePath = path.relative(process.cwd(), test.testFilePath);
+          html += `
+            <h3>${index + 1}. ${test.title}</h3>
+            <p class="file-path">ファイル: ${relativePath}</p>
+            <div class="error-message">
+              <pre>${test.failureMessages.join('\n')}</pre>
+            </div>
+          `;
+        });
+        
+        html += `
+          </div>
+        `;
+      }
+      
+      // カバレッジチャート用のプレースホルダー
+      html += `
+        <div class="coverage-charts">
+          <h2>コードカバレッジチャート</h2>
+          <div class="chart-container">
+            <!-- カバレッジチャートがここに挿入されます -->
+          </div>
+        </div><!-- end coverage-charts -->
+      `;
+      
+      // フッターと終了タグ
+      html += `
+            <div class="footer">
+              <p>テスト実行: ${new Date().toLocaleString('ja-JP')}</p>
+              <p>レポート生成: custom-reporter.js</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+      
+      // ファイルに書き込み
+      fs.writeFileSync(path.join(outputDir, 'visual-report.html'), html);
+      this.log('ビジュアルレポートを生成しました: ' + path.join(outputDir, 'visual-report.html'), 'INFO');
+    } catch (error) {
+      this.log('ビジュアルレポート生成中にエラーが発生しました: ' + error.message, 'ERROR');
       
       // 最小限のエラーレポートを生成
       const basicHtml = `
@@ -660,16 +1135,6 @@ class CustomReporter {
   }
   
   /**
-   * ステータス絵文字を取得
-   * @param {number} value 現在の値
-   * @param {number} threshold 目標値
-   * @returns {string} ステータス絵文字
-   */
-  getStatusEmoji(value, threshold) {
-    return value >= threshold ? '✅' : '❌';
-  }
-  
-  /**
    * 結果サマリーをコンソールに表示
    * @param {Object} results テスト結果
    */
@@ -679,22 +1144,31 @@ class CustomReporter {
     const red = this.colors.red;
     const yellow = this.colors.yellow;
     const blue = this.colors.blue;
+    const cyan = this.colors.cyan;
+    const bold = this.colors.bold;
     const reset = this.colors.reset;
     
-    // 空行を追加して進捗バーとの間隔を空ける
-    this.originalConsole.log('');
+    // ヘッダーを表示
+    this.print('', 'result');
+    this.print(`${blue}${bold}========== テスト実行結果 ==========${reset}`, 'result');
     
-    // 簡潔な結果表示（常に表示）
-    this.originalConsole.log(`${blue}========== テスト実行結果 ==========${reset}`);
-    this.originalConsole.log(`実行時間: ${((this.endTime - this.startTime) / 1000).toFixed(2)}秒`);
+    // 基本情報
+    const elapsedTime = ((this.endTime - this.startTime) / 1000).toFixed(1);
+    this.print(`実行時間: ${elapsedTime}秒`, 'result');
     
     // テスト結果の概要
-    const testResultSummary = `テスト数: ${results.numTotalTests}  |  ` +
-      `${green}成功: ${results.numPassedTests}${reset}  |  ` +
-      `${results.numFailedTests > 0 ? red : ''}失敗: ${results.numFailedTests}${reset}  |  ` +
-      `${results.numPendingTests > 0 ? yellow : ''}スキップ: ${results.numPendingTests}${reset}`;
+    this.print(`テスト結果: ${results.numTotalTests} 件のテスト`, 'result');
     
-    this.originalConsole.log(testResultSummary);
+    // 詳細結果
+    const passedText = `${green}${results.numPassedTests} 件成功${reset}`;
+    const failedText = results.numFailedTests > 0 
+      ? `${red}${results.numFailedTests} 件失敗${reset}` 
+      : `${results.numFailedTests} 件失敗`;
+    const pendingText = results.numPendingTests > 0 
+      ? `${yellow}${results.numPendingTests} 件スキップ${reset}` 
+      : `${results.numPendingTests} 件スキップ`;
+    
+    this.print(`  ${passedText}, ${failedText}, ${pendingText}`, 'result');
     
     // カバレッジ情報（簡潔に表示）
     if (this.results.coverageMap) {
@@ -703,73 +1177,75 @@ class CustomReporter {
         const targetLevel = process.env.COVERAGE_TARGET || 'initial';
         const targetThresholds = this.getCoverageThresholds(targetLevel);
         
-        // カバレッジ結果を簡潔に表示
+        this.print('', 'result');
+        this.print(`${cyan}${bold}カバレッジ状況:${reset}`, 'result');
+        
+        // 各カバレッジメトリクスを表示
         const statementsStatus = total.statements.pct >= targetThresholds.statements;
         const branchesStatus = total.branches.pct >= targetThresholds.branches;
         const functionsStatus = total.functions.pct >= targetThresholds.functions;
         const linesStatus = total.lines.pct >= targetThresholds.lines;
         
-        const coverageSummary = 
-          `カバレッジ目標 (${this.getTargetLevelName(targetLevel)}): ` +
-          `ステートメント: ${statementsStatus ? green + '✓' : red + '✗'} ${total.statements.pct.toFixed(1)}%${reset} | ` +
-          `ブランチ: ${branchesStatus ? green + '✓' : red + '✗'} ${total.branches.pct.toFixed(1)}%${reset} | ` +
-          `関数: ${functionsStatus ? green + '✓' : red + '✗'} ${total.functions.pct.toFixed(1)}%${reset} | ` +
-          `行: ${linesStatus ? green + '✓' : red + '✗'} ${total.lines.pct.toFixed(1)}%${reset}`;
+        const statementsSymbol = statementsStatus ? `${green}✓${reset}` : `${red}✗${reset}`;
+        const branchesSymbol = branchesStatus ? `${green}✓${reset}` : `${red}✗${reset}`;
+        const functionsSymbol = functionsStatus ? `${green}✓${reset}` : `${red}✗${reset}`;
+        const linesSymbol = linesStatus ? `${green}✓${reset}` : `${red}✗${reset}`;
         
-        this.originalConsole.log(coverageSummary);
+        this.print(`  ${statementsSymbol} ステートメント: ${total.statements.pct.toFixed(1)}% (目標: ${targetThresholds.statements}%)`, 'result');
+        this.print(`  ${branchesSymbol} ブランチ:       ${total.branches.pct.toFixed(1)}% (目標: ${targetThresholds.branches}%)`, 'result');
+        this.print(`  ${functionsSymbol} 関数:         ${total.functions.pct.toFixed(1)}% (目標: ${targetThresholds.functions}%)`, 'result');
+        this.print(`  ${linesSymbol} 行:           ${total.lines.pct.toFixed(1)}% (目標: ${targetThresholds.lines}%)`, 'result');
         
         // 目標達成状況
         const allTargetsMet = statementsStatus && branchesStatus && functionsStatus && linesStatus;
         
         if (allTargetsMet) {
-          this.originalConsole.log(`${green}✓ すべてのカバレッジ目標を達成しています！${reset}`);
-        } else if (!this.superQuietMode) {
-          this.originalConsole.log(`${yellow}⚠ いくつかのカバレッジ目標が未達成です${reset}`);
+          this.print(`${green}✓ すべてのカバレッジ目標を達成しています！${reset}`, 'result');
+        } else {
+          this.print(`${yellow}⚠ いくつかのカバレッジ目標が未達成です${reset}`, 'result');
         }
       } catch (error) {
-        if (!this.superQuietMode) {
-          this.originalConsole.log(`${red}カバレッジ情報の取得に失敗しました${reset}`);
-        }
+        this.print(`${red}カバレッジ情報の取得に失敗しました${reset}`, 'result');
       }
-    } else if (!this.superQuietMode) {
-      this.originalConsole.log(`${yellow}⚠ カバレッジデータが利用できません${reset}`);
+    } else {
+      this.print(`${yellow}⚠ カバレッジデータが利用できません${reset}`, 'result');
     }
     
     // 最終結果（成功/失敗）
+    this.print('', 'result');
     if (results.numFailedTests > 0) {
-      this.originalConsole.log(`${red}⚠ テスト失敗があります${reset}`);
+      this.print(`${red}${bold}✗ テスト失敗${reset}`, 'result');
       
-      // 最小限モードでは失敗件数だけを表示
-      if (!this.superQuietMode) {
-        // 簡潔な失敗情報（最大3件まで）
-        const failedTests = this.results.testResults.flatMap(fileResult =>
-          fileResult.testResults
-            .filter(test => test.status === 'failed')
-            .map(test => ({
-              file: path.relative(process.cwd(), fileResult.testFilePath),
-              title: test.title
-            }))
-        ).slice(0, 3);
-        
-        if (failedTests.length > 0) {
-          this.originalConsole.log(`${red}失敗したテスト（最大3件）:${reset}`);
-          failedTests.forEach((test, i) => {
-            this.originalConsole.log(`${i+1}. ${test.file}: ${test.title}`);
-          });
-          
-          if (this.results.numFailedTests > 3) {
-            this.originalConsole.log(`${yellow}... 他 ${this.results.numFailedTests - 3} 件${reset}`);
-          }
-        }
+      // 失敗したテストの情報（最大5件まで）
+      const failedTests = this.results.testResults.flatMap(fileResult =>
+        fileResult.testResults
+          .filter(test => test.status === 'failed')
+          .map(test => ({
+            file: path.relative(process.cwd(), fileResult.testFilePath),
+            title: test.title
+          }))
+      ).slice(0, 5);
+      
+      this.print(`失敗したテスト:`, 'result');
+      failedTests.forEach((test, i) => {
+        this.print(`  ${i+1}. ${red}${test.title}${reset}`, 'result');
+        this.print(`     ${this.colors.dim}(${test.file})${reset}`, 'result');
+      });
+      
+      if (this.results.numFailedTests > 5) {
+        this.print(`  ${yellow}... 他 ${this.results.numFailedTests - 5} 件${reset}`, 'result');
       }
     } else {
-      this.originalConsole.log(`${green}✓ すべてのテストが成功しました！${reset}`);
+      this.print(`${green}${bold}✓ すべてのテストが成功しました！${reset}`, 'result');
     }
     
-    // レポートファイルの場所（簡潔に表示）
-    this.originalConsole.log(`${blue}詳細レポート:${reset} ./test-results/visual-report.html`);
+    // レポートファイルの場所
+    this.print('', 'result');
+    this.print(`${blue}詳細レポート:${reset}`, 'result');
+    this.print(`  HTMLレポート: ./test-results/visual-report.html`, 'result');
+    this.print(`  テストログ:   ./test-results/test-log.md`, 'result');
+    this.print(`  エラーログ:   ${this.errorLogFile}`, 'result');
   }
 }
 
 module.exports = CustomReporter;
-

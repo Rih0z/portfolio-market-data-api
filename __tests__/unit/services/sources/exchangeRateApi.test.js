@@ -18,7 +18,8 @@ const alertService = require('../../../../src/services/alerts');
 jest.mock('axios');
 jest.mock('../../../../src/utils/retry');
 jest.mock('../../../../src/services/alerts', () => ({
-  notifyError: jest.fn().mockResolvedValue(undefined)
+  notifyError: jest.fn().mockResolvedValue({ success: true }),
+  sendAlert: jest.fn().mockResolvedValue({ success: true })
 }));
 
 describe('Exchange Rate API Adapter', () => {
@@ -71,7 +72,7 @@ describe('Exchange Rate API Adapter', () => {
       
       // 結果の検証 - 実装に合わせて形式を変更
       expect(result).toEqual({
-        pair: 'USDJPY',
+        pair: 'USDJPY', // 修正: ハイフンなしの形式
         base: 'USD',
         target: 'JPY',
         rate: 149.82,
@@ -108,7 +109,7 @@ describe('Exchange Rate API Adapter', () => {
       expect(axios.get).toHaveBeenCalled();
       
       // 各通貨ペアの結果を検証
-      const pairKey = `${testBase}-${testTarget}`;
+      const pairKey = `${testBase}-${testTarget}`; // 注: getBatchExchangeRatesは異なる形式を使用
       expect(result).toHaveProperty(pairKey);
       
       // 各通貨のデータが含まれているか検証（getBatchExchangeRatesの出力形式に合わせる）
@@ -119,23 +120,23 @@ describe('Exchange Rate API Adapter', () => {
       }
     });
     
-    test('APIエラーが発生した場合は例外をスロー', async () => {
+    test('APIエラーが発生した場合はフォールバック値を返す', async () => {
       // APIエラーをモック
       axios.get.mockRejectedValue(new Error('API request failed'));
       
-      // フォールバック処理により例外はスローされない
-      // 代わりに予備の値が返される
+      // テスト対象の関数を実行
       const result = await exchangeRateApi.getExchangeRate(testBase, testTarget);
       
-      // 代替値を確認
-      expect(result).toHaveProperty('rate');
+      // 例外ではなくフォールバック値が返されることを検証
+      expect(result).toBeDefined();
       expect(result).toHaveProperty('pair', 'USDJPY');
+      expect(result).toHaveProperty('rate');
       
-      // alertServiceが呼び出されたか確認（エラー通知）
+      // アラートサービスが呼び出されたか検証
       expect(alertService.notifyError).toHaveBeenCalled();
     });
     
-    test('APIレスポンスがsuccessでない場合は例外をスロー', async () => {
+    test('APIレスポンスがsuccessでない場合はフォールバック値を返す', async () => {
       // 失敗レスポンスをモック
       axios.get.mockResolvedValue({
         status: 200,
@@ -148,15 +149,16 @@ describe('Exchange Rate API Adapter', () => {
         }
       });
       
-      // フォールバック処理により例外はスローされない
+      // テスト対象の関数を実行
       const result = await exchangeRateApi.getExchangeRate(testBase, testTarget);
       
-      // 代替値を確認
-      expect(result).toHaveProperty('rate');
+      // フォールバック値が返されることを検証
+      expect(result).toBeDefined();
       expect(result).toHaveProperty('pair', 'USDJPY');
+      expect(result).toHaveProperty('rate');
     });
     
-    test('非200レスポンスの場合は例外をスロー', async () => {
+    test('非200レスポンスの場合はフォールバック値を返す', async () => {
       // 429エラーをモック
       axios.get.mockResolvedValue({
         status: 429,
@@ -165,12 +167,13 @@ describe('Exchange Rate API Adapter', () => {
         }
       });
       
-      // フォールバック処理により例外はスローされない
+      // テスト対象の関数を実行
       const result = await exchangeRateApi.getExchangeRate(testBase, testTarget);
       
-      // 代替値を確認
-      expect(result).toHaveProperty('rate');
+      // フォールバック値が返されることを検証
+      expect(result).toBeDefined();
       expect(result).toHaveProperty('pair', 'USDJPY');
+      expect(result).toHaveProperty('rate');
     });
   });
 

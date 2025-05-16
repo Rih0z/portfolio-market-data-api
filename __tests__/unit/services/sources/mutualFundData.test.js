@@ -16,6 +16,8 @@ const { parse } = require('csv-parse/sync');
 const { withRetry } = require('../../../../src/utils/retry');
 const blacklist = require('../../../../src/utils/scrapingBlacklist');
 const cacheService = require('../../../../src/services/cache');
+const dataFetchUtils = require('../../../../src/utils/dataFetchUtils');
+const alertService = require('../../../../src/services/alerts');
 
 // 依存モジュールをモック化
 jest.mock('axios');
@@ -25,12 +27,43 @@ jest.mock('csv-parse/sync', () => ({
 jest.mock('../../../../src/utils/retry');
 jest.mock('../../../../src/utils/scrapingBlacklist', () => ({
   isBlacklisted: jest.fn(),
-  addToBlacklist: jest.fn()
+  recordFailure: jest.fn(),   // 修正: addToBlacklist → recordFailure
+  recordSuccess: jest.fn()    // 追加: recordSuccess 関数
 }));
 jest.mock('../../../../src/services/cache', () => ({
   get: jest.fn(),
   set: jest.fn()
 }));
+jest.mock('../../../../src/services/alerts', () => ({
+  notifyError: jest.fn().mockResolvedValue({ success: true })
+}));
+jest.mock('../../../../src/utils/dataFetchUtils', () => {
+  const original = jest.requireActual('../../../../src/utils/dataFetchUtils');
+  return {
+    ...original,
+    recordDataFetchFailure: jest.fn().mockResolvedValue(undefined),
+    recordDataFetchSuccess: jest.fn().mockResolvedValue(undefined),
+    checkBlacklistAndGetFallback: jest.fn().mockImplementation(async (code, market, fallbackConfig) => {
+      const isInBlacklist = await blacklist.isBlacklisted(code, market);
+      return {
+        isBlacklisted: isInBlacklist,
+        fallbackData: {
+          ticker: `${code}C`,
+          price: fallbackConfig.defaultPrice || 10000,
+          change: 0,
+          changePercent: 0,
+          name: fallbackConfig.name || `投資信託 ${code}`,
+          currency: fallbackConfig.currencyCode || 'JPY',
+          lastUpdated: new Date().toISOString(),
+          source: 'Blacklisted Fallback',
+          isStock: false,
+          isMutualFund: true,
+          isBlacklisted: isInBlacklist
+        }
+      };
+    })
+  };
+});
 
 describe('Fund Data Service', () => {
   // テスト用データ
@@ -162,6 +195,9 @@ describe('Fund Data Service', () => {
       // axiosがエラーをスローするようにモック
       axios.get.mockRejectedValue(new Error('CSV retrieval failed'));
       
+      // dataFetchUtils.recordDataFetchFailure が呼び出されるように設定
+      dataFetchUtils.recordDataFetchFailure.mockResolvedValue(undefined);
+      
       // テスト対象の関数を例外をキャッチして実行
       let error;
       try {
@@ -173,6 +209,9 @@ describe('Fund Data Service', () => {
       // エラーメッセージの検証
       expect(error).toBeDefined();
       expect(error.message).toContain('failed');
+      
+      // recordDataFetchFailure が呼び出されたことを検証
+      expect(dataFetchUtils.recordDataFetchFailure).toHaveBeenCalled();
     });
   });
 

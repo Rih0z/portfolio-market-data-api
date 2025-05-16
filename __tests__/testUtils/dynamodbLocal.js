@@ -10,7 +10,7 @@
  * @updated 2025-05-16 バグ修正: テーブル存在チェックのエラーハンドリング強化
  */
 const { spawn } = require('child_process');
-const { DynamoDBClient, CreateTableCommand, DescribeTableCommand } = require('@aws-sdk/client-dynamodb');
+const { DynamoDBClient, CreateTableCommand, DescribeTableCommand, ListTablesCommand } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient, PutCommand, GetCommand, QueryCommand, DeleteCommand } = require('@aws-sdk/lib-dynamodb');
 
 let dynamoProcess = null;
@@ -228,10 +228,42 @@ const insertTestData = async (tableName, items) => {
   }
 };
 
+/**
+ * DynamoDBが実行中かどうかを確認する
+ */
+const isDynamoDBRunning = async () => {
+  try {
+    const client = new DynamoDBClient({
+      region: 'us-east-1',
+      endpoint: process.env.DYNAMODB_ENDPOINT || 'http://localhost:8000',
+      credentials: {
+        accessKeyId: 'test',
+        secretAccessKey: 'test'
+      }
+    });
+    
+    // テーブル一覧を取得してみる
+    await client.send(new ListTablesCommand({}));
+    return true;
+  } catch (error) {
+    console.warn(`DynamoDB connection check failed: ${error.message}`);
+    return false;
+  }
+};
+
+// createTestTableのエイリアスとしてcreateTables関数を定義
+const createTables = async (client, tableName) => {
+  return createTestTable(tableName);
+};
+
 module.exports = {
   startDynamoDBLocal,
   stopDynamoDBLocal,
   getDynamoDBClient,
   createTestTable,
-  insertTestData
+  insertTestData,
+  // 追加: テスト用のテーブル作成関数のエイリアス
+  createTables,
+  // 追加: DynamoDB実行状態確認関数
+  isDynamoDBRunning
 };

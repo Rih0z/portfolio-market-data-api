@@ -6,7 +6,7 @@
 # 
 # @author Portfolio Manager Team
 # @updated 2025-05-15 - 設定を統合して簡素化
-# @updated 2025-05-16 - ファイル名を修正、バックアップ削除
+# @updated 2025-05-16 - プロジェクト指定方法の修正
 #
 
 # 色の設定
@@ -22,10 +22,10 @@ NC='\033[0m' # No Color
 LOG_DIR="./test-results/logs"
 mkdir -p "$LOG_DIR"
 
-# シンプルな名前の固定ログファイル
-LOG_FILE="$LOG_DIR/test.log"
-ERROR_LOG_FILE="$LOG_DIR/error.log"
-DEBUG_LOG_FILE="$LOG_DIR/debug.log"
+# 固定ログファイル名を使用
+LOG_FILE="$LOG_DIR/nerv-test-latest.log"
+ERROR_LOG_FILE="$LOG_DIR/nerv-error-latest.log"
+DEBUG_LOG_FILE="$LOG_DIR/debug-latest.log"
 
 # 固定ビジュアルレポートパス
 VISUAL_REPORT_PATH="./test-results/visual-report.html"
@@ -192,9 +192,25 @@ if [ -z "$TEST_TYPE" ]; then
   exit 1
 fi
 
-# 新しいログファイルを初期化（バックアップなし）
-echo "=== TEST SYSTEM STARTED: $(date) ===" > "$LOG_FILE"
-echo "=== ERROR LOG STARTED: $(date) ===" > "$ERROR_LOG_FILE"
+# 既存のログファイルをバックアップ
+if [ -f "$LOG_FILE" ]; then
+  BACKUP_TIME=$(date +"%Y%m%d-%H%M%S")
+  cp "$LOG_FILE" "${LOG_FILE}.${BACKUP_TIME}.bak"
+fi
+
+if [ -f "$ERROR_LOG_FILE" ]; then
+  BACKUP_TIME=$(date +"%Y%m%d-%H%M%S")
+  cp "$ERROR_LOG_FILE" "${ERROR_LOG_FILE}.${BACKUP_TIME}.bak"
+fi
+
+if [ -f "$DEBUG_LOG_FILE" ]; then
+  BACKUP_TIME=$(date +"%Y%m%d-%H%M%S")
+  cp "$DEBUG_LOG_FILE" "${DEBUG_LOG_FILE}.${BACKUP_TIME}.bak"
+fi
+
+# 新しいログファイルを初期化
+echo "=== NERV TEST SYSTEM ACTIVATED: $(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ") ===" > "$LOG_FILE"
+echo "=== NERV ERROR MONITORING SYSTEM: $(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ") ===" > "$ERROR_LOG_FILE"
 echo "=== DEBUG LOG STARTED: $(date) ===" > "$DEBUG_LOG_FILE"
 echo "Script: $0 $@" >> "$DEBUG_LOG_FILE"
 echo "Working directory: $(pwd)" >> "$DEBUG_LOG_FILE"
@@ -243,7 +259,7 @@ fi
 # Jest コマンド構築
 JEST_ARGS=""
 
-# テスト種別に応じてテストパスを指定
+# テスト種別に応じてテストパスを指定（--selectProjectsの代わり）
 case $TEST_TYPE in
   unit)
     print_header "単体テストを実行中..."
@@ -295,19 +311,6 @@ if [ $VISUAL -eq 1 ]; then
   # custom-reporter.jsファイルを確認
   if [ -f "./custom-reporter.js" ]; then
     print_info "カスタムレポーターファイルを確認: OK"
-    
-    # カスタムレポーターを直接修正してログファイル名を変更
-    # バックアップを作成
-    cp ./custom-reporter.js ./custom-reporter.js.bak
-    
-    # ログファイル名を変更
-    sed -i.tmp 's|this.logFile = `${this.logDir}/nerv-test-.*\.log`;|this.logFile = "'$LOG_FILE'";|g' ./custom-reporter.js
-    sed -i.tmp 's|this.errorLogFile = `${this.logDir}/nerv-error-.*\.log`;|this.errorLogFile = "'$ERROR_LOG_FILE'";|g' ./custom-reporter.js
-    
-    # 一時ファイルを削除
-    rm -f ./custom-reporter.js.tmp
-    
-    print_success "カスタムレポーターのログパスを修正しました"
   else
     print_error "カスタムレポーターファイルが見つかりません"
     # ファイル検索を試みる
@@ -322,6 +325,9 @@ if [ $VISUAL -eq 1 ]; then
       VISUAL=0
     fi
   fi
+  
+  # カスタムレポーターにログファイルと出力パスを環境変数で渡す
+  ENV_VARS="$ENV_VARS NERV_LOG_FILE=$LOG_FILE NERV_ERROR_LOG_FILE=$ERROR_LOG_FILE"
   
   # カスタムレポーターを追加
   JEST_ARGS="$JEST_ARGS --reporters=default --reporters=./custom-reporter.js"
@@ -426,7 +432,7 @@ if [ $VISUAL -eq 1 ]; then
   </style>
 </head>
 <body>
-  <h1>テスト実行結果</h1>
+  <h1>NERV MAGI SYSTEM - テスト結果</h1>
   <div class="timestamp">実行日時: $(date)</div>
   
   <div class="summary">
@@ -518,10 +524,5 @@ fi
 
 # デバッグログを終了
 echo "=== DEBUG LOG ENDED: $(date) ===" >> "$DEBUG_LOG_FILE"
-
-# カスタムレポーターの修正を元に戻す（もし変更していた場合）
-if [ -f "./custom-reporter.js.bak" ]; then
-  mv ./custom-reporter.js.bak ./custom-reporter.js
-fi
 
 exit $TEST_RESULT

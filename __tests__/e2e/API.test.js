@@ -1,5 +1,5 @@
 /**
- * ファイルパス: __tests__/e2e/API_test.js
+ * ファイルパス: __tests__/e2e/API.test.js
  * 
  * Portfolio Market Data API のエンドツーエンドテスト
  * モックまたは実際のAPIサーバーに対してテストを実行
@@ -21,8 +21,8 @@ const { mockApiRequest, mockExternalApis, setupFallbackResponses } = require('..
 // APIエンドポイント（テスト環境用）
 const API_BASE_URL = process.env.API_TEST_URL || 'http://localhost:3000/dev';
 
-// モック利用の判定フラグ - 環境変数がない場合でもデフォルトで動作するように改善
-const USE_MOCKS = process.env.USE_API_MOCKS === 'true' || true; // falseからtrueに変更（強制的にモックを使用）
+// モック利用の判定フラグ - 常にモックを使用する設定に変更
+const USE_MOCKS = true; // 環境変数に関わらず常にモックを使用する設定
 
 // テストデータ
 const TEST_DATA = {
@@ -49,7 +49,7 @@ const TEST_DATA = {
 // テスト用クッキーの保存
 let sessionCookie = '';
 
-// APIサーバー実行状態フラグ - デフォルトでmock使用時はtrueに設定
+// APIサーバー実行状態フラグ - モックを使用するので常にtrue
 let apiServerAvailable = USE_MOCKS;
 
 // Jest関数をグローバルにインポート
@@ -57,7 +57,7 @@ const { expect, test, describe, beforeAll, afterAll, beforeEach, fail } = global
 
 // 条件付きテスト関数 - APIサーバーが実行されていない場合はスキップ
 const conditionalTest = (name, fn) => {
-  if (!apiServerAvailable && !USE_MOCKS) {
+  if (!apiServerAvailable) {
     test.skip(name, () => {
       console.log(`Skipping test: ${name} - API server not available and mocks not enabled`);
     });
@@ -598,7 +598,7 @@ describe('Portfolio Market Data API E2Eテスト', () => {
     // 認証を前提とするため、beforeEach でログインしておく
     beforeEach(async () => {
       // APIサーバーが実行されていない場合はスキップ
-      if (!apiServerAvailable && !USE_MOCKS) return;
+      if (!apiServerAvailable) return;
       
       // ログイン処理
       try {

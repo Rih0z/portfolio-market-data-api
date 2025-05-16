@@ -34,7 +34,7 @@ src/
 │   ├── cache.js       # キャッシュ
 │   ├── fallbackDataStore.js # フォールバックデータ
 │   ├── googleAuthService.js # Google認証
-│   ├── matrics.js     # メトリクス
+│   ├── matrics.js     # メトリクス（注：正しい英語では "metrics" ですが、ファイル名はこのまま）
 │   ├── usage.js       # 使用量管理
 │   └── sources/       # データソース別サービス
 │       ├── enhancedMarketDataService.js # 強化データサービス
@@ -265,7 +265,7 @@ src/
 
 ### matrics.js
 
-**説明**: データソースのパフォーマンスとプロパティを追跡するためのメトリクスサービス。
+**説明**: データソースのパフォーマンスとプロパティを追跡するためのメトリクスサービス。（注：正しい英語では "metrics" ですが、ファイル名はこのまま）
 
 **関数**:
 - `initializeMetricsTable()`: メトリクス用DynamoDBテーブルを初期化
@@ -279,14 +279,14 @@ src/
 
 ### usage.js
 
-**説明**: フォールバックデータストアサービス。
+**説明**: API使用量管理サービス。
 
 **関数**:
-- `recordFailedFetch(symbol, dataType, errorInfo)`: データ取得に失敗した記録を保存
-- `getFallbackForSymbol(symbol, dataType)`: 特定のシンボルのフォールバックデータを取得
-- `getDefaultFallbackData(symbol, dataType)`: デフォルトのフォールバックデータを取得
-- `saveFallbackData(symbol, dataType, data)`: フォールバックデータを保存
-- `updateFallbackData(dataType, dataItems)`: フォールバックデータを更新
+- `recordUsage(user, dataType, count)`: 使用量を記録
+- `checkAndUpdateUsage(params)`: 使用量を確認して更新
+- `getUsageStats()`: 使用統計を取得
+- `resetUsage(resetType)`: 使用量カウンターをリセット
+- `getUserRate(userId, period)`: ユーザーごとの使用率を取得
 
 ### sources/enhancedMarketDataService.js
 

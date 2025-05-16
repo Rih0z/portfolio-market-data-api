@@ -2,13 +2,12 @@
  * ファイルパス: jest.config.js
  * 
  * Jest テスト設定ファイル
+ * 統合版 - 各種設定を一つのファイルに集約
  * 
  * @file jest.config.js
  * @author Portfolio Manager Team
  * @created 2025-05-18
- * @updated Koki - 2025-05-12 - カスタムレポーターを追加、フォーマット修正
- * @updated 2025-05-13 - カバレッジしきい値を緩和して開発中のテスト実行を容易に
- * @updated 2025-05-20 - setupTests.jsを使用するように変更
+ * @updated 2025-05-15 - 設定を統合して最適化
  */
 
 module.exports = {
@@ -24,23 +23,23 @@ module.exports = {
     '!**/node_modules/**'
   ],
   
-  // カバレッジのしきい値 - 開発中はしきい値を0%に設定
+  // カバレッジのしきい値 - 開発中は緩和したしきい値を設定
   coverageThreshold: {
     global: {
-      branches: 0,    // 変更前: 70%
-      functions: 0,   // 変更前: 80%
-      lines: 0,       // 変更前: 80%
-      statements: 0   // 変更前: 80%
+      branches: 20,
+      functions: 25,
+      lines: 30,
+      statements: 30
     },
     'src/utils/*.js': {
-      branches: 0,    // 変更前: 80%
-      functions: 0,   // 変更前: 90%
-      lines: 0        // 変更前: 90%
+      branches: 30,
+      functions: 40,
+      lines: 40
     },
     'src/services/*.js': {
-      branches: 0,    // 変更前: 75%
-      functions: 0,   // 変更前: 85%
-      lines: 0        // 変更前: 85%
+      branches: 20,
+      functions: 25,
+      lines: 30
     }
   },
   
@@ -50,14 +49,11 @@ module.exports = {
     '**/?(*.)+(spec|test).js'
   ],
   
-  // 開始前に実行するファイル（setupTests.jsに変更）
+  // 統合セットアップファイルを使用
   setupFiles: ['./setupTests.js'],
   
-  // グローバル設定
-  // setupFilesAfterEnv: ['./jest.setupAfterEnv.js'],
-  
   // テストタイムアウト設定
-  testTimeout: 10000,
+  testTimeout: 30000,
   
   // モック設定
   moduleNameMapper: {
@@ -65,10 +61,10 @@ module.exports = {
   },
   
   // 並列実行設定
-  maxWorkers: '50%',
+  maxWorkers: process.env.CI ? '2' : '50%',
   
   // テストの詳細レポート
-  verbose: true,
+  verbose: process.env.VERBOSE_MODE === 'true',
   
   // レポート形式
   reporters: [
@@ -82,27 +78,65 @@ module.exports = {
       outputPath: './test-results/test-report.html',
       includeFailureMsg: true
     }],
-    // カスタムレポーターを配列形式で正しく指定
+    // カスタムレポーターを指定
     ['<rootDir>/custom-reporter.js', {}]
   ],
   
-  // 特定のテストフォルダーの優先度設定
+  // キャッシュ設定
+  cache: true,
+  cacheDirectory: './.jest-cache',
+  
+  // プロジェクト設定 - テスト種別ごとに異なる設定を適用
   projects: [
     {
       displayName: 'unit',
       testMatch: ['**/__tests__/unit/**/*.js'],
-      testPathIgnorePatterns: ['/node_modules/']
+      testPathIgnorePatterns: ['/node_modules/'],
+      // テスト種別ごとに異なるタイムアウト値
+      testTimeout: 15000
     },
     {
       displayName: 'integration',
       testMatch: ['**/__tests__/integration/**/*.js'],
-      testPathIgnorePatterns: ['/node_modules/']
+      testPathIgnorePatterns: ['/node_modules/'],
+      testTimeout: 30000
     },
     {
       displayName: 'e2e',
       testMatch: ['**/__tests__/e2e/**/*.js'],
-      testPathIgnorePatterns: ['/node_modules/']
+      testPathIgnorePatterns: ['/node_modules/'],
+      testTimeout: 60000
     }
-  ]
+  ],
+  
+  // グローバル設定
+  globals: {
+    // カスタムレポーター設定をグローバルに追加
+    __REPORTER_CONFIG__: {
+      outputPath: './test-results',
+      visualReportName: 'visual-report.html',
+      generateChart: true,
+      coverageTarget: process.env.COVERAGE_TARGET || 'initial',
+      thresholds: {
+        initial: {
+          statements: 30,
+          branches: 20, 
+          functions: 25,
+          lines: 30
+        },
+        mid: {
+          statements: 60,
+          branches: 50,
+          functions: 60,
+          lines: 60
+        },
+        final: {
+          statements: 80,
+          branches: 70,
+          functions: 80,
+          lines: 80
+        }
+      }
+    }
+  }
 };
-

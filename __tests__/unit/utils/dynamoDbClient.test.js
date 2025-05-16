@@ -1,5 +1,6 @@
 /**
  * ファイルパス: __tests__/unit/utils/dynamoDbClient.test.js
+ * ファイル名を変更: dynamoDbClient.test.js → dynamoDbService.test.js
  * 
  * DynamoDBクライアントユーティリティのユニットテスト
  * 接続、リトライ、エラーハンドリング機能をテスト
@@ -8,11 +9,12 @@
  * @created 2025-05-15
  */
 
+// インポートパスを修正: dynamoDbClient → dynamoDbService
 const {
   getDynamoDBClient,
   createDynamoDBClient,
   getTableName
-} = require('../../../src/utils/dynamoDbClient');
+} = require('../../../src/utils/dynamoDbService');
 
 const { 
   DynamoDBClient,
@@ -31,7 +33,7 @@ const {
 jest.mock('@aws-sdk/client-dynamodb');
 jest.mock('@aws-sdk/lib-dynamodb');
 
-describe('DynamoDB Client Utility', () => {
+describe('DynamoDB Service Utility', () => { // 説明文をServiceに変更
   // 元の環境変数を保存
   const originalEnv = process.env;
   

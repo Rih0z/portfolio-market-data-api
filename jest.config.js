@@ -2,12 +2,17 @@
  * ファイルパス: jest.config.js
  * 
  * Jest テスト設定ファイル
+ * テスト全体の設定・構成を管理する中心ファイル
+ * 
+ * 依存関係:
+ * - setupFiles: './jest.setup.js' - 基本環境変数とモックの設定
+ * - setupFilesAfterEnv: './__tests__/setup.js' - テスト実行前後の共通処理
+ * - reporters: 'custom-reporter.js' - カスタムレポート生成
  * 
  * @file jest.config.js
  * @author Portfolio Manager Team
  * @created 2025-05-18
- * @updated Koki - 2025-05-12 - カスタムレポーターを追加、フォーマット修正
- * @updated 2025-05-13 - カバレッジしきい値を緩和して開発中のテスト実行を容易に
+ * @updated 2025-05-19 - 設定の最適化と依存関係の明確化
  */
 
 module.exports = {
@@ -24,6 +29,7 @@ module.exports = {
   ],
   
   // カバレッジのしきい値 - 開発中はしきい値を0%に設定
+  // カバレッジ目標はCOVERAGE_TARGET環境変数で動的に変更可能（initial/mid/final）
   coverageThreshold: {
     global: {
       branches: 0,    // 変更前: 70%
@@ -49,11 +55,11 @@ module.exports = {
     '**/?(*.)+(spec|test).js'
   ],
   
-  // 開始前に実行するファイル
+  // 開始前に実行するファイル - 環境変数やモックの基本設定
   setupFiles: ['./jest.setup.js'],
   
-  // グローバル設定
-  // setupFilesAfterEnv: ['./jest.setupAfterEnv.js'],
+  // テスト実行前後のグローバル設定
+  setupFilesAfterEnv: ['./__tests__/setup.js'],
   
   // テストタイムアウト設定
   testTimeout: 10000,
@@ -81,7 +87,6 @@ module.exports = {
       outputPath: './test-results/test-report.html',
       includeFailureMsg: true
     }],
-    // カスタムレポーターを配列形式で正しく指定
     ['<rootDir>/custom-reporter.js', {}]
   ],
   
@@ -102,8 +107,14 @@ module.exports = {
       testMatch: ['**/__tests__/e2e/**/*.js'],
       testPathIgnorePatterns: ['/node_modules/']
     }
-  ]
+  ],
+  
+  // キャッシュ設定
+  cacheDirectory: './.jest-cache',
+  
+  // エラー表示設定
+  errorOnDeprecated: true,
+  
+  // テスト終了後に強制終了（CI環境用）
+  forceExit: true
 };
-
-
-

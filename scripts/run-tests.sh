@@ -1,14 +1,15 @@
 #!/bin/bash
 # 
-# ファイルパス: scripts/run-tests.sh (更新版)
+# ファイルパス: scripts/run-tests.sh
 # 
 # Portfolio Market Data APIテスト実行スクリプト
-# 修正: 新しいテストファイル対応およびレポート詳細化、カバレッジ強制対応追加
+# Jest設定ファイルを利用し、各種テスト実行オプションを提供
 #
 # @author Koki Riho
 # @updated 2025-05-15 - 新しいテスト種別の追加、詳細レポート生成オプションの強化
 # @updated 2025-05-16 - カバレッジチャートの自動生成機能追加、テストカバレッジ目標の段階追跡
 # @updated 2025-05-17 - カバレッジオプションが確実に有効になるように修正、強制カバレッジオプション追加
+# @updated 2025-05-19 - Jest設定ファイルを明示的に指定する機能追加、依存関係の明確化
 #
 
 # 便利なサンプルコマンド
@@ -67,6 +68,7 @@ show_help() {
   echo "  --junit                     JUnit形式のレポートを生成（CI環境用）"
   echo "  --nvm                       nvmを使用してNode.js 18に切り替え"
   echo "  --force-coverage            カバレッジ計測を強制的に有効化（--no-coverageより優先）"
+  echo "  --config                    カスタムJest設定ファイルのパスを指定"
   echo ""
   echo "テスト種別:"
   echo "  unit                単体テストのみ実行"
@@ -102,6 +104,7 @@ show_help() {
   echo "  $0 unit:services    サービス層の単体テストのみ実行"
   echo "  $0 --chart all      すべてのテストを実行し、カバレッジチャートを生成"
   echo "  $0 -t mid all       中間段階のカバレッジ目標を設定してすべてのテストを実行"
+  echo "  $0 --config custom-jest.config.js unit  カスタム設定ファイルで単体テストを実行"
   echo ""
 }
 
@@ -123,6 +126,7 @@ FORCE_COVERAGE=0
 SPECIFIC_PATTERN=""
 TEST_TYPE=""
 COVERAGE_TARGET="initial"
+JEST_CONFIG_PATH="jest.config.js"
 
 # オプション解析
 while [[ $# -gt 0 ]]; do
@@ -195,6 +199,10 @@ while [[ $# -gt 0 ]]; do
       FORCE_COVERAGE=1
       shift
       ;;
+    --config)
+      JEST_CONFIG_PATH="$2"
+      shift 2
+      ;;
     unit|unit:services|unit:utils|unit:function|integration|integration:auth|integration:market|integration:drive|e2e|all|quick|specific)
       TEST_TYPE=$1
       shift
@@ -222,20 +230,50 @@ debug_jest_config() {
   JEST_VERSION=$(npx jest --version 2>/dev/null || echo "Jest not found")
   echo "Jest バージョン: $JEST_VERSION"
   
-  # Jest設定ファイルを探す
-  if [ -f "jest.config.js" ]; then
-    echo "jest.config.js が見つかりました"
+  # 使用するJest設定ファイルの確認
+  echo "使用する設定ファイル: $JEST_CONFIG_PATH"
+  if [ -f "$JEST_CONFIG_PATH" ]; then
+    echo "$JEST_CONFIG_PATH が見つかりました"
     echo "設定内容:"
-    cat jest.config.js | grep -E "coverage|collectCoverage" || echo "カバレッジ設定が見つかりません"
-  elif [ -f "jest.config.json" ]; then
-    echo "jest.config.json が見つかりました"
-    cat jest.config.json | grep -E "coverage|collectCoverage" || echo "カバレッジ設定が見つかりません"
+    cat "$JEST_CONFIG_PATH" | grep -E "coverage|collectCoverage|setupFiles|reporters" || echo "主要設定が見つかりません"
   else
-    # package.jsonのJest設定を確認
-    if [ -f "package.json" ]; then
-      echo "package.json の Jest 設定を確認:"
-      cat package.json | grep -A 20 '"jest":' | grep -E "coverage|collectCoverage" || echo "カバレッジ設定が見つかりません"
+    print_error "$JEST_CONFIG_PATH が見つかりません"
+    
+    # 代替設定ファイルを探す
+    if [ -f "jest.config.js" ]; then
+      echo "jest.config.js が見つかりました（代替として使用します）"
+      JEST_CONFIG_PATH="jest.config.js"
+    elif [ -f "jest.config.json" ]; then
+      echo "jest.config.json が見つかりました（代替として使用します）"
+      JEST_CONFIG_PATH="jest.config.json"
+    else
+      # package.jsonのJest設定を確認
+      if [ -f "package.json" ]; then
+        echo "package.json の Jest 設定を確認:"
+        cat package.json | grep -A 20 '"jest":' || echo "package.jsonにJest設定が見つかりません"
+      fi
     fi
+  fi
+  
+  # 関連ファイルの存在確認
+  echo "関連ファイルのチェック:"
+  
+  if [ -f "jest.setup.js" ]; then
+    echo "- jest.setup.js: 存在します"
+  else
+    echo "- jest.setup.js: 見つかりません"
+  fi
+  
+  if [ -f "__tests__/setup.js" ]; then
+    echo "- __tests__/setup.js: 存在します"
+  else
+    echo "- __tests__/setup.js: 見つかりません"
+  fi
+  
+  if [ -f "custom-reporter.js" ]; then
+    echo "- custom-reporter.js: 存在します"
+  else
+    echo "- custom-reporter.js: 見つかりません" 
   fi
   
   # .env.localファイルの確認
@@ -396,57 +434,60 @@ fi
 TEST_CMD=""
 JEST_ARGS=""
 
+# Jest設定ファイルを指定
+JEST_ARGS="--config=$JEST_CONFIG_PATH"
+
 # テスト種別に基づいてJestの引数を設定
 case $TEST_TYPE in
   unit)
     print_header "単体テストを実行中..."
-    JEST_ARGS="--selectProjects unit"
+    JEST_ARGS="$JEST_ARGS --selectProjects unit"
     ;;
   unit:services)
     print_header "サービス層の単体テストを実行中..."
-    JEST_ARGS="--selectProjects unit --testPathPattern=services"
+    JEST_ARGS="$JEST_ARGS --selectProjects unit --testPathPattern=services"
     ;;
   unit:utils)
     print_header "ユーティリティの単体テストを実行中..."
-    JEST_ARGS="--selectProjects unit --testPathPattern=utils"
+    JEST_ARGS="$JEST_ARGS --selectProjects unit --testPathPattern=utils"
     ;;
   unit:function)
     print_header "API関数の単体テストを実行中..."
-    JEST_ARGS="--selectProjects unit --testPathPattern=function"
+    JEST_ARGS="$JEST_ARGS --selectProjects unit --testPathPattern=function"
     ;;
   integration)
     print_header "統合テストを実行中..."
-    JEST_ARGS="--selectProjects integration"
+    JEST_ARGS="$JEST_ARGS --selectProjects integration"
     ;;
   integration:auth)
     print_header "認証関連の統合テストを実行中..."
-    JEST_ARGS="--selectProjects integration --testPathPattern=auth"
+    JEST_ARGS="$JEST_ARGS --selectProjects integration --testPathPattern=auth"
     ;;
   integration:market)
     print_header "マーケットデータ関連の統合テストを実行中..."
-    JEST_ARGS="--selectProjects integration --testPathPattern=marketData"
+    JEST_ARGS="$JEST_ARGS --selectProjects integration --testPathPattern=marketData"
     ;;
   integration:drive)
     print_header "Google Drive関連の統合テストを実行中..."
-    JEST_ARGS="--selectProjects integration --testPathPattern=drive"
+    JEST_ARGS="$JEST_ARGS --selectProjects integration --testPathPattern=drive"
     ;;
   e2e)
     print_header "エンドツーエンドテストを実行中..."
-    JEST_ARGS="--selectProjects e2e"
+    JEST_ARGS="$JEST_ARGS --selectProjects e2e"
     ;;
   all)
     print_header "すべてのテストを実行中..."
-    JEST_ARGS="--selectProjects unit integration e2e"
+    JEST_ARGS="$JEST_ARGS --selectProjects unit integration e2e"
     ;;
   quick)
     print_header "クイックテスト（単体+統合）を実行中..."
-    JEST_ARGS="--selectProjects unit integration"
+    JEST_ARGS="$JEST_ARGS --selectProjects unit integration"
     ENV_VARS="$ENV_VARS USE_API_MOCKS=true"
     ;;
   specific)
     print_header "特定のパターンに一致するテストを実行中..."
     print_info "パターン: $SPECIFIC_PATTERN"
-    JEST_ARGS="--testPathPattern=$SPECIFIC_PATTERN"
+    JEST_ARGS="$JEST_ARGS --testPathPattern=$SPECIFIC_PATTERN"
     ;;
   *)
     print_error "不明なテスト種別: $TEST_TYPE"
@@ -758,6 +799,7 @@ else
   echo "- モックモードでテストを再実行: ./scripts/run-tests.sh -m $TEST_TYPE"
   echo "- カバレッジエラーを無視してテスト: ./scripts/run-tests.sh -i $TEST_TYPE"
   echo "- カバレッジの問題が原因の場合は強制的に有効化: ./scripts/run-tests.sh --force-coverage $TEST_TYPE"
+  echo "- デバッグモードで詳細情報を表示: ./scripts/run-tests.sh -d $TEST_TYPE"
 fi
 
 # テスト後のクリーンアップ提案

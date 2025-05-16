@@ -8,6 +8,7 @@
  * @created 2025-05-18
  * @updated Koki - 2025-05-12 - カスタムレポーターを追加、フォーマット修正
  * @updated 2025-05-13 - カバレッジしきい値を緩和して開発中のテスト実行を容易に
+ * @updated 2025-05-20 - setupTests.jsを使用するように変更
  */
 
 module.exports = {
@@ -49,8 +50,8 @@ module.exports = {
     '**/?(*.)+(spec|test).js'
   ],
   
-  // 開始前に実行するファイル
-  setupFiles: ['./jest.setup.js'],
+  // 開始前に実行するファイル（setupTests.jsに変更）
+  setupFiles: ['./setupTests.js'],
   
   // グローバル設定
   // setupFilesAfterEnv: ['./jest.setupAfterEnv.js'],
@@ -104,6 +105,3 @@ module.exports = {
     }
   ]
 };
-
-
-

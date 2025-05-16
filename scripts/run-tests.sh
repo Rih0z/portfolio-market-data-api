@@ -9,6 +9,7 @@
 # @updated 2025-05-15 - 新しいテスト種別の追加、詳細レポート生成オプションの強化
 # @updated 2025-05-16 - カバレッジチャートの自動生成機能追加、テストカバレッジ目標の段階追跡
 # @updated 2025-05-17 - カバレッジオプションが確実に有効になるように修正、強制カバレッジオプション追加
+# @updated 2025-05-20 - setupTests.jsを使用するように更新、コンソール出力を最小限に設定
 #
 
 # 便利なサンプルコマンド
@@ -62,6 +63,7 @@ show_help() {
   echo "  -i, --ignore-coverage-errors テスト自体は成功してもカバレッジエラーを無視"
   echo "  -s, --specific              特定のファイルまたはパターンに一致するテストのみ実行"
   echo "  -t, --target                カバレッジ目標段階を指定 [initial|mid|final]"
+  echo "  -v, --verbose               詳細なテスト出力を表示（デフォルトは最小限出力）"
   echo "  --html-coverage             HTMLカバレッジレポートをブラウザで開く"
   echo "  --chart                     カバレッジをチャートで生成（ビジュアルレポートに追加）"
   echo "  --junit                     JUnit形式のレポートを生成（CI環境用）"
@@ -102,6 +104,7 @@ show_help() {
   echo "  $0 unit:services    サービス層の単体テストのみ実行"
   echo "  $0 --chart all      すべてのテストを実行し、カバレッジチャートを生成"
   echo "  $0 -t mid all       中間段階のカバレッジ目標を設定してすべてのテストを実行"
+  echo "  $0 -v unit          詳細なテスト出力を表示して単体テストを実行"
   echo ""
 }
 
@@ -120,6 +123,7 @@ HTML_COVERAGE=0
 GENERATE_CHART=0
 JUNIT_REPORT=0
 FORCE_COVERAGE=0
+VERBOSE_MODE=0
 SPECIFIC_PATTERN=""
 TEST_TYPE=""
 COVERAGE_TARGET="initial"
@@ -161,6 +165,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     -d|--debug)
       DEBUG_MODE=1
+      VERBOSE_MODE=1  # デバッグモードは詳細モードも含む
       shift
       ;;
     -i|--ignore-coverage-errors)
@@ -174,6 +179,10 @@ while [[ $# -gt 0 ]]; do
     -t|--target)
       COVERAGE_TARGET="$2"
       shift 2
+      ;;
+    -v|--verbose)
+      VERBOSE_MODE=1
+      shift
       ;;
     --html-coverage)
       HTML_COVERAGE=1
@@ -225,17 +234,26 @@ debug_jest_config() {
   # Jest設定ファイルを探す
   if [ -f "jest.config.js" ]; then
     echo "jest.config.js が見つかりました"
-    echo "設定内容:"
+    echo "setupFiles設定:"
+    cat jest.config.js | grep -E "setupFiles" || echo "setupFiles設定が見つかりません"
+    echo "カバレッジ設定:"
     cat jest.config.js | grep -E "coverage|collectCoverage" || echo "カバレッジ設定が見つかりません"
   elif [ -f "jest.config.json" ]; then
     echo "jest.config.json が見つかりました"
-    cat jest.config.json | grep -E "coverage|collectCoverage" || echo "カバレッジ設定が見つかりません"
+    cat jest.config.json | grep -E "setupFiles|coverage|collectCoverage" || echo "setupFiles/カバレッジ設定が見つかりません"
   else
     # package.jsonのJest設定を確認
     if [ -f "package.json" ]; then
       echo "package.json の Jest 設定を確認:"
-      cat package.json | grep -A 20 '"jest":' | grep -E "coverage|collectCoverage" || echo "カバレッジ設定が見つかりません"
+      cat package.json | grep -A 20 '"jest":' | grep -E "setupFiles|coverage|collectCoverage" || echo "setupFiles/カバレッジ設定が見つかりません"
     fi
+  fi
+  
+  # setupTests.jsファイルの確認
+  if [ -f "setupTests.js" ]; then
+    echo "setupTests.js ファイルが存在します"
+  else
+    echo "setupTests.js ファイルが見つかりません"
   fi
   
   # .env.localファイルの確認
@@ -333,6 +351,210 @@ if [ $CLEAN -eq 1 ]; then
   print_success "クリーンアップ完了"
 fi
 
+# setupTests.jsが存在するか確認
+if [ ! -f "setupTests.js" ]; then
+  print_warning "setupTests.jsファイルが見つかりません。作成します..."
+  
+  # __tests__/setup.jsおよびjest.setup.jsの内容を統合したファイルを生成
+  print_info "setupTests.jsファイルを生成しています..."
+  
+  cat > setupTests.js << 'EOF'
+/**
+ * ファイルパス: setupTests.js
+ * 
+ * Jestテスト実行前の共通セットアップファイル
+ * __tests__/setup.js と jest.setup.js の内容を統合
+ * 
+ * @file setupTests.js
+ * @author Portfolio Manager Team
+ * @created 2025-05-20
+ */
+
+// テスト用のタイムアウト設定
+jest.setTimeout(30000); // 30秒
+
+// エラーハンドリングを改善
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // テスト環境では強制終了しない
+});
+
+// テスト環境を設定
+process.env.NODE_ENV = 'test';
+
+// テスト環境変数のデフォルト値設定
+process.env = {
+  ...process.env,
+  // 基本設定
+  DYNAMODB_ENDPOINT: process.env.DYNAMODB_ENDPOINT || 'http://localhost:8000',
+  SESSION_TABLE: process.env.SESSION_TABLE || 'test-sessions',
+  DYNAMODB_TABLE_PREFIX: process.env.DYNAMODB_TABLE_PREFIX || 'test-',
+  
+  // AWS リージョン設定
+  AWS_REGION: process.env.AWS_REGION || 'us-east-1',
+  
+  // テスト用キャッシュとセッションテーブル
+  CACHE_TABLE: process.env.CACHE_TABLE || 'test-portfolio-market-data-cache',
+  
+  // CORS設定
+  CORS_ALLOW_ORIGIN: process.env.CORS_ALLOW_ORIGIN || '*',
+  
+  // APIキー設定
+  ADMIN_API_KEY: process.env.ADMIN_API_KEY || 'test-admin-api-key',
+  ADMIN_EMAIL: process.env.ADMIN_EMAIL || 'admin@example.com',
+  
+  // 使用量制限
+  DAILY_REQUEST_LIMIT: process.env.DAILY_REQUEST_LIMIT || '100',
+  MONTHLY_REQUEST_LIMIT: process.env.MONTHLY_REQUEST_LIMIT || '1000',
+  DISABLE_ON_LIMIT: process.env.DISABLE_ON_LIMIT || 'true',
+  
+  // キャッシュ設定
+  CACHE_TIME_US_STOCK: process.env.CACHE_TIME_US_STOCK || '3600',
+  CACHE_TIME_JP_STOCK: process.env.CACHE_TIME_JP_STOCK || '3600',
+  CACHE_TIME_MUTUAL_FUND: process.env.CACHE_TIME_MUTUAL_FUND || '10800',
+  CACHE_TIME_EXCHANGE_RATE: process.env.CACHE_TIME_EXCHANGE_RATE || '21600',
+  
+  // Google認証設定
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || 'test-client-id',
+  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || 'test-client-secret',
+  SESSION_EXPIRES_DAYS: process.env.SESSION_EXPIRES_DAYS || '7',
+};
+
+// DynamoDBモックを有効化
+const mockDynamoDb = {
+  get: jest.fn().mockImplementation(() => ({
+    promise: jest.fn().mockResolvedValue({ Item: null })
+  })),
+  put: jest.fn().mockImplementation(() => ({
+    promise: jest.fn().mockResolvedValue({})
+  })),
+  update: jest.fn().mockImplementation(() => ({
+    promise: jest.fn().mockResolvedValue({ Attributes: { count: 1 } })
+  })),
+  delete: jest.fn().mockImplementation(() => ({
+    promise: jest.fn().mockResolvedValue({})
+  })),
+  scan: jest.fn().mockImplementation(() => ({
+    promise: jest.fn().mockResolvedValue({ Items: [] })
+  })),
+  query: jest.fn().mockImplementation(() => ({
+    promise: jest.fn().mockResolvedValue({ Items: [] })
+  }))
+};
+
+// グローバルDynamoDBモック
+global.__AWS_MOCK__ = {
+  dynamoDb: mockDynamoDb
+};
+
+// モックライブラリの設定
+// nockの自動クリーンアップを設定
+const nock = require('nock');
+nock.disableNetConnect();
+nock.enableNetConnect('localhost'); // ローカル接続は許可
+
+// コンソール出力をモック化（静かなテスト実行のため）
+global.originalConsole = {
+  log: console.log,
+  error: console.error,
+  warn: console.warn,
+  info: console.info
+};
+
+// テスト結果が詳細に出力されないようにオーバーライド
+// CI環境やDEBUGモードでは元の動作を維持
+if (process.env.CI !== 'true' && process.env.DEBUG !== 'true' && process.env.VERBOSE_MODE !== 'true') {
+  // 標準出力をモック化
+  console.log = (...args) => {
+    // テスト開始・終了メッセージと重要な警告のみ表示
+    if (typeof args[0] === 'string' && (
+        args[0].includes('PASS') || 
+        args[0].includes('FAIL') || 
+        args[0].includes('ERROR') ||
+        args[0].startsWith('Test suite') ||
+        args[0].includes('Test Suites:') ||
+        args[0].includes('Tests:') ||
+        args[0].includes('Snapshots:') ||
+        args[0].includes('Time:')
+      )) {
+      global.originalConsole.log(...args);
+    }
+  };
+  console.info = (...args) => {
+    // 重要な情報のみ表示
+    if (typeof args[0] === 'string' && (
+        args[0].includes('IMPORTANT') ||
+        args[0].includes('[INFO]')
+      )) {
+      global.originalConsole.info(...args);
+    }
+  };
+}
+
+// 警告とエラーは常に表示
+console.warn = global.originalConsole.warn;
+console.error = global.originalConsole.error;
+
+// 日付のモック
+jest.spyOn(global.Date, 'now').mockImplementation(() => 1715900000000); // 2025-05-18T10:00:00.000Z
+
+// テスト前後の共通処理
+beforeAll(async () => {
+  if (process.env.DEBUG === 'true' || process.env.VERBOSE_MODE === 'true') {
+    global.originalConsole.log('Starting test suite with environment:', process.env.NODE_ENV);
+    global.originalConsole.log('Test configuration:');
+    global.originalConsole.log('- RUN_E2E_TESTS:', process.env.RUN_E2E_TESTS);
+    global.originalConsole.log('- USE_API_MOCKS:', process.env.USE_API_MOCKS);
+    global.originalConsole.log('- SKIP_E2E_TESTS:', process.env.SKIP_E2E_TESTS);
+  }
+});
+
+afterAll(async () => {
+  if (process.env.DEBUG === 'true' || process.env.VERBOSE_MODE === 'true') {
+    global.originalConsole.log('Test suite completed');
+  }
+  
+  // Jestのタイマーを確実にクリーンアップ
+  jest.useRealTimers();
+  
+  // nockのクリーンアップ
+  nock.cleanAll();
+  nock.enableNetConnect();
+});
+
+// 各テスト後のクリーンアップ
+afterEach(() => {
+  // タイマーのクリーンアップ
+  jest.clearAllTimers();
+  
+  // モックのリセット
+  jest.resetAllMocks();
+});
+EOF
+  
+  print_success "setupTests.jsファイルを作成しました"
+  
+  # jest.config.jsファイルを確認し、必要であれば更新
+  if [ -f "jest.config.js" ]; then
+    # setupFilesエントリがすでにsetupTests.jsを指しているか確認
+    if ! grep -q "setupFiles.*setupTests.js" jest.config.js; then
+      print_warning "jest.config.jsのsetupFiles設定を更新しています..."
+      
+      # バックアップを作成
+      cp jest.config.js jest.config.js.bak
+      
+      # 設定を更新
+      sed -i.bak 's/setupFiles: \[\(.*\)\]/setupFiles: \[\.\/setupTests\.js\]/g' jest.config.js
+      
+      print_success "jest.config.jsを更新しました"
+    else
+      print_info "jest.config.jsは既にsetupTests.jsを使用しています"
+    fi
+  fi
+else
+  print_success "setupTests.jsファイルが見つかりました"
+fi
+
 # テスト環境のセットアップ
 print_info "テスト環境をセットアップしています..."
 npm run test:setup
@@ -373,6 +595,11 @@ fi
 if [ $DEBUG_MODE -eq 1 ]; then
   ENV_VARS="$ENV_VARS DEBUG=true"
   print_info "デバッグログが有効です"
+fi
+
+if [ $VERBOSE_MODE -eq 1 ]; then
+  ENV_VARS="$ENV_VARS VERBOSE_MODE=true"
+  print_info "詳細な出力モードが有効です"
 fi
 
 if [ $IGNORE_COVERAGE_ERRORS -eq 1 ]; then
@@ -626,107 +853,10 @@ fi
 if [ $TEST_RESULT -eq 0 ]; then
   print_header "テスト実行が成功しました! 🎉"
   
-  # カバレッジ情報をログファイルから抽出して表示
-  if [ $NO_COVERAGE -ne 1 ] && [ -f "./test-results/detailed-results.json" ]; then
-    # 各カバレッジメトリクスを取得
-    STATEMENTS_COVERAGE=$(grep -o '"statements":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
-    BRANCHES_COVERAGE=$(grep -o '"branches":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
-    FUNCTIONS_COVERAGE=$(grep -o '"functions":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
-    LINES_COVERAGE=$(grep -o '"lines":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
-    
-    # カバレッジ目標段階とカバレッジ率の表示
-    echo -e "${BLUE}カバレッジ目標段階: ${YELLOW}$COVERAGE_TARGET${NC}"
-    
-    # 目標に応じてカバレッジ率を色分け表示
-    case $COVERAGE_TARGET in
-      initial)
-        # 20-30%目標
-        THRESHOLD_STATEMENTS=30
-        THRESHOLD_BRANCHES=20
-        THRESHOLD_FUNCTIONS=25
-        THRESHOLD_LINES=30
-        ;;
-      mid)
-        # 40-60%目標
-        THRESHOLD_STATEMENTS=60
-        THRESHOLD_BRANCHES=50
-        THRESHOLD_FUNCTIONS=60
-        THRESHOLD_LINES=60
-        ;;
-      final)
-        # 70-80%目標
-        THRESHOLD_STATEMENTS=80
-        THRESHOLD_BRANCHES=70
-        THRESHOLD_FUNCTIONS=80
-        THRESHOLD_LINES=80
-        ;;
-    esac
-    
-    # カバレッジ率の表示（目標達成状況に応じて色分け）
-    if (( $(echo "$STATEMENTS_COVERAGE >= $THRESHOLD_STATEMENTS" | bc -l) )); then
-      echo -e "Statements: ${GREEN}${STATEMENTS_COVERAGE}%${NC} (目標: ${THRESHOLD_STATEMENTS}%)"
-    else
-      echo -e "Statements: ${RED}${STATEMENTS_COVERAGE}%${NC} (目標: ${THRESHOLD_STATEMENTS}%)"
-    fi
-    
-    if (( $(echo "$BRANCHES_COVERAGE >= $THRESHOLD_BRANCHES" | bc -l) )); then
-      echo -e "Branches:   ${GREEN}${BRANCHES_COVERAGE}%${NC} (目標: ${THRESHOLD_BRANCHES}%)"
-    else
-      echo -e "Branches:   ${RED}${BRANCHES_COVERAGE}%${NC} (目標: ${THRESHOLD_BRANCHES}%)"
-    fi
-    
-    if (( $(echo "$FUNCTIONS_COVERAGE >= $THRESHOLD_FUNCTIONS" | bc -l) )); then
-      echo -e "Functions:  ${GREEN}${FUNCTIONS_COVERAGE}%${NC} (目標: ${THRESHOLD_FUNCTIONS}%)"
-    else
-      echo -e "Functions:  ${RED}${FUNCTIONS_COVERAGE}%${NC} (目標: ${THRESHOLD_FUNCTIONS}%)"
-    fi
-    
-    if (( $(echo "$LINES_COVERAGE >= $THRESHOLD_LINES" | bc -l) )); then
-      echo -e "Lines:      ${GREEN}${LINES_COVERAGE}%${NC} (目標: ${THRESHOLD_LINES}%)"
-    else
-      echo -e "Lines:      ${RED}${LINES_COVERAGE}%${NC} (目標: ${THRESHOLD_LINES}%)"
-    fi
-    
-    # 次の目標段階の提案
-    ALL_TARGETS_MET=1
-    
-    if (( $(echo "$STATEMENTS_COVERAGE < $THRESHOLD_STATEMENTS" | bc -l) || 
-           $(echo "$BRANCHES_COVERAGE < $THRESHOLD_BRANCHES" | bc -l) || 
-           $(echo "$FUNCTIONS_COVERAGE < $THRESHOLD_FUNCTIONS" | bc -l) || 
-           $(echo "$LINES_COVERAGE < $THRESHOLD_LINES" | bc -l) )); then
-      ALL_TARGETS_MET=0
-    fi
-    
-    if [ $ALL_TARGETS_MET -eq 1 ]; then
-      case $COVERAGE_TARGET in
-        initial)
-          print_success "初期段階の目標を達成しました！次は中間段階(-t mid)に挑戦しましょう"
-          ;;
-        mid)
-          print_success "中間段階の目標を達成しました！次は最終段階(-t final)に挑戦しましょう"
-          ;;
-        final)
-          print_success "最終段階の目標を達成しました！素晴らしい成果です 🎉"
-          ;;
-      esac
-    else
-      print_warning "現在の段階の目標をまだ達成していません。引き続きテスト実装を進めましょう"
-      
-      # 未達成の目標を表示
-      echo -e "${YELLOW}未達成の目標:${NC}"
-      if (( $(echo "$STATEMENTS_COVERAGE < $THRESHOLD_STATEMENTS" | bc -l) )); then
-        echo -e "- Statements: ${RED}${STATEMENTS_COVERAGE}%${NC} → ${YELLOW}${THRESHOLD_STATEMENTS}%${NC}"
-      fi
-      if (( $(echo "$BRANCHES_COVERAGE < $THRESHOLD_BRANCHES" | bc -l) )); then
-        echo -e "- Branches:   ${RED}${BRANCHES_COVERAGE}%${NC} → ${YELLOW}${THRESHOLD_BRANCHES}%${NC}"
-      fi
-      if (( $(echo "$FUNCTIONS_COVERAGE < $THRESHOLD_FUNCTIONS" | bc -l) )); then
-        echo -e "- Functions:  ${RED}${FUNCTIONS_COVERAGE}%${NC} → ${YELLOW}${THRESHOLD_FUNCTIONS}%${NC}"
-      fi
-      if (( $(echo "$LINES_COVERAGE < $THRESHOLD_LINES" | bc -l) )); then
-        echo -e "- Lines:      ${RED}${LINES_COVERAGE}%${NC} → ${YELLOW}${THRESHOLD_LINES}%${NC}"
-      fi
-    fi
+  # テスト後のクリーンアップ提案
+  if [ $CLEAN -ne 1 ]; then
+    print_info "次回のテスト実行前に環境をクリーンアップすることをお勧めします:"
+    echo "  ./scripts/run-tests.sh -c ..."
   fi
 else
   print_header "テスト実行が失敗しました... 😢"
@@ -755,15 +885,10 @@ else
   print_info "改善提案:"
   echo "- 詳細なエラー情報を確認: cat ./test-results/test-log.md"
   echo "- ビジュアルレポートを表示: ./scripts/run-tests.sh -v $TEST_TYPE"
+  echo "- 詳細な出力で再実行: ./scripts/run-tests.sh -v $TEST_TYPE"
   echo "- モックモードでテストを再実行: ./scripts/run-tests.sh -m $TEST_TYPE"
   echo "- カバレッジエラーを無視してテスト: ./scripts/run-tests.sh -i $TEST_TYPE"
   echo "- カバレッジの問題が原因の場合は強制的に有効化: ./scripts/run-tests.sh --force-coverage $TEST_TYPE"
-fi
-
-# テスト後のクリーンアップ提案
-if [ $TEST_RESULT -eq 0 ] && [ $CLEAN -ne 1 ]; then
-  print_info "次回のテスト実行前に環境をクリーンアップすることをお勧めします:"
-  echo "  ./scripts/run-tests.sh -c ..."
 fi
 
 exit $TEST_RESULT

@@ -99,6 +99,15 @@ class CustomReporter {
   onRunStart(results, options) {
     this.startTime = Date.now();
     this.printProgress('テスト実行を開始します...', 'info');
+    
+    // 進捗状況を表示するためのカウンター初期化
+    this.progressCount = 0;
+    this.totalTestCount = 0;
+    this.testFiles = [];
+    this.lastProgressLine = '';
+    
+    // 進捗バーの初期表示
+    this.updateProgressBar(0, 0);
   }
   
   /**
@@ -126,28 +135,55 @@ class CustomReporter {
     
     this.results.testResults.push(formattedResult);
     
-    // 失敗したテストがある場合は報告
+    // テストファイルの数をカウント
+    this.testFiles.push(testResult.testFilePath);
+    this.totalTestCount = aggregatedResult.numTotalTests || 0;
+    this.passedCount = aggregatedResult.numPassedTests || 0;
+    this.failedCount = aggregatedResult.numFailedTests || 0;
+    this.pendingCount = aggregatedResult.numPendingTests || 0;
+    this.progressCount = this.passedCount + this.failedCount + this.pendingCount;
+    
+    // 進捗バーを更新
+    this.updateProgressBar(this.progressCount, this.totalTestCount);
+    
+    // 失敗したテストがある場合のみ報告
     if (testResult.numFailingTests > 0) {
       const relativePath = path.relative(process.cwd(), testResult.testFilePath);
-      this.printProgress(`${relativePath}: ${testResult.numFailingTests}件のテストが失敗`, 'error');
+      process.stdout.write(`\r${this.colors.red}✗ ${relativePath}: ${testResult.numFailingTests}件失敗${this.colors.reset}\n`);
+      // 進捗バーを再表示
+      process.stdout.write(this.lastProgressLine);
     }
-    
-    // テストファイルの実行状況を最小限表示（ドット形式）
+  }
+  
+  /**
+   * 進捗バーを更新
+   * @param {number} current 現在のテスト数
+   * @param {number} total 全テスト数
+   */
+  updateProgressBar(current, total) {
     if (this.quietMode) {
-      // ファイル単位での成功・失敗表示
-      if (testResult.numFailingTests > 0) {
-        process.stdout.write(this.colors.red + 'F' + this.colors.reset);
-      } else if (testResult.numPendingTests > 0 && testResult.numPassingTests === 0) {
-        process.stdout.write(this.colors.yellow + 'S' + this.colors.reset);
-      } else {
-        process.stdout.write(this.colors.green + '.' + this.colors.reset);
-      }
+      const percent = total ? Math.floor((current / total) * 100) : 0;
+      const width = 30; // 進捗バーの幅
+      const completed = Math.floor((width * current) / (total || 1));
+      const remaining = width - completed;
       
-      // 10ファイルごとに改行
-      const fileIndex = this.results.testResults.length;
-      if (fileIndex % 10 === 0) {
-        process.stdout.write(' ' + fileIndex + '\n');
-      }
+      // バーを作成
+      const bar = 
+        this.colors.green + '■'.repeat(completed) + 
+        this.colors.reset + '□'.repeat(remaining) + 
+        this.colors.reset;
+      
+      // 進捗情報
+      let status = '';
+      if (this.passedCount > 0) status += `${this.colors.green}✓ ${this.passedCount}${this.colors.reset} `;
+      if (this.failedCount > 0) status += `${this.colors.red}✗ ${this.failedCount}${this.colors.reset} `;
+      if (this.pendingCount > 0) status += `${this.colors.yellow}- ${this.pendingCount}${this.colors.reset} `;
+      
+      // 進捗行を作成
+      this.lastProgressLine = `\r[${bar}] ${percent}% (${current}/${total}) ${status}`;
+      
+      // 前の行を上書き
+      process.stdout.write(this.lastProgressLine);
     }
   }
   
@@ -157,8 +193,9 @@ class CustomReporter {
   onRunComplete(contexts, results) {
     this.endTime = Date.now();
     
-    // 改行を追加（ドット表示の後）
+    // 進捗バーを完了させる
     if (this.quietMode) {
+      // 改行を追加（進捗バーの後）
       process.stdout.write('\n\n');
     }
     
@@ -619,96 +656,87 @@ class CustomReporter {
     const blue = this.colors.blue;
     const reset = this.colors.reset;
     
-    // 見やすさのための区切り線
-    this.originalConsole.log('\n========================================');
-    this.originalConsole.log(`${blue}テスト実行結果${reset}`);
-    this.originalConsole.log('========================================');
-    
-    // 基本情報（常に表示）
+    // 簡潔な結果表示（常に表示）
+    this.originalConsole.log(`${blue}========== テスト実行結果 ==========${reset}`);
     this.originalConsole.log(`実行時間: ${((this.endTime - this.startTime) / 1000).toFixed(2)}秒`);
-    this.originalConsole.log(`テスト数: ${results.numTotalTests}`);
-    this.originalConsole.log(`成功: ${green}${results.numPassedTests}${reset}`);
     
-    if (results.numFailedTests > 0) {
-      this.originalConsole.log(`失敗: ${red}${results.numFailedTests}${reset}`);
-    } else {
-      this.originalConsole.log(`失敗: ${results.numFailedTests}`);
-    }
+    // テスト結果の概要
+    const testResultSummary = `テスト数: ${results.numTotalTests}  |  ` +
+      `${green}成功: ${results.numPassedTests}${reset}  |  ` +
+      `${results.numFailedTests > 0 ? red : ''}失敗: ${results.numFailedTests}${reset}  |  ` +
+      `${results.numPendingTests > 0 ? yellow : ''}スキップ: ${results.numPendingTests}${reset}`;
     
-    if (results.numPendingTests > 0) {
-      this.originalConsole.log(`スキップ: ${yellow}${results.numPendingTests}${reset}`);
-    } else {
-      this.originalConsole.log(`スキップ: ${results.numPendingTests}`);
-    }
+    this.originalConsole.log(testResultSummary);
     
-    this.originalConsole.log('----------------------------------------');
-    
-    // カバレッジ情報（最小限モードでも表示）
+    // カバレッジ情報（簡潔に表示）
     if (this.results.coverageMap) {
       try {
         const total = this.results.coverageMap.getCoverageSummary().toJSON();
-        
-        this.originalConsole.log(`${blue}カバレッジ情報:${reset}`);
-        this.originalConsole.log(`ステートメント: ${total.statements.pct.toFixed(2)}% (${total.statements.covered}/${total.statements.total})`);
-        this.originalConsole.log(`ブランチ: ${total.branches.pct.toFixed(2)}% (${total.branches.covered}/${total.branches.total})`);
-        this.originalConsole.log(`関数: ${total.functions.pct.toFixed(2)}% (${total.functions.covered}/${total.functions.total})`);
-        this.originalConsole.log(`行: ${total.lines.pct.toFixed(2)}% (${total.lines.covered}/${total.lines.total})`);
-        
-        // 目標ステータス（最小限モードでも表示）
         const targetLevel = process.env.COVERAGE_TARGET || 'initial';
         const targetThresholds = this.getCoverageThresholds(targetLevel);
-        this.originalConsole.log(`\n${blue}カバレッジ目標 (${this.getTargetLevelName(targetLevel)}):${reset}`);
         
+        // カバレッジ結果を簡潔に表示
         const statementsStatus = total.statements.pct >= targetThresholds.statements;
         const branchesStatus = total.branches.pct >= targetThresholds.branches;
         const functionsStatus = total.functions.pct >= targetThresholds.functions;
         const linesStatus = total.lines.pct >= targetThresholds.lines;
         
-        this.originalConsole.log(`ステートメント: ${statementsStatus ? green + '✓' : red + '✗'} ${total.statements.pct.toFixed(2)}% / 目標 ${targetThresholds.statements}%${reset}`);
-        this.originalConsole.log(`ブランチ: ${branchesStatus ? green + '✓' : red + '✗'} ${total.branches.pct.toFixed(2)}% / 目標 ${targetThresholds.branches}%${reset}`);
-        this.originalConsole.log(`関数: ${functionsStatus ? green + '✓' : red + '✗'} ${total.functions.pct.toFixed(2)}% / 目標 ${targetThresholds.functions}%${reset}`);
-        this.originalConsole.log(`行: ${linesStatus ? green + '✓' : red + '✗'} ${total.lines.pct.toFixed(2)}% / 目標 ${targetThresholds.lines}%${reset}`);
+        const coverageSummary = 
+          `カバレッジ目標 (${this.getTargetLevelName(targetLevel)}): ` +
+          `ステートメント: ${statementsStatus ? green + '✓' : red + '✗'} ${total.statements.pct.toFixed(1)}%${reset} | ` +
+          `ブランチ: ${branchesStatus ? green + '✓' : red + '✗'} ${total.branches.pct.toFixed(1)}%${reset} | ` +
+          `関数: ${functionsStatus ? green + '✓' : red + '✗'} ${total.functions.pct.toFixed(1)}%${reset} | ` +
+          `行: ${linesStatus ? green + '✓' : red + '✗'} ${total.lines.pct.toFixed(1)}%${reset}`;
         
-        // 目標達成状況（最小限モードでも表示）
+        this.originalConsole.log(coverageSummary);
+        
+        // 目標達成状況
         const allTargetsMet = statementsStatus && branchesStatus && functionsStatus && linesStatus;
         
         if (allTargetsMet) {
-          this.originalConsole.log(`\n${green}✓ 現在の目標段階(${targetLevel})のすべての目標を達成しています！${reset}`);
-          
-          // 次の目標を提案
-          if (targetLevel === 'initial') {
-            this.originalConsole.log(`${blue}次のステップ: ${yellow}-t mid${reset} オプションで中間段階の目標に挑戦しましょう`);
-          } else if (targetLevel === 'mid') {
-            this.originalConsole.log(`${blue}次のステップ: ${yellow}-t final${reset} オプションで最終段階の目標に挑戦しましょう`);
-          } else if (targetLevel === 'final') {
-            this.originalConsole.log(`${green}おめでとうございます！最終段階の目標を達成しました！${reset}`);
-          }
+          this.originalConsole.log(`${green}✓ すべてのカバレッジ目標を達成しています！${reset}`);
         } else {
-          this.originalConsole.log(`\n${yellow}⚠ 現在の目標段階(${targetLevel})のいくつかの目標がまだ達成されていません${reset}`);
+          this.originalConsole.log(`${yellow}⚠ いくつかのカバレッジ目標が未達成です${reset}`);
         }
       } catch (error) {
-        this.originalConsole.log(`${red}カバレッジ情報の取得に失敗しました: ${error.message}${reset}`);
+        this.originalConsole.log(`${red}カバレッジ情報の取得に失敗しました${reset}`);
       }
     } else {
-      this.originalConsole.log(`${yellow}⚠ カバレッジデータが結果ファイルに含まれていません。${reset}`);
-      this.originalConsole.log(`${blue}次回のテスト実行時には以下のコマンドを使用してください：${reset}`);
-      this.originalConsole.log(`${yellow}JEST_COVERAGE=true ./scripts/run-tests.sh ${process.argv.slice(2).join(' ')}${reset}`);
+      this.originalConsole.log(`${yellow}⚠ カバレッジデータが利用できません${reset}`);
     }
     
-    this.originalConsole.log('========================================');
-    
-    // レポートファイルの場所（常に表示）
-    this.originalConsole.log(`詳細結果は以下のファイルで確認できます:`);
-    this.originalConsole.log(`- ビジュアルレポート: ${blue}./test-results/visual-report.html${reset}`);
-    this.originalConsole.log(`- マークダウンログ: ${blue}./test-results/test-log.md${reset}`);
-    this.originalConsole.log(`- JSONデータ: ${blue}./test-results/detailed-results.json${reset}`);
-    
+    // 最終結果（成功/失敗）
     if (results.numFailedTests > 0) {
-      this.originalConsole.log(`\n${red}⚠ テスト失敗があります。上記のレポートファイルで詳細を確認してください。${reset}`);
+      this.originalConsole.log(`${red}⚠ テスト失敗があります${reset}`);
+      
+      // 簡潔な失敗情報（最大3件まで）
+      const failedTests = this.results.testResults.flatMap(fileResult =>
+        fileResult.testResults
+          .filter(test => test.status === 'failed')
+          .map(test => ({
+            file: path.relative(process.cwd(), fileResult.testFilePath),
+            title: test.title
+          }))
+      ).slice(0, 3);
+      
+      if (failedTests.length > 0) {
+        this.originalConsole.log(`${red}失敗したテスト（最大3件）:${reset}`);
+        failedTests.forEach((test, i) => {
+          this.originalConsole.log(`${i+1}. ${test.file}: ${test.title}`);
+        });
+        
+        if (this.results.numFailedTests > 3) {
+          this.originalConsole.log(`${yellow}... 他 ${this.results.numFailedTests - 3} 件${reset}`);
+        }
+      }
     } else {
-      this.originalConsole.log(`\n${green}✓ すべてのテストが成功しました！${reset}`);
+      this.originalConsole.log(`${green}✓ すべてのテストが成功しました！${reset}`);
     }
+    
+    // レポートファイルの場所（簡潔に表示）
+    this.originalConsole.log(`${blue}詳細レポート:${reset} ./test-results/visual-report.html`);
   }
 }
 
 module.exports = CustomReporter;
+

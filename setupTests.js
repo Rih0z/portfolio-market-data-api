@@ -100,58 +100,34 @@ global.originalConsole = {
   info: console.info
 };
 
-// テスト結果が詳細に出力されないよう完全に抑制
-// CI環境やDEBUGモード以外では出力を制御
+// テスト結果が詳細に出力されないようにオーバーライド
+// CI環境やDEBUGモードでは元の動作を維持
 if (process.env.CI !== 'true' && process.env.DEBUG !== 'true' && process.env.VERBOSE_MODE !== 'true') {
-  const isQuietMode = process.env.QUIET_MODE === 'true';
-  
-  // 標準出力を抑制
-  if (isQuietMode) {
-    // 完全に抑制（カスタムレポーターから制御するため）
-    console.log = () => {};
-    console.info = () => {};
-  } else {
-    // 部分的に抑制（デフォルトモード）
-    console.log = (...args) => {
-      // テスト開始・終了メッセージと重要な警告のみ表示
-      if (typeof args[0] === 'string' && (
-          args[0].includes('PASS') || 
-          args[0].includes('FAIL') || 
-          args[0].includes('ERROR') ||
-          args[0].startsWith('Test suite') ||
-          args[0].includes('Test Suites:') ||
-          args[0].includes('Tests:') ||
-          args[0].includes('Snapshots:') ||
-          args[0].includes('Time:')
-        )) {
-        global.originalConsole.log(...args);
-      }
-    };
-    console.info = (...args) => {
-      // 重要な情報のみ表示
-      if (typeof args[0] === 'string' && (
-          args[0].includes('IMPORTANT') ||
-          args[0].includes('[INFO]')
-        )) {
-        global.originalConsole.info(...args);
-      }
-    };
-  }
-  
-  // ただし、Jest自体の最終サマリー部分だけは表示する（QuietModeの場合）
-  if (isQuietMode) {
-    const originalConsoleLog = global.originalConsole.log;
-    global._consoleSummary = (msg) => {
-      if (typeof msg === 'string' && (
-        (msg.includes('Test Suites:') && msg.includes('Tests:') && msg.includes('Snapshots:')) ||
-        msg.includes('RUNS') ||
-        msg.includes('PASS') || 
-        msg.includes('FAIL')
+  // 標準出力をモック化
+  console.log = (...args) => {
+    // テスト開始・終了メッセージと重要な警告のみ表示
+    if (typeof args[0] === 'string' && (
+        args[0].includes('PASS') || 
+        args[0].includes('FAIL') || 
+        args[0].includes('ERROR') ||
+        args[0].startsWith('Test suite') ||
+        args[0].includes('Test Suites:') ||
+        args[0].includes('Tests:') ||
+        args[0].includes('Snapshots:') ||
+        args[0].includes('Time:')
       )) {
-        originalConsoleLog(msg);
-      }
-    };
-  }
+      global.originalConsole.log(...args);
+    }
+  };
+  console.info = (...args) => {
+    // 重要な情報のみ表示
+    if (typeof args[0] === 'string' && (
+        args[0].includes('IMPORTANT') ||
+        args[0].includes('[INFO]')
+      )) {
+      global.originalConsole.info(...args);
+    }
+  };
 }
 
 // 警告とエラーは常に表示
@@ -163,7 +139,7 @@ jest.spyOn(global.Date, 'now').mockImplementation(() => 1715900000000); // 2025-
 
 // テスト前後の共通処理
 beforeAll(async () => {
-  if (process.env.DEBUG === 'true') {
+  if (process.env.DEBUG === 'true' || process.env.VERBOSE_MODE === 'true') {
     global.originalConsole.log('Starting test suite with environment:', process.env.NODE_ENV);
     global.originalConsole.log('Test configuration:');
     global.originalConsole.log('- RUN_E2E_TESTS:', process.env.RUN_E2E_TESTS);
@@ -173,7 +149,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  if (process.env.DEBUG === 'true') {
+  if (process.env.DEBUG === 'true' || process.env.VERBOSE_MODE === 'true') {
     global.originalConsole.log('Test suite completed');
   }
   

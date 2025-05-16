@@ -56,8 +56,9 @@ const handler = async (event) => {
         event._formatErrorResponse(errorParams);
       }
       
-      // モジュール経由で関数を呼び出し（Jestのスパイ対応）
-      return await responseUtils.formatErrorResponse(errorParams);
+      // responseUtilsのformatErrorResponseを直接呼び出す
+      // スパイ対応のため、この方法に統一する
+      return responseUtils.formatErrorResponse(errorParams);
     }
     
     // Cookieを直接取得

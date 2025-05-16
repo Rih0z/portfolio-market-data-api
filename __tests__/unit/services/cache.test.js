@@ -1,5 +1,5 @@
 /**
- * ファイルパス: __tests__/unit/services/cacheService.test.js
+ * ファイルパス: __tests__/unit/services/cache.test.js
  * 
  * キャッシュサービスのユニットテスト
  * DynamoDBを使用したキャッシュ保存・読込・有効期限のテスト
@@ -8,7 +8,6 @@
  * @created 2025-05-13
  */
 
-// インポートパスを修正: cacheService → cache
 const cacheService = require('../../../src/services/cache');
 const { getDynamoDBClient } = require('../../../src/utils/dynamoDbService');
 const { withRetry } = require('../../../src/utils/retry');

@@ -835,15 +835,15 @@ class EvaNervReporter {
         `;
       }
       
-      // カバレッジチャート用のプレースホルダー
+      // カバレッジチャート用のプレースホルダー - ID追加
       html += `
-        <div class="coverage-charts">
+        <div id="coverage-charts" class="coverage-charts">
           <h2>コードカバレッジチャート</h2>
-          <div class="chart-container">
+          <div id="bar-chart-container" class="chart-container">
             <!-- バーチャートはここに挿入されます -->
             <p style="color: var(--nerv-green);">グラフデータ解析中...</p>
           </div>
-          <div class="chart-container">
+          <div id="line-chart-container" class="chart-container">
             <!-- 折れ線チャートはここに挿入されます -->
             <p style="color: var(--nerv-green);">履歴データ解析中...</p>
           </div>

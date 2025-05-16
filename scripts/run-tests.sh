@@ -1,4 +1,14 @@
-#!/bin/bash
+# Jestオプションの追加
+  if [ $QUIET_MODE -eq 1 ]; then
+    # --silent: Jestのコンソール出力を抑制
+    # --no-coverage-reporters: 標準出力にカバレッジを表示しない
+    JEST_ARGS="$JEST_ARGS --silent --no-summary --reporters=./custom-reporter.js"
+    
+    # カバレッジレポーターを非表示に設定
+    if [ $NO_COVERAGE -ne 1 ] && [ $HTML_COVERAGE -ne 1 ]; then
+      JEST_ARGS="$JEST_ARGS --coverageReporters=json --no-coverage-reporters"
+    fi
+  fi#!/bin/bash
 # 
 # ファイルパス: scripts/run-tests.sh (更新版)
 # 
@@ -63,7 +73,7 @@ show_help() {
   echo "  -i, --ignore-coverage-errors テスト自体は成功してもカバレッジエラーを無視"
   echo "  -s, --specific              特定のファイルまたはパターンに一致するテストのみ実行"
   echo "  -t, --target                カバレッジ目標段階を指定 [initial|mid|final]"
-  echo "  -v, --verbose               詳細なテスト出力を表示（デフォルトは最小限出力）"
+  echo "  -q, --quiet                詳細出力を完全に抑制（最小限の結果と進捗バーのみ表示）"
   echo "  --html-coverage             HTMLカバレッジレポートをブラウザで開く"
   echo "  --chart                     カバレッジをチャートで生成（ビジュアルレポートに追加）"
   echo "  --junit                     JUnit形式のレポートを生成（CI環境用）"
@@ -104,7 +114,7 @@ show_help() {
   echo "  $0 unit:services    サービス層の単体テストのみ実行"
   echo "  $0 --chart all      すべてのテストを実行し、カバレッジチャートを生成"
   echo "  $0 -t mid all       中間段階のカバレッジ目標を設定してすべてのテストを実行"
-  echo "  $0 -v unit          詳細なテスト出力を表示して単体テストを実行"
+  echo "  $0 -q unit             詳細出力を完全に抑制して単体テストを実行"
   echo ""
 }
 
@@ -123,6 +133,7 @@ HTML_COVERAGE=0
 GENERATE_CHART=0
 JUNIT_REPORT=0
 FORCE_COVERAGE=0
+QUIET_MODE=1
 VERBOSE_MODE=0
 SPECIFIC_PATTERN=""
 TEST_TYPE=""
@@ -180,8 +191,14 @@ while [[ $# -gt 0 ]]; do
       COVERAGE_TARGET="$2"
       shift 2
       ;;
+    -q|--quiet)
+      QUIET_MODE=1
+      VERBOSE_MODE=0
+      shift
+      ;;
     -v|--verbose)
       VERBOSE_MODE=1
+      QUIET_MODE=0
       shift
       ;;
     --html-coverage)
@@ -597,6 +614,11 @@ if [ $DEBUG_MODE -eq 1 ]; then
   print_info "デバッグログが有効です"
 fi
 
+if [ $QUIET_MODE -eq 1 ]; then
+  ENV_VARS="$ENV_VARS QUIET_MODE=true"
+  print_info "最小限出力モードが有効です"
+fi
+
 if [ $VERBOSE_MODE -eq 1 ]; then
   ENV_VARS="$ENV_VARS VERBOSE_MODE=true"
   print_info "詳細な出力モードが有効です"
@@ -892,4 +914,3 @@ else
 fi
 
 exit $TEST_RESULT
-

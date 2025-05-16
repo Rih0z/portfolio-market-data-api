@@ -32,7 +32,12 @@ class CustomReporter {
     };
     
     // コンソール出力の設定
-    this.quietMode = process.env.CI !== 'true' && process.env.DEBUG !== 'true'; 
+    this.quietMode = process.env.CI !== 'true' && 
+                     process.env.DEBUG !== 'true' && 
+                     process.env.VERBOSE_MODE !== 'true';
+    
+    // 強制的に最小限出力を有効化
+    this.superQuietMode = process.env.QUIET_MODE === 'true'; 
     
     // オリジナルのコンソール出力を保存
     this.originalConsole = {
@@ -60,33 +65,33 @@ class CustomReporter {
    */
   printProgress(message, type = 'info') {
     if (this.quietMode) {
-      // 最小限モードでは特定のメッセージのみを表示
-      // 常に表示：テスト開始/終了、成功/失敗数、エラー
-      
-      let color = this.colors.reset;
-      let prefix = '';
-      
-      switch (type) {
-        case 'success':
-          color = this.colors.green;
-          prefix = '✓ ';
-          break;
-        case 'warn':
-          color = this.colors.yellow;
-          prefix = '⚠ ';
-          break;
-        case 'error':
-          color = this.colors.red;
-          prefix = '✗ ';
-          break;
-        case 'info':
-        default:
-          color = this.colors.blue;
-          prefix = '• ';
-          break;
+      // 最小限モードでも失敗と重要なメッセージは表示
+      if (type === 'error' || (this.superQuietMode && type === 'error')) {
+        let color = this.colors.reset;
+        let prefix = '';
+        
+        switch (type) {
+          case 'success':
+            color = this.colors.green;
+            prefix = '✓ ';
+            break;
+          case 'warn':
+            color = this.colors.yellow;
+            prefix = '⚠ ';
+            break;
+          case 'error':
+            color = this.colors.red;
+            prefix = '✗ ';
+            break;
+          case 'info':
+          default:
+            color = this.colors.blue;
+            prefix = '• ';
+            break;
+        }
+        
+        this.originalConsole.log(`${color}${prefix}${message}${this.colors.reset}`);
       }
-      
-      this.originalConsole.log(`${color}${prefix}${message}${this.colors.reset}`);
     } else {
       // 通常モードでは全て表示
       this.originalConsole.log(message);
@@ -98,6 +103,26 @@ class CustomReporter {
    */
   onRunStart(results, options) {
     this.startTime = Date.now();
+    
+    // コンソールの動作を制御
+    if (this.superQuietMode) {
+      // 完全に静かなモードの場合、Jest内部の出力も抑制
+      process.stdout.write = ((write) => {
+        return (chunk, encoding, callback) => {
+          // 進捗バーと最終結果のみ表示
+          if (typeof chunk === 'string' && 
+              (chunk.startsWith('[') || 
+               chunk.includes('テスト実行') ||
+               chunk.includes('Test Suites:'))) {
+            return write.call(process.stdout, chunk, encoding, callback);
+          }
+          // その他は無視
+          if (callback) callback();
+          return true;
+        };
+      })(process.stdout.write);
+    }
+    
     this.printProgress('テスト実行を開始します...', 'info');
     
     // 進捗状況を表示するためのカウンター初期化
@@ -146,8 +171,8 @@ class CustomReporter {
     // 進捗バーを更新
     this.updateProgressBar(this.progressCount, this.totalTestCount);
     
-    // 失敗したテストがある場合のみ報告
-    if (testResult.numFailingTests > 0) {
+    // 失敗したテストがある場合は進捗バーのみを表示
+    if (testResult.numFailingTests > 0 && !this.superQuietMode) {
       const relativePath = path.relative(process.cwd(), testResult.testFilePath);
       process.stdout.write(`\r${this.colors.red}✗ ${relativePath}: ${testResult.numFailingTests}件失敗${this.colors.reset}\n`);
       // 進捗バーを再表示
@@ -180,7 +205,7 @@ class CustomReporter {
       if (this.pendingCount > 0) status += `${this.colors.yellow}- ${this.pendingCount}${this.colors.reset} `;
       
       // 進捗行を作成
-      this.lastProgressLine = `\r[${bar}] ${percent}% (${current}/${total}) ${status}`;
+      this.lastProgressLine = `\r[${bar}] ${percent}% (${current}/${total || 0}) ${status}`;
       
       // 前の行を上書き
       process.stdout.write(this.lastProgressLine);
@@ -656,6 +681,9 @@ class CustomReporter {
     const blue = this.colors.blue;
     const reset = this.colors.reset;
     
+    // 空行を追加して進捗バーとの間隔を空ける
+    this.originalConsole.log('');
+    
     // 簡潔な結果表示（常に表示）
     this.originalConsole.log(`${blue}========== テスト実行結果 ==========${reset}`);
     this.originalConsole.log(`実行時間: ${((this.endTime - this.startTime) / 1000).toFixed(2)}秒`);
@@ -695,13 +723,15 @@ class CustomReporter {
         
         if (allTargetsMet) {
           this.originalConsole.log(`${green}✓ すべてのカバレッジ目標を達成しています！${reset}`);
-        } else {
+        } else if (!this.superQuietMode) {
           this.originalConsole.log(`${yellow}⚠ いくつかのカバレッジ目標が未達成です${reset}`);
         }
       } catch (error) {
-        this.originalConsole.log(`${red}カバレッジ情報の取得に失敗しました${reset}`);
+        if (!this.superQuietMode) {
+          this.originalConsole.log(`${red}カバレッジ情報の取得に失敗しました${reset}`);
+        }
       }
-    } else {
+    } else if (!this.superQuietMode) {
       this.originalConsole.log(`${yellow}⚠ カバレッジデータが利用できません${reset}`);
     }
     
@@ -709,24 +739,27 @@ class CustomReporter {
     if (results.numFailedTests > 0) {
       this.originalConsole.log(`${red}⚠ テスト失敗があります${reset}`);
       
-      // 簡潔な失敗情報（最大3件まで）
-      const failedTests = this.results.testResults.flatMap(fileResult =>
-        fileResult.testResults
-          .filter(test => test.status === 'failed')
-          .map(test => ({
-            file: path.relative(process.cwd(), fileResult.testFilePath),
-            title: test.title
-          }))
-      ).slice(0, 3);
-      
-      if (failedTests.length > 0) {
-        this.originalConsole.log(`${red}失敗したテスト（最大3件）:${reset}`);
-        failedTests.forEach((test, i) => {
-          this.originalConsole.log(`${i+1}. ${test.file}: ${test.title}`);
-        });
+      // 最小限モードでは失敗件数だけを表示
+      if (!this.superQuietMode) {
+        // 簡潔な失敗情報（最大3件まで）
+        const failedTests = this.results.testResults.flatMap(fileResult =>
+          fileResult.testResults
+            .filter(test => test.status === 'failed')
+            .map(test => ({
+              file: path.relative(process.cwd(), fileResult.testFilePath),
+              title: test.title
+            }))
+        ).slice(0, 3);
         
-        if (this.results.numFailedTests > 3) {
-          this.originalConsole.log(`${yellow}... 他 ${this.results.numFailedTests - 3} 件${reset}`);
+        if (failedTests.length > 0) {
+          this.originalConsole.log(`${red}失敗したテスト（最大3件）:${reset}`);
+          failedTests.forEach((test, i) => {
+            this.originalConsole.log(`${i+1}. ${test.file}: ${test.title}`);
+          });
+          
+          if (this.results.numFailedTests > 3) {
+            this.originalConsole.log(`${yellow}... 他 ${this.results.numFailedTests - 3} 件${reset}`);
+          }
         }
       }
     } else {
@@ -739,4 +772,3 @@ class CustomReporter {
 }
 
 module.exports = CustomReporter;
-

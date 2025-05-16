@@ -105,11 +105,21 @@ global.originalConsole = {
 if (process.env.CI !== 'true' && process.env.DEBUG !== 'true' && process.env.VERBOSE_MODE !== 'true') {
   const isQuietMode = process.env.QUIET_MODE === 'true';
   
-  // 標準出力を抑制
+  // 標準出力を完全に抑制
   if (isQuietMode) {
-    // 完全に抑制（カスタムレポーターから制御するため）
+    // すべてのコンソール出力を抑制
     console.log = () => {};
     console.info = () => {};
+    console.warn = () => {};
+    console.error = () => {};
+    
+    // テスト実行時のconsole.groupも抑制
+    console.group = () => {};
+    console.groupEnd = () => {};
+    console.groupCollapsed = () => {};
+    
+    // Jestの内部出力も抑制
+    global._suppressConsole = true;
   } else {
     // 部分的に抑制（デフォルトモード）
     console.log = (...args) => {
@@ -138,23 +148,53 @@ if (process.env.CI !== 'true' && process.env.DEBUG !== 'true' && process.env.VER
     };
   }
   
-  // ただし、Jest自体の最終サマリー部分だけは表示する（QuietModeの場合）
+  // スタックトレースとエラーメッセージを抑制
   if (isQuietMode) {
-    const originalConsoleLog = global.originalConsole.log;
-    global._consoleSummary = (msg) => {
-      if (typeof msg === 'string' && (
-        (msg.includes('Test Suites:') && msg.includes('Tests:') && msg.includes('Snapshots:')) ||
-        msg.includes('RUNS') ||
-        msg.includes('PASS') || 
-        msg.includes('FAIL')
-      )) {
-        originalConsoleLog(msg);
+    // Jestのスタックトレース表示を抑制する試み
+    Error.prepareStackTrace = (_, stack) => '';
+    
+    // エラーログを書き換えるためのプロキシ
+    const errorProxyHandler = {
+      get(target, prop) {
+        if (prop === 'stack') return '';
+        return target[prop];
       }
+    };
+    
+    // エラーオブジェクトのプロトタイプを変更
+    const originalErrorCreate = Error.create;
+    Error.create = function(message) {
+      const err = originalErrorCreate.call(this, message);
+      return new Proxy(err, errorProxyHandler);
     };
   }
 }
 
-// 警告とエラーは常に表示
+// テストファイル内でのコンソール出力を抑制するヘルパー関数
+global.suppressConsoleOutput = () => {
+  const originalConsole = {
+    log: console.log,
+    info: console.info,
+    warn: console.warn,
+    error: console.error
+  };
+  
+  // すべてのコンソール出力を抑制
+  console.log = () => {};
+  console.info = () => {};
+  console.warn = () => {};
+  console.error = () => {};
+  
+  // オリジナルのコンソール関数を復元する関数を返す
+  return () => {
+    console.log = originalConsole.log;
+    console.info = originalConsole.info;
+    console.warn = originalConsole.warn;
+    console.error = originalConsole.error;
+  };
+};
+
+// 警告とエラーは常に表示（デフォルトの状態）
 console.warn = global.originalConsole.warn;
 console.error = global.originalConsole.error;
 

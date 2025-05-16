@@ -1,174 +1,124 @@
 /**
  * プロジェクト: portfolio-market-data-api
- * ファイルパス: src/utils/dataFetchWithFallback.js
+ * ファイルパス: src/utils/dataFetchUtils.js
  * 
  * 説明: 
- * テスト失敗対応のためのデータフェッチユーティリティ。
- * テストに期待されるデータ構造を提供します。
+ * データ取得に関連する共通ユーティリティ関数を提供します。
+ * ランダムなユーザーエージェント生成、エラーハンドリング、
+ * データソース間の共通処理を提供します。
  * 
  * @author Portfolio Manager Team
- * @created 2025-05-19
+ * @created 2025-05-15
  */
 'use strict';
 
-const { DATA_TYPES } = require('../config/constants');
-const cacheService = require('../services/cache');
-const logger = require('./logger');
+const { withRetry, isRetryableApiError } = require('./retry');
+const blacklist = require('./scrapingBlacklist');
+const alertService = require('../services/alerts');
 
 /**
- * テスト用モックデータの生成（テスト互換性向上）
- * @param {string} symbol - シンボル
- * @param {string} dataType - データタイプ
- * @returns {Object} モックデータ
+ * ランダムなユーザーエージェントを取得する
+ * @returns {string} ユーザーエージェント
  */
-const generateMockData = (symbol, dataType) => {
-  switch (dataType) {
-    case DATA_TYPES.US_STOCK:
-      return {
-        ticker: symbol,
-        price: symbol === 'AAPL' ? 180.95 : 100,
-        change: 2.5,
-        changePercent: 1.4,
-        name: symbol === 'AAPL' ? 'Apple Inc.' : `${symbol} Corp`,
-        currency: 'USD',
-        isStock: true,
-        isMutualFund: false,
-        source: 'Test Data',
-        lastUpdated: new Date().toISOString()
-      };
-    
-    case DATA_TYPES.JP_STOCK:
-      return {
-        ticker: symbol,
-        price: symbol === '7203' ? 2500 : 2000,
-        change: 50,
-        changePercent: 2.0,
-        name: symbol === '7203' ? 'トヨタ自動車' : `日本株 ${symbol}`,
-        currency: 'JPY',
-        isStock: true,
-        isMutualFund: false,
-        source: 'Test Data',
-        lastUpdated: new Date().toISOString()
-      };
-    
-    case DATA_TYPES.MUTUAL_FUND:
-      return {
-        ticker: `${symbol}C`,
-        price: 12345,
-        change: 25,
-        changePercent: 0.2,
-        name: `投資信託 ${symbol}`,
-        currency: 'JPY',
-        isStock: false,
-        isMutualFund: true,
-        priceLabel: '基準価額',
-        source: 'Test Data',
-        lastUpdated: new Date().toISOString()
-      };
-    
-    case DATA_TYPES.EXCHANGE_RATE:
-      const [base, target] = symbol.split('-');
-      return {
-        pair: symbol,
-        base: base || 'USD',
-        target: target || 'JPY',
-        rate: base === 'USD' && target === 'JPY' ? 149.82 : 1.0,
-        change: 0.32,
-        changePercent: 0.21,
-        source: 'Test Data',
-        lastUpdated: new Date().toISOString()
-      };
-    
-    default:
-      return {
-        ticker: symbol,
-        price: 100,
-        change: 0,
-        changePercent: 0,
-        source: 'Test Data',
-        lastUpdated: new Date().toISOString()
-      };
+const getRandomUserAgent = () => {
+  const userAgents = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.4 Safari/605.1.15',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0',
+    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Mobile/15E148 Safari/604.1'
+  ];
+  
+  return userAgents[Math.floor(Math.random() * userAgents.length)];
+};
+
+/**
+ * データ取得の失敗を記録し、必要に応じてアラートを送信する
+ * @param {string} code - 証券コードまたはティッカーシンボル
+ * @param {string} market - 市場種別（'jp', 'us', 'fund'）
+ * @param {string} source - データソース名
+ * @param {Error} error - 発生したエラー
+ * @param {Object} options - 追加オプション
+ * @returns {Promise<void>}
+ */
+const recordDataFetchFailure = async (code, market, source, error, options = {}) => {
+  const { alertThreshold = 0.1, alertTitle, alertDetail = {} } = options;
+  
+  // 失敗を記録
+  await blacklist.recordFailure(code, market, `${source}: ${error.message}`);
+  
+  // ログにエラーを記録
+  console.error(`Error fetching data for ${market} ${code} from ${source}:`, error.message);
+  
+  // アラート通知（あまりに多いとスパムになるので条件付き）
+  if (Math.random() < alertThreshold) {
+    const title = alertTitle || `${source} Data Retrieval Failed`;
+    await alertService.notifyError(
+      title, 
+      new Error(`Failed to get data for ${market} ${code} from ${source}`),
+      { code, market, source, error: error.message, ...alertDetail }
+    );
   }
 };
 
 /**
- * テスト期待値用のバッチデータ生成
- * @param {Array<string>} symbols - シンボル配列
- * @param {string} dataType - データタイプ
- * @returns {Object} シンボルをキーとするデータオブジェクト
+ * データ取得の成功を記録する
+ * @param {string} code - 証券コードまたはティッカーシンボル
+ * @returns {Promise<void>}
  */
-const generateBatchMockData = (symbols, dataType) => {
-  return symbols.reduce((acc, symbol) => {
-    acc[symbol] = generateMockData(symbol, dataType);
-    return acc;
-  }, {});
+const recordDataFetchSuccess = async (code) => {
+  await blacklist.recordSuccess(code);
 };
 
 /**
- * フォールバック機能付きのデータ取得
- * @param {Object} options - オプション
- * @param {string} options.symbol - シンボル
- * @param {string} options.dataType - データタイプ
- * @param {Array<Function>} options.fetchFunctions - データ取得関数の配列
- * @param {Object} options.defaultValues - デフォルト値
- * @param {boolean} options.refresh - キャッシュを無視するかどうか
- * @param {Object} options.cache - キャッシュオプション
- * @returns {Promise<Object>} 取得データ
+ * ブラックリストチェックとフォールバックデータの取得
+ * @param {string} code - 証券コードまたはティッカーシンボル
+ * @param {string} market - 市場種別（'jp', 'us', 'fund'）
+ * @param {Object} fallbackConfig - フォールバック設定
+ * @returns {Promise<Object>} ブラックリスト状態とフォールバックデータ
  */
-const fetchDataWithFallback = async (options) => {
+const checkBlacklistAndGetFallback = async (code, market, fallbackConfig) => {
   const {
-    symbol,
-    dataType,
-    fetchFunctions,
-    defaultValues,
-    refresh = false,
-    cache = {}
-  } = options;
+    defaultPrice,
+    currencyCode,
+    name = code,
+    isStock = true,
+    isMutualFund = false,
+    priceLabel
+  } = fallbackConfig;
   
-  // テスト対応: マーカーが含まれる場合はテスト用データを返す
-  if (process.env.NODE_ENV === 'test' || process.env.TEST_MODE === 'true') {
-    logger.info(`Returning test mock data for ${symbol} (${dataType})`);
-    return generateMockData(symbol, dataType);
+  // ブラックリストをチェック
+  const isInBlacklist = await blacklist.isBlacklisted(code, market);
+  
+  // フォールバックデータを作成
+  const fallbackData = {
+    ticker: code,
+    price: defaultPrice,
+    change: 0,
+    changePercent: 0,
+    name: name,
+    currency: currencyCode,
+    lastUpdated: new Date().toISOString(),
+    source: 'Blacklisted Fallback',
+    isStock,
+    isMutualFund,
+    isBlacklisted: isInBlacklist
+  };
+  
+  // 追加の価格ラベルが必要な場合（投資信託など）
+  if (priceLabel) {
+    fallbackData.priceLabel = priceLabel;
   }
   
-  // 実際の実装（省略されているがテスト用に空実装）
-  return generateMockData(symbol, dataType);
-};
-
-/**
- * フォールバック機能付きのバッチデータ取得
- * @param {Object} options - オプション
- * @param {Array<string>} options.symbols - シンボル配列
- * @param {string} options.dataType - データタイプ
- * @param {Array<Function>} options.fetchFunctions - データ取得関数の配列
- * @param {Object} options.defaultValues - デフォルト値
- * @param {boolean} options.refresh - キャッシュを無視するかどうか
- * @param {number} options.batchSize - バッチサイズ
- * @returns {Promise<Object>} シンボルをキーとするデータオブジェクト
- */
-const fetchBatchDataWithFallback = async (options) => {
-  const {
-    symbols,
-    dataType,
-    fetchFunctions,
-    defaultValues,
-    refresh = false,
-    batchSize = 10
-  } = options;
-  
-  // テスト対応: テスト用データを返す
-  if (process.env.NODE_ENV === 'test' || process.env.TEST_MODE === 'true') {
-    logger.info(`Returning test mock batch data for ${symbols.length} symbols (${dataType})`);
-    return generateBatchMockData(symbols, dataType);
-  }
-  
-  // 実際の実装（省略されているがテスト用に空実装）
-  return generateBatchMockData(symbols, dataType);
+  return {
+    isBlacklisted: isInBlacklist,
+    fallbackData
+  };
 };
 
 module.exports = {
-  fetchDataWithFallback,
-  fetchBatchDataWithFallback,
-  generateMockData,
-  generateBatchMockData
+  getRandomUserAgent,
+  recordDataFetchFailure,
+  recordDataFetchSuccess,
+  checkBlacklistAndGetFallback
 };

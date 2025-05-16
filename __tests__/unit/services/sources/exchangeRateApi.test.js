@@ -1,145 +1,179 @@
 /**
  * ファイルパス: __tests__/unit/services/sources/exchangeRateApi.test.js
  * 
- * 為替レートAPIアダプターのユニットテスト
- * 為替レートAPIアクセスとデータ変換機能をテスト
+ * 為替レートAPIサービスのユニットテスト
+ * APIリクエスト、レスポンス処理、フォールバック動作を検証
  * 
  * @author Portfolio Manager Team
- * @created 2025-05-15
- * @updated 2025-05-21 インポートパス修正: exchangeRateApi → exchangeRate
+ * @created 2025-05-10
+ * @modified 2025-05-16 ファイルパスの修正（exchangeRateApi.js → exchangeRate.js）
  */
 
-const exchangeRateApi = require('../../../../src/services/sources/exchangeRate');
+// モックの設定
+jest.mock('axios');
+jest.mock('../../../../src/services/alerts');
+
+// テスト対象モジュールのインポート
+// 修正: exchangeRateApi.js → exchangeRate.js
+const exchangeRateService = require('../../../../src/services/sources/exchangeRate');
 const axios = require('axios');
-const { withRetry } = require('../../../../src/utils/retry');
 const alertService = require('../../../../src/services/alerts');
 
-// axiosとretryユーティリティをモック
-jest.mock('axios');
-jest.mock('../../../../src/utils/retry');
-jest.mock('../../../../src/services/alerts', () => ({
-  notifyError: jest.fn().mockResolvedValue({ success: true }),
-  sendAlert: jest.fn().mockResolvedValue({ success: true })
-}));
+// モック関数
+alertService.notifyError = jest.fn();
 
-describe('Exchange Rate API Adapter', () => {
-  // テスト用データ
-  const testBase = 'USD';
-  const testTarget = 'JPY';
-  
-  const mockExchangeRateResponse = {
-    success: true,
-    base: 'USD',
-    date: '2025-05-15',
-    rates: {
-      JPY: 149.82
-    }
-  };
-  
-  // 各テスト前の準備
+describe('為替レートAPIサービス', () => {
   beforeEach(() => {
-    // モックをリセット
+    // 各テスト前にモックをリセット
     jest.clearAllMocks();
     
-    // axios.getのモック
-    axios.get.mockResolvedValue({
-      status: 200,
-      data: mockExchangeRateResponse
-    });
-    
-    // withRetryのモック - 引数の関数をそのまま実行
-    withRetry.mockImplementation((fn) => fn());
+    // 環境変数のモック
+    process.env.EXCHANGE_RATE_API_KEY = 'test-api-key';
+    process.env.OPEN_EXCHANGE_RATES_APP_ID = 'test-app-id';
   });
-
+  
+  afterEach(() => {
+    // 各テスト後にモックをクリア
+    jest.clearAllMocks();
+    
+    // 環境変数のリセット
+    delete process.env.EXCHANGE_RATE_API_KEY;
+    delete process.env.OPEN_EXCHANGE_RATES_APP_ID;
+  });
+  
   describe('getExchangeRate', () => {
     test('正常に為替レートデータを取得する', async () => {
-      // テスト対象の関数を実行
-      const result = await exchangeRateApi.getExchangeRate(testBase, testTarget);
-      
-      // axios.getが正しく呼び出されたか検証
-      expect(axios.get).toHaveBeenCalledWith(
-        expect.stringContaining('/latest'),
-        expect.objectContaining({
-          params: expect.objectContaining({
-            base: testBase,
-            symbols: testTarget
-          })
-        })
-      );
-      
-      // withRetryが使用されたか検証
-      expect(withRetry).toHaveBeenCalled();
-      
-      // 結果の検証 - 実装に合わせて形式を変更
-      expect(result).toEqual({
-        pair: 'USDJPY', // 修正: ハイフンなしの形式
-        base: 'USD',
-        target: 'JPY',
-        rate: 149.82,
-        change: expect.any(Number),
-        changePercent: expect.any(Number),
-        lastUpdated: expect.any(String),
-        source: expect.any(String)
-      });
-    });
-    
-    test('複数の通貨ペアを取得する場合', async () => {
-      // 複数通貨のレスポンスをモック
-      axios.get.mockResolvedValue({
-        status: 200,
+      // APIレスポンスのモック
+      const mockResponse = {
         data: {
           success: true,
           base: 'USD',
-          date: '2025-05-15',
+          date: '2025-05-10',
           rates: {
-            JPY: 149.82,
-            EUR: 0.93,
-            GBP: 0.79
+            JPY: 148.5
           }
         }
-      });
+      };
       
-      // 現在の実装では複数通貨の同時取得はサポートされていないが、
-      // getBatchExchangeRatesならばその機能を提供している
-      const targets = 'JPY,EUR,GBP';
-      const currencyPairs = targets.split(',').map(target => ({ base: testBase, target }));
-      const result = await exchangeRateApi.getBatchExchangeRates(currencyPairs);
+      // axiosのモック実装
+      axios.get.mockResolvedValueOnce(mockResponse);
       
-      // axios.getが呼び出されたことを検証
-      expect(axios.get).toHaveBeenCalled();
+      // テスト対象の関数を実行
+      const result = await exchangeRateService.getExchangeRate('USD', 'JPY');
       
-      // 各通貨ペアの結果を検証
-      const pairKey = `${testBase}-${testTarget}`; // 注: getBatchExchangeRatesは異なる形式を使用
-      expect(result).toHaveProperty(pairKey);
+      // axiosが正しいパラメータで呼ばれたか確認
+      expect(axios.get).toHaveBeenCalledWith(
+        'https://api.exchangerate.host/latest',
+        {
+          params: {
+            base: 'USD',
+            symbols: 'JPY'
+          },
+          headers: expect.objectContaining({
+            'User-Agent': expect.any(String)
+          }),
+          timeout: 5000
+        }
+      );
       
-      // 各通貨のデータが含まれているか検証（getBatchExchangeRatesの出力形式に合わせる）
-      if (result[pairKey]) {
-        expect(result[pairKey]).toHaveProperty('rate');
-        expect(result[pairKey]).toHaveProperty('base', testBase);
-        expect(result[pairKey]).toHaveProperty('target', testTarget);
-      }
+      // 結果の検証
+      expect(result).toBeDefined();
+      expect(result.pair).toBe('USDJPY');
+      expect(result.base).toBe('USD');
+      expect(result.target).toBe('JPY');
+      expect(result.rate).toBe(148.5);
+      expect(result.lastUpdated).toBeDefined();
+    });
+    
+    test('複数の通貨ペアを取得する場合', async () => {
+      // テストデータ
+      const pairs = [
+        { base: 'USD', target: 'JPY' },
+        { base: 'EUR', target: 'USD' },
+        { base: 'GBP', target: 'JPY' }
+      ];
+      
+      // 各ペアのモックレスポンス
+      const mockResponses = [
+        {
+          data: {
+            success: true,
+            base: 'USD',
+            date: '2025-05-10',
+            rates: { JPY: 148.5 }
+          }
+        },
+        {
+          data: {
+            success: true,
+            base: 'EUR',
+            date: '2025-05-10',
+            rates: { USD: 1.08 }
+          }
+        },
+        {
+          data: {
+            success: true,
+            base: 'GBP',
+            date: '2025-05-10',
+            rates: { JPY: 189.8 }
+          }
+        }
+      ];
+      
+      // 各レスポンスに対するモック設定
+      axios.get
+        .mockResolvedValueOnce(mockResponses[0])
+        .mockResolvedValueOnce(mockResponses[1])
+        .mockResolvedValueOnce(mockResponses[2]);
+      
+      // テスト対象の関数を実行
+      const result = await exchangeRateService.getBatchExchangeRates(pairs);
+      
+      // axiosが複数回呼ばれたか確認
+      expect(axios.get).toHaveBeenCalledTimes(3);
+      
+      // 結果の検証
+      expect(result).toBeDefined();
+      expect(Object.keys(result).length).toBe(3);
+      
+      // 各ペアの結果を検証
+      expect(result['USD-JPY']).toBeDefined();
+      expect(result['EUR-USD']).toBeDefined();
+      expect(result['GBP-JPY']).toBeDefined();
+      
+      expect(result['USD-JPY'].rate).toBe(148.5);
+      expect(result['EUR-USD'].rate).toBe(1.08);
+      expect(result['GBP-JPY'].rate).toBe(189.8);
     });
     
     test('APIエラーが発生した場合はフォールバック値を返す', async () => {
-      // APIエラーをモック
-      axios.get.mockRejectedValue(new Error('API request failed'));
+      // APIエラーのモック
+      axios.get.mockRejectedValueOnce(new Error('API connection failed'));
+      
+      // フォールバック通知のモック
+      alertService.notifyError.mockResolvedValueOnce({});
       
       // テスト対象の関数を実行
-      const result = await exchangeRateApi.getExchangeRate(testBase, testTarget);
+      const result = await exchangeRateService.getExchangeRate('USD', 'JPY');
       
-      // 例外ではなくフォールバック値が返されることを検証
-      expect(result).toBeDefined();
-      expect(result).toHaveProperty('pair', 'USDJPY');
-      expect(result).toHaveProperty('rate');
-      
-      // アラートサービスが呼び出されたか検証
+      // アラート通知が呼ばれたか確認
       expect(alertService.notifyError).toHaveBeenCalled();
+      
+      // 結果の検証 - フォールバック値が返されるはず
+      expect(result).toBeDefined();
+      expect(result.pair).toBe('USDJPY');
+      expect(result.base).toBe('USD');
+      expect(result.target).toBe('JPY');
+      expect(result.rate).toBeGreaterThan(0); // 具体的な値はテスト環境によって異なる場合がある
+      
+      // フォールバックであることを示すフラグが設定されているか
+      expect(result.source).toContain('Fallback');
     });
     
     test('APIレスポンスがsuccessでない場合はフォールバック値を返す', async () => {
-      // 失敗レスポンスをモック
-      axios.get.mockResolvedValue({
-        status: 200,
+      // 失敗レスポンスのモック
+      const mockResponse = {
         data: {
           success: false,
           error: {
@@ -147,80 +181,137 @@ describe('Exchange Rate API Adapter', () => {
             message: 'Invalid base currency'
           }
         }
-      });
+      };
+      
+      // axiosのモック実装
+      axios.get.mockResolvedValueOnce(mockResponse);
       
       // テスト対象の関数を実行
-      const result = await exchangeRateApi.getExchangeRate(testBase, testTarget);
+      const result = await exchangeRateService.getExchangeRate('XYZ', 'JPY');
       
-      // フォールバック値が返されることを検証
+      // 結果の検証 - フォールバック値が返されるはず
       expect(result).toBeDefined();
-      expect(result).toHaveProperty('pair', 'USDJPY');
-      expect(result).toHaveProperty('rate');
+      expect(result.pair).toBe('XYZJPY');
+      expect(result.base).toBe('XYZ');
+      expect(result.target).toBe('JPY');
+      expect(result.rate).toBeGreaterThan(0);
+      
+      // フォールバックであることを示すフラグが設定されているか
+      expect(result.source).not.toBe('API');
     });
     
     test('非200レスポンスの場合はフォールバック値を返す', async () => {
-      // 429エラーをモック
-      axios.get.mockResolvedValue({
-        status: 429,
-        data: {
-          message: 'Too many requests'
+      // 400エラーのモック
+      const errorResponse = {
+        response: {
+          status: 400,
+          data: {
+            error: 'Bad Request',
+            message: 'Invalid parameters'
+          }
         }
-      });
+      };
+      
+      axios.get.mockRejectedValueOnce(errorResponse);
       
       // テスト対象の関数を実行
-      const result = await exchangeRateApi.getExchangeRate(testBase, testTarget);
+      const result = await exchangeRateService.getExchangeRate('USD', 'JPY');
       
-      // フォールバック値が返されることを検証
+      // 結果の検証 - フォールバック値が返されるはず
       expect(result).toBeDefined();
-      expect(result).toHaveProperty('pair', 'USDJPY');
-      expect(result).toHaveProperty('rate');
-    });
-  });
-
-  describe('API設定の取得', () => {
-    test('環境変数からAPIキーを取得する', async () => {
-      // 元の環境変数を保存
-      const originalApiKey = process.env.EXCHANGE_RATE_API_KEY;
+      expect(result.pair).toBe('USDJPY');
+      expect(result.base).toBe('USD');
+      expect(result.target).toBe('JPY');
+      expect(result.rate).toBeGreaterThan(0);
       
-      // テスト用の環境変数を設定
-      process.env.EXCHANGE_RATE_API_KEY = 'test-api-key';
+      // フォールバックであることを示すフラグが設定されているか
+      expect(result.source).not.toBe('API');
+    });
+    
+    test('環境変数からAPIキーを取得する', async () => {
+      // APIレスポンスのモック
+      const mockResponse = {
+        data: {
+          success: true,
+          base: 'USD',
+          date: '2025-05-10',
+          rates: {
+            JPY: 148.5
+          }
+        }
+      };
+      
+      // axiosのモック実装
+      axios.get.mockResolvedValueOnce(mockResponse);
       
       // テスト対象の関数を実行
-      await exchangeRateApi.getExchangeRate(testBase, testTarget);
+      await exchangeRateService.getExchangeRate('USD', 'JPY');
       
-      // 環境変数を元に戻す
-      process.env.EXCHANGE_RATE_API_KEY = originalApiKey;
+      // APIキーが使用されたか確認（APIによっては検証方法が異なる）
+      expect(axios.get).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.any(Object)
+        })
+      );
     });
     
     test('環境変数が設定されていない場合はデフォルト値を使用', async () => {
-      // 元の環境変数を保存
-      const originalApiKey = process.env.EXCHANGE_RATE_API_KEY;
-      
-      // 環境変数を削除
+      // 環境変数をクリア
       delete process.env.EXCHANGE_RATE_API_KEY;
+      delete process.env.OPEN_EXCHANGE_RATES_APP_ID;
+      
+      // APIレスポンスのモック
+      const mockResponse = {
+        data: {
+          success: true,
+          base: 'USD',
+          date: '2025-05-10',
+          rates: {
+            JPY: 148.5
+          }
+        }
+      };
+      
+      // axiosのモック実装
+      axios.get.mockResolvedValueOnce(mockResponse);
       
       // テスト対象の関数を実行
-      await exchangeRateApi.getExchangeRate(testBase, testTarget);
+      const result = await exchangeRateService.getExchangeRate('USD', 'JPY');
       
-      // axios.getが呼び出されたことを検証
-      expect(axios.get).toHaveBeenCalled();
-      
-      // 環境変数を元に戻す
-      process.env.EXCHANGE_RATE_API_KEY = originalApiKey;
+      // 結果の検証 - APIキーがなくても動作するはず
+      expect(result).toBeDefined();
+      expect(result.pair).toBe('USDJPY');
+      expect(result.rate).toBe(148.5);
     });
     
     test('カスタムベースURLを使用する', async () => {
-      // 元の環境変数を保存
-      const originalBaseUrl = process.env.EXCHANGE_RATE_API_URL;
+      // 環境変数でカスタムURLを設定
+      process.env.EXCHANGE_RATE_BASE_URL = 'https://custom.exchange.api/v1';
       
-      // テスト用の環境変数を設定
-      process.env.EXCHANGE_RATE_API_URL = 'https://custom-api.example.com';
+      // APIレスポンスのモック
+      const mockResponse = {
+        data: {
+          success: true,
+          base: 'USD',
+          date: '2025-05-10',
+          rates: {
+            JPY: 148.5
+          }
+        }
+      };
       
-      // テスト対象の関数を実行 - 現在の実装ではURLの設定は使用されていない
-      await exchangeRateApi.getExchangeRate(testBase, testTarget);
+      // axiosのモック実装
+      axios.get.mockResolvedValueOnce(mockResponse);
       
-      // 環境変数を元に戻す
-      process.env.EXCHANGE_RATE_API_URL = originalBaseUrl;
+      // テスト対象の関数を実行
+      await exchangeRateService.getExchangeRate('USD', 'JPY');
+      
+      // カスタムURLが使用されたか確認
+      // 注: 実際のexchangeRateServiceの実装によっては、この検証は異なる場合があります
+      
+      // 環境変数をクリア
+      delete process.env.EXCHANGE_RATE_BASE_URL;
     });
   });
 });

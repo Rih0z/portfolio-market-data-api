@@ -7,6 +7,7 @@
  * @author Portfolio Manager Team
  * @created 2025-05-15
  * @modified テストの安定性向上のため修正
+ * @modified 2025-05-16 インポートパスをソースコードの実際のパスに合わせて修正
  */
 
 const axios = require('axios');

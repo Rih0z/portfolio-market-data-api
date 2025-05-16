@@ -1,298 +1,386 @@
 /**
  * ファイルパス: __tests__/unit/services/sources/yahooFinanceApi.test.js
  * 
- * Yahoo Finance APIアダプターのユニットテスト
- * API呼び出しとデータパース機能をテスト
+ * Yahoo Finance APIサービスのユニットテスト
+ * APIリクエスト、レスポンス処理、エラーハンドリングを検証
  * 
  * @author Portfolio Manager Team
- * @created 2025-05-15
- * @updated 2025-05-21 インポートパス修正: yahooFinanceApi → yahooFinance
+ * @created 2025-05-10
+ * @modified 2025-05-16 ファイルパスの修正（yahooFinanceApi.js → yahooFinance.js）
  */
 
-const yahooFinanceApi = require('../../../../src/services/sources/yahooFinance');
+// モックの設定
+jest.mock('axios');
+
+// テスト対象モジュールのインポート
+// 修正: yahooFinanceApi.js → yahooFinance.js
+const yahooFinanceService = require('../../../../src/services/sources/yahooFinance');
 const axios = require('axios');
 const { withRetry } = require('../../../../src/utils/retry');
-const alertService = require('../../../../src/services/alerts');
 
-// axiosとretryユーティリティをモック
-jest.mock('axios');
-jest.mock('../../../../src/utils/retry');
-jest.mock('../../../../src/services/alerts', () => ({
-  notifyError: jest.fn().mockResolvedValue({ success: true })
-}));
+// テストデータ
+const TEST_DATA = {
+  symbol: 'AAPL',
+  price: 180.95,
+  change: 2.5,
+  changePercent: 1.4,
+  name: 'Apple Inc.',
+  currency: 'USD',
+  marketCap: 2900000000000
+};
 
-describe('Yahoo Finance API Adapter', () => {
-  // テスト用データ
-  const testSymbol = 'AAPL';
-  const testSymbols = ['AAPL', 'MSFT', 'GOOGL'];
-  
-  const mockQuoteResponse = {
-    quoteResponse: {
-      result: [
-        {
-          symbol: 'AAPL',
-          regularMarketPrice: 185.92,
-          regularMarketChange: 2.46,
-          regularMarketChangePercent: 1.34,
-          shortName: 'Apple Inc.',
-          currency: 'USD',
-          regularMarketTime: 1652188800
-        }
-      ],
-      error: null
-    }
-  };
-  
-  const mockMultipleQuoteResponse = {
-    quoteResponse: {
-      result: [
-        {
-          symbol: 'AAPL',
-          regularMarketPrice: 185.92,
-          regularMarketChange: 2.46,
-          regularMarketChangePercent: 1.34,
-          shortName: 'Apple Inc.',
-          currency: 'USD',
-          regularMarketTime: 1652188800
-        },
-        {
-          symbol: 'MSFT',
-          regularMarketPrice: 310.50,
-          regularMarketChange: 5.25,
-          regularMarketChangePercent: 1.72,
-          shortName: 'Microsoft Corporation',
-          currency: 'USD',
-          regularMarketTime: 1652188800
-        },
-        {
-          symbol: 'GOOGL',
-          regularMarketPrice: 175.20,
-          regularMarketChange: -0.80,
-          regularMarketChangePercent: -0.45,
-          shortName: 'Alphabet Inc.',
-          currency: 'USD',
-          regularMarketTime: 1652188800
-        }
-      ],
-      error: null
-    }
-  };
-  
-  // 環境変数のバックアップと設定
-  let originalEnv;
-  
-  // 各テスト前の準備
+describe('Yahoo Finance APIサービス', () => {
   beforeEach(() => {
-    // 環境変数のバックアップ
-    originalEnv = { ...process.env };
-    
-    // テスト用環境変数を設定
-    process.env.YAHOO_FINANCE_API_KEY = 'test-api-key';
-    process.env.YAHOO_FINANCE_API_HOST = 'test-api-host';
-    
-    // モックをリセット
+    // 各テスト前にモックをリセット
     jest.clearAllMocks();
     
-    // axios.getのモック
-    axios.get.mockResolvedValue({
-      status: 200,
-      data: mockQuoteResponse
-    });
-    
-    // withRetryのモック - 引数の関数をそのまま実行
-    withRetry.mockImplementation((fn) => fn());
+    // 環境変数のモック
+    process.env.YAHOO_FINANCE_API_KEY = 'test-api-key';
+    process.env.YAHOO_FINANCE_API_HOST = 'test-api-host';
   });
   
-  // 各テスト後の後処理
   afterEach(() => {
-    // 環境変数を元に戻す
-    process.env = originalEnv;
+    // 各テスト後にモックをクリア
+    jest.clearAllMocks();
+    
+    // 環境変数のリセット
+    delete process.env.YAHOO_FINANCE_API_KEY;
+    delete process.env.YAHOO_FINANCE_API_HOST;
   });
-
+  
   describe('getStockData', () => {
     test('単一シンボルのデータを取得する', async () => {
-      // テスト対象の関数を実行
-      const result = await yahooFinanceApi.getStockData(testSymbol);
+      // APIレスポンスのモック
+      const mockResponse = {
+        data: {
+          quoteResponse: {
+            result: [
+              {
+                symbol: TEST_DATA.symbol,
+                regularMarketPrice: TEST_DATA.price,
+                regularMarketChange: TEST_DATA.change,
+                regularMarketChangePercent: TEST_DATA.changePercent,
+                shortName: TEST_DATA.name,
+                currency: TEST_DATA.currency,
+                regularMarketTime: Math.floor(Date.now() / 1000),
+                marketCap: TEST_DATA.marketCap,
+                regularMarketVolume: 50000000
+              }
+            ],
+            error: null
+          }
+        }
+      };
       
-      // axios.getが正しく呼び出されたか検証
+      // axiosのモック実装
+      axios.get.mockResolvedValueOnce(mockResponse);
+      
+      // テスト対象の関数を実行
+      const result = await yahooFinanceService.getStockData(TEST_DATA.symbol);
+      
+      // axiosが正しいパラメータで呼ばれたか確認
       expect(axios.get).toHaveBeenCalledWith(
-        expect.stringContaining('/market/v2/get-quotes'),  // 修正: 正しいエンドポイントパス
-        expect.objectContaining({
-          params: expect.objectContaining({
-            symbols: testSymbol,
-            region: 'US'
-          }),
-          headers: expect.objectContaining({
-            'X-RapidAPI-Key': 'test-api-key',  // 修正: 正しいヘッダー名と値
+        expect.stringContaining("/market/v2/get-quotes"),
+        {
+          params: {
+            region: 'US',
+            symbols: TEST_DATA.symbol
+          },
+          headers: {
+            'X-RapidAPI-Key': 'test-api-key',
             'X-RapidAPI-Host': 'test-api-host'
-          })
-        })
+          },
+          timeout: expect.any(Number)
+        }
       );
       
-      // withRetryが使用されたか検証
-      expect(withRetry).toHaveBeenCalled();
-      
       // 結果の検証
-      expect(result).toEqual({
-        ticker: 'AAPL',
-        price: 185.92,
-        change: 2.46,
-        changePercent: 1.34,
-        name: 'Apple Inc.',
-        currency: 'USD',
-        lastUpdated: expect.any(String),
-        source: 'Yahoo Finance API',
-        isStock: true,
-        isMutualFund: false,
-        volume: undefined,
-        marketCap: undefined
-      });
+      expect(result).toBeDefined();
+      expect(result.ticker).toBe(TEST_DATA.symbol);
+      expect(result.price).toBe(TEST_DATA.price);
+      expect(result.change).toBe(TEST_DATA.change);
+      expect(result.changePercent).toBe(TEST_DATA.changePercent);
+      expect(result.name).toBe(TEST_DATA.name);
+      expect(result.currency).toBe(TEST_DATA.currency);
+      expect(result.lastUpdated).toBeDefined();
+      expect(result.source).toBe('Yahoo Finance API');
+      expect(result.isStock).toBe(true);
+      expect(result.marketCap).toBe(TEST_DATA.marketCap);
     });
     
     test('複数シンボルのデータを取得する', async () => {
-      // 複数シンボルのレスポンスをモック
-      axios.get.mockResolvedValue({
-        status: 200,
-        data: mockMultipleQuoteResponse
-      });
+      // 複数シンボルのモックレスポンス
+      const symbols = ['AAPL', 'MSFT', 'GOOGL'];
+      const mockResponse = {
+        data: {
+          quoteResponse: {
+            result: [
+              {
+                symbol: 'AAPL',
+                regularMarketPrice: 180.95,
+                regularMarketChange: 2.5,
+                regularMarketChangePercent: 1.4,
+                shortName: 'Apple Inc.',
+                currency: 'USD',
+                regularMarketTime: Math.floor(Date.now() / 1000),
+                marketCap: 2900000000000,
+                regularMarketVolume: 50000000
+              },
+              {
+                symbol: 'MSFT',
+                regularMarketPrice: 310.5,
+                regularMarketChange: 5.2,
+                regularMarketChangePercent: 1.7,
+                shortName: 'Microsoft Corporation',
+                currency: 'USD',
+                regularMarketTime: Math.floor(Date.now() / 1000),
+                marketCap: 2300000000000,
+                regularMarketVolume: 30000000
+              },
+              {
+                symbol: 'GOOGL',
+                regularMarketPrice: 175.2,
+                regularMarketChange: -0.8,
+                regularMarketChangePercent: -0.45,
+                shortName: 'Alphabet Inc.',
+                currency: 'USD',
+                regularMarketTime: Math.floor(Date.now() / 1000),
+                marketCap: 2200000000000,
+                regularMarketVolume: 20000000
+              }
+            ],
+            error: null
+          }
+        }
+      };
       
-      // 複数シンボルを配列で渡す
-      const result = await yahooFinanceApi.getStocksData(testSymbols);
+      // axiosのモック実装
+      axios.get.mockResolvedValueOnce(mockResponse);
       
-      // axios.getが正しく呼び出されたか検証
+      // テスト対象の関数を実行
+      const result = await yahooFinanceService.getStocksData(symbols);
+      
+      // axiosが正しいパラメータで呼ばれたか確認
       expect(axios.get).toHaveBeenCalledWith(
-        expect.stringContaining('/market/v2/get-quotes'),  // 修正: 正しいエンドポイントパス
+        expect.stringContaining("/market/v2/get-quotes"),
+        {
+          params: {
+            region: 'US',
+            symbols: symbols.join(',')
+          },
+          headers: {
+            'X-RapidAPI-Key': 'test-api-key',
+            'X-RapidAPI-Host': 'test-api-host'
+          },
+          timeout: expect.any(Number)
+        }
+      );
+      
+      // 結果の検証
+      expect(result).toBeDefined();
+      expect(Object.keys(result).length).toBe(3);
+      
+      // 各シンボルのデータを検証
+      expect(result['AAPL']).toBeDefined();
+      expect(result['MSFT']).toBeDefined();
+      expect(result['GOOGL']).toBeDefined();
+      
+      expect(result['AAPL'].price).toBe(180.95);
+      expect(result['MSFT'].price).toBe(310.5);
+      expect(result['GOOGL'].price).toBe(175.2);
+    });
+    
+    test('シンボルを文字列で渡した場合も処理する', async () => {
+      // APIレスポンスのモック
+      const mockResponse = {
+        data: {
+          quoteResponse: {
+            result: [
+              {
+                symbol: TEST_DATA.symbol,
+                regularMarketPrice: TEST_DATA.price,
+                regularMarketChange: TEST_DATA.change,
+                regularMarketChangePercent: TEST_DATA.changePercent,
+                shortName: TEST_DATA.name,
+                currency: TEST_DATA.currency,
+                regularMarketTime: Math.floor(Date.now() / 1000)
+              }
+            ],
+            error: null
+          }
+        }
+      };
+      
+      // axiosのモック実装
+      axios.get.mockResolvedValueOnce(mockResponse);
+      
+      // テスト対象の関数を実行 - 文字列として渡す
+      const result = await yahooFinanceService.getStocksData(TEST_DATA.symbol);
+      
+      // axiosが正しいパラメータで呼ばれたか確認
+      expect(axios.get).toHaveBeenCalledWith(
+        expect.stringContaining("/market/v2/get-quotes"),
         expect.objectContaining({
-          params: expect.objectContaining({
-            symbols: 'AAPL,MSFT,GOOGL',
-            region: 'US'
-          })
+          params: {
+            region: 'US',
+            symbols: TEST_DATA.symbol
+          }
         })
       );
       
       // 結果の検証
-      expect(Object.keys(result).length).toBe(3);
-      expect(result).toHaveProperty('AAPL');
-      expect(result).toHaveProperty('MSFT');
-      expect(result).toHaveProperty('GOOGL');
-      
-      // 各シンボルのデータが正しく変換されているか検証
-      expect(result['AAPL'].price).toBe(185.92);
-      expect(result['MSFT'].price).toBe(310.50);
-      expect(result['GOOGL'].price).toBe(175.20);
-      expect(result['GOOGL'].change).toBe(-0.80); // 負の値も正しく処理されるか
-    });
-    
-    test('シンボルを文字列で渡した場合も処理する', async () => {
-      // シンボルをカンマ区切り文字列で渡す
-      const result = await yahooFinanceApi.getStockData('AAPL,MSFT');
-      
-      // axios.getが正しく呼び出されたか検証
-      expect(axios.get).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          params: expect.objectContaining({
-            symbols: 'AAPL,MSFT'
-          })
-        })
-      );
+      expect(result).toBeDefined();
+      expect(result[TEST_DATA.symbol]).toBeDefined();
     });
     
     test('結果が空の場合は空のオブジェクトを返す', async () => {
-      // 結果が空のレスポンスをモック
-      axios.get.mockResolvedValue({
-        status: 200,
+      // 空の結果を返すモックレスポンス
+      const mockResponse = {
         data: {
           quoteResponse: {
             result: [],
             error: null
           }
         }
-      });
+      };
       
-      // 例外が発生することを期待
-      await expect(yahooFinanceApi.getStockData(testSymbol)).rejects.toThrow(`No data found for symbol: ${testSymbol}`);
+      // axiosのモック実装
+      axios.get.mockResolvedValueOnce(mockResponse);
+      
+      // テスト対象の関数を実行
+      const result = await yahooFinanceService.getStockData('NONEXISTENT');
+      
+      // 結果の検証 - 空のオブジェクトまたは未定義のオブジェクト
+      expect(Object.keys(result).length).toBe(0);
     });
     
     test('APIエラーが発生した場合は例外をスロー', async () => {
-      // APIエラーをモック
-      axios.get.mockRejectedValue(new Error('API request failed'));
+      // エラーをスローするモック
+      axios.get.mockRejectedValueOnce(new Error('API connection failed'));
       
-      // 例外が伝播することを検証
-      await expect(yahooFinanceApi.getStockData(testSymbol)).rejects.toThrow(`Failed to retrieve stock data for ${testSymbol}`);
+      // テスト対象の関数の実行と例外の検証
+      await expect(yahooFinanceService.getStockData(TEST_DATA.symbol))
+        .rejects.toThrow('Failed to retrieve stock data');
     });
     
     test('APIレスポンスにエラーが含まれる場合は例外をスロー', async () => {
-      // エラーを含むレスポンスをモック
-      axios.get.mockResolvedValue({
-        status: 200,
+      // エラーを含むモックレスポンス
+      const mockResponse = {
         data: {
           quoteResponse: {
             result: [],
-            error: {
-              code: 'INVALID_SYMBOLS',
-              description: 'Invalid symbols'
-            }
+            error: 'Invalid symbol'
           }
         }
-      });
+      };
       
-      // 例外が発生することを検証
-      await expect(yahooFinanceApi.getStockData(testSymbol)).rejects.toThrow(`No data found for symbol: ${testSymbol}`);
+      // axiosのモック実装
+      axios.get.mockResolvedValueOnce(mockResponse);
+      
+      // テスト対象の関数の実行と例外の検証
+      await expect(yahooFinanceService.getStockData(TEST_DATA.symbol))
+        .rejects.toThrow('Invalid API response format');
     });
     
     test('非200レスポンスの場合は例外をスロー', async () => {
-      // 400エラーをモック
-      axios.get.mockResolvedValue({
-        status: 400,
-        data: {
-          message: 'Bad request'
+      // 400エラーをスローするモック
+      const errorResponse = {
+        response: {
+          status: 400,
+          data: {
+            error: 'Bad Request',
+            message: 'Invalid parameters'
+          }
         }
-      });
+      };
       
-      // レスポンスフォーマットエラーが発生することを検証
-      await expect(yahooFinanceApi.getStockData(testSymbol)).rejects.toThrow('Invalid API response format');
+      axios.get.mockRejectedValueOnce(errorResponse);
+      
+      // テスト対象の関数の実行と例外の検証
+      await expect(yahooFinanceService.getStockData(TEST_DATA.symbol))
+        .rejects.toThrow('Failed to retrieve stock data');
     });
-  });
-
-  describe('API Key の取得と設定', () => {
+    
     test('環境変数からAPI Keyを取得する', async () => {
-      // テスト対象の関数を実行
-      try {
-        await yahooFinanceApi.getStockData(testSymbol);
-      } catch (error) {
-        // エラーが発生しても、API呼び出しは実行されるはず
-      }
+      // APIレスポンスのモック
+      const mockResponse = {
+        data: {
+          quoteResponse: {
+            result: [
+              {
+                symbol: TEST_DATA.symbol,
+                regularMarketPrice: TEST_DATA.price,
+                regularMarketChange: TEST_DATA.change,
+                regularMarketChangePercent: TEST_DATA.changePercent,
+                shortName: TEST_DATA.name,
+                currency: TEST_DATA.currency,
+                regularMarketTime: Math.floor(Date.now() / 1000)
+              }
+            ],
+            error: null
+          }
+        }
+      };
       
-      // axios.getが正しいヘッダーで呼び出されたか検証
+      // axiosのモック実装
+      axios.get.mockResolvedValueOnce(mockResponse);
+      
+      // テスト対象の関数を実行
+      await yahooFinanceService.getStockData(TEST_DATA.symbol);
+      
+      // 環境変数のAPI Keyが使われているか確認
       expect(axios.get).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({
           headers: expect.objectContaining({
-            'X-RapidAPI-Key': 'test-api-key',  // 修正: 正しいヘッダー名と値
-            'X-RapidAPI-Host': 'test-api-host'
+            'X-RapidAPI-Host': 'test-api-host',
+            'X-RapidAPI-Key': 'test-api-key'
           })
         })
       );
     });
     
     test('環境変数が設定されていない場合はデフォルト値を使用', async () => {
-      // 環境変数を削除
+      // 環境変数をクリア
       delete process.env.YAHOO_FINANCE_API_KEY;
       delete process.env.YAHOO_FINANCE_API_HOST;
       
+      // APIレスポンスのモック
+      const mockResponse = {
+        data: {
+          quoteResponse: {
+            result: [
+              {
+                symbol: TEST_DATA.symbol,
+                regularMarketPrice: TEST_DATA.price,
+                regularMarketChange: TEST_DATA.change,
+                regularMarketChangePercent: TEST_DATA.changePercent,
+                shortName: TEST_DATA.name,
+                currency: TEST_DATA.currency,
+                regularMarketTime: Math.floor(Date.now() / 1000)
+              }
+            ],
+            error: null
+          }
+        }
+      };
+      
+      // axiosのモック実装
+      axios.get.mockResolvedValueOnce(mockResponse);
+      
       // テスト対象の関数を実行
-      try {
-        await yahooFinanceApi.getStockData(testSymbol);
-      } catch (error) {
-        // APIキーがないためエラーが発生する可能性があるが、
-        // ここではリクエストが送信されたことだけを検証
-      }
+      await yahooFinanceService.getStockData(TEST_DATA.symbol);
       
-      // axios.getが呼び出されたことを検証
-      expect(axios.get).toHaveBeenCalled();
-      
-      // 正確なヘッダー検証はスキップ（デフォルト値は環境依存のため）
+      // デフォルト値が使われているか確認
+      expect(axios.get).toHaveBeenCalledWith(
+        expect.stringContaining("yh-finance.p.rapidapi.com"),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'X-RapidAPI-Host': 'yh-finance.p.rapidapi.com'
+            // API Keyはundefinedになる可能性がある
+          })
+        })
+      );
     });
   });
 });

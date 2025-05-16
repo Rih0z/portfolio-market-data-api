@@ -1,22 +1,16 @@
-/**
- * ファイルパス: __tests__/testUtils/environment.js
- * 
- * テスト環境のセットアップと破棄を管理するユーティリティ
- * 
- * @author Koki Riho
- * @created 2025-05-12
- * @updated 2025-05-12 修正: APIサーバー自動起動機能の追加、E2Eテスト実行条件の改善
- * @updated 2025-05-14 修正: 環境変数の拡張サポート、デバッグログの追加
- * @updated 2025-05-15 修正: モック初期化プロセスの改善、エラーハンドリング強化
- * @updated 2025-05-16 修正: テーブル作成のエラーハンドリングと安定性の向上
- */
-const { startDynamoDBLocal, stopDynamoDBLocal, createTestTable } = require('./dynamodbLocal');
-const { setupMockServer, stopMockServer } = require('./mockServer');
+// __tests__/testUtils/environment.js
+const { 
+  startDynamoDBLocal, 
+  stopDynamoDBLocal, 
+  createTables,
+  isDynamoDBRunning
+} = require('./dynamodbLocal');
+const { configureApiMocks } = require('./apiMocks');
+const { startMockServer, stopMockServer } = require('./mockServer');
+const { createDynamoDBClient } = require('../../src/utils/dynamoDbService');
 const { startApiServer, stopApiServer } = require('./apiServer');
-const { mockExternalApis, setupFallbackResponses } = require('./apiMocks');
-const axios = require('axios');
 
-// デバッグログを表示
+// Debug environment information
 console.log('==== ENVIRONMENT SETUP DEBUG INFO ====');
 console.log('現在の環境変数:');
 console.log('NODE_ENV:', process.env.NODE_ENV);
@@ -28,149 +22,97 @@ console.log('================================');
 
 /**
  * テスト環境をセットアップする
- * 修正: テーブル作成の順序とエラーハンドリングを改善
  */
 const setupTestEnvironment = async () => {
+  console.log('テスト環境のセットアップを開始します...');
+  
+  // Fix: Track setup progress for better error reporting
+  const setupStatus = {
+    dynamodb: false,
+    mockApi: false,
+    tables: false
+  };
+  
   try {
-    console.log('テスト環境のセットアップを開始します...');
-    
-    // テスト用の環境変数をセット
-    process.env.NODE_ENV = 'test';
-    process.env.DYNAMODB_ENDPOINT = 'http://localhost:8000';
-    
-    // 強制実行フラグをサポート
-    if (process.env.FORCE_TESTS !== 'true' && process.env.FORCE_TESTS !== 'false') {
-      process.env.FORCE_TESTS = 'false';
-    }
-    
-    // モック使用フラグを設定（優先度：環境変数 > デフォルト）
-    if (process.env.USE_API_MOCKS === undefined || process.env.USE_API_MOCKS === '') {
-      process.env.USE_API_MOCKS = 'true'; // テスト安定性のため、デフォルトでモックを有効化
-    }
-    
-    // 変数にも値を持たせておく（参照の容易さのため）
-    const useMocks = process.env.USE_API_MOCKS === 'true';
-    
-    // E2Eテストを実行する場合、APIサーバーを起動
-    if (process.env.RUN_E2E_TESTS === 'true') {
-      try {
-        await startApiServer();
-        console.log('✅ API server started successfully for E2E tests');
-      } catch (apiError) {
-        console.warn(`⚠️ Could not start API server: ${apiError.message}`);
-        console.warn('E2E tests that require a real API server will be skipped.');
-        
-        if (!useMocks) {
-          console.warn('Setting USE_API_MOCKS=true to allow tests to run with mock API server');
-          process.env.USE_API_MOCKS = 'true';
-        }
-      }
+    // APIサーバーを起動（統合テスト・E2Eテスト用）
+    if (!process.env.API_TEST_URL) {
+      const apiServerUrl = await startApiServer();
+      console.log(`✅ API server is running at ${apiServerUrl}`);
     } else {
-      // API サーバーが稼働しているか確認（手動起動の場合）
-      const apiBaseUrl = process.env.API_TEST_URL || 'http://localhost:3000';
-      try {
-        await axios.get(`${apiBaseUrl}/health`, { timeout: 5000 });
-        console.log(`✅ API server is running at ${apiBaseUrl}`);
-      } catch (apiError) {
-        console.warn(`⚠️ API server at ${apiBaseUrl} may not be running or not responding: ${apiError.message}`);
-        
-        if (useMocks) {
-          console.log('✅ Using mock APIs instead of real server');
-        } else {
-          console.warn('If you plan to run E2E tests, please either:');
-          console.warn('  1. Start the API server manually: npm run dev');
-          console.warn('  2. Set RUN_E2E_TESTS=true to auto-start the API server');
-          console.warn('  3. Set USE_API_MOCKS=true to use mock API server');
-          console.warn('  4. Set FORCE_TESTS=true to run tests regardless of server status');
-          
-          // 開発者による設定がない場合は、自動的にモックを有効化
-          if (process.env.FORCE_TESTS !== 'true' && process.env.USE_API_MOCKS !== 'true') {
-            console.log('Auto-enabling USE_API_MOCKS=true to allow tests to run');
-            process.env.USE_API_MOCKS = 'true';
-          }
-        }
-      }
+      console.log(`✅ Using external API server at ${process.env.API_TEST_URL}`);
     }
     
-    // モックAPIをセットアップ（USE_API_MOCKSが有効な場合）
-    if (process.env.USE_API_MOCKS === 'true') {
+    // モックAPIをセットアップ（API依存を除去）
+    if (process.env.USE_API_MOCKS !== 'false') {
       console.log('モックAPIをセットアップします...');
-      try {
-        // 1. モックサーバーをセットアップ
-        await setupMockServer().catch(error => {
-          console.warn(`Mock server setup warning: ${error.message}`);
-          console.warn('Will continue with other mock setup');
-        });
-        
-        // 2. 外部APIモックを設定
-        await mockExternalApis();
-        
-        // 3. フォールバックレスポンスも設定（未処理リクエスト対応）
-        await setupFallbackResponses();
-        
-        console.log('✅ Mock API setup completed');
-      } catch (mockError) {
-        console.warn(`Mock setup warning: ${mockError.message}`);
-        console.warn('Will attempt to continue with tests using available mocks');
+      
+      // モックサーバーを起動
+      await startMockServer();
+      
+      // モックを設定
+      await configureApiMocks();
+      
+      console.log('✅ Mock API setup completed');
+      setupStatus.mockApi = true;
+      
+      // 環境変数を設定
+      process.env.USE_API_MOCKS = 'true';
+    }
+    
+    // DynamoDB Localを起動
+    try {
+      // Fix: Check if DynamoDB is already running
+      const isRunning = await isDynamoDBRunning();
+      if (isRunning) {
+        console.log('DynamoDB Local is already running, skipping startup');
+        setupStatus.dynamodb = true;
+      } else {
+        await startDynamoDBLocal();
+        console.log('✅ DynamoDB Local started successfully');
+        setupStatus.dynamodb = true;
       }
-    }
-    
-    // DynamoDB Localを起動 - まず最初に実行して利用可能にする
-    try {
-      await startDynamoDBLocal();
-      console.log('✅ DynamoDB Local started successfully');
       
-      // 短い待機を追加して確実に起動するようにする
+      // Wait a moment for DynamoDB to be fully ready
       await new Promise(resolve => setTimeout(resolve, 1000));
-    } catch (dbError) {
-      console.warn(`DynamoDB Local startup warning: ${dbError.message}`);
-      console.warn('Continuing with tests, but DynamoDB-dependent tests may fail');
+    } catch (dynamoError) {
+      console.error('❌ Failed to start DynamoDB Local:', dynamoError.message);
+      // Continue with tests - some tests might still work without DynamoDB
     }
     
-    // テスト用のテーブルを作成 - 逐次処理に変更して信頼性を高める
-    try {
-      // テーブル名を明示的に設定
-      const sessionTableName = process.env.SESSION_TABLE || 'test-sessions';
-      const cacheTableName = `${process.env.DYNAMODB_TABLE_PREFIX || 'test-'}cache`;
-      const blacklistTableName = `${process.env.DYNAMODB_TABLE_PREFIX || 'test-'}scraping-blacklist`;
-      
-      // 逐次処理でテーブルを作成 - エラーが発生しても全体が失敗しないようにする
+    // テスト用のテーブルを作成
+    if (setupStatus.dynamodb) {
       console.log('Creating test tables sequentially for better reliability...');
       
-      // セッションテーブルを作成
+      // DynamoDB クライアントを作成
+      const dynamoDbClient = createDynamoDBClient();
+      
+      // Fix: Create tables one by one instead of all at once for better reliability
+      const prefix = process.env.TABLE_PREFIX || 'test';
       let sessionTableCreated = false;
-      try {
-        sessionTableCreated = await createTestTable(sessionTableName, { sessionId: 'S' });
-        if (sessionTableCreated) {
-          console.log(`✅ Created session table: ${sessionTableName}`);
-        }
-      } catch (tableError) {
-        console.warn(`Session table creation error: ${tableError.message}`);
-      }
-      
-      // キャッシュテーブルを作成
       let cacheTableCreated = false;
-      try {
-        cacheTableCreated = await createTestTable(cacheTableName, { key: 'S' });
-        if (cacheTableCreated) {
-          console.log(`✅ Created cache table: ${cacheTableName}`);
-        }
-      } catch (tableError) {
-        console.warn(`Cache table creation error: ${tableError.message}`);
-      }
-      
-      // ブラックリストテーブルを作成
       let blacklistTableCreated = false;
+      
       try {
-        blacklistTableCreated = await createTestTable(blacklistTableName, { symbol: 'S' });
-        if (blacklistTableCreated) {
-          console.log(`✅ Created blacklist table: ${blacklistTableName}`);
-        }
-      } catch (tableError) {
-        console.warn(`Blacklist table creation error: ${tableError.message}`);
+        // Create sessions table
+        sessionTableCreated = await createTables(dynamoDbClient, `${prefix}-sessions`);
+      } catch (e) {
+        console.warn(`Error creating sessions table: ${e.message}`);
       }
       
-      // 作成結果を表示
+      try {
+        // Create cache table
+        cacheTableCreated = await createTables(dynamoDbClient, `${prefix}-cache`);
+      } catch (e) {
+        console.warn(`Error creating cache table: ${e.message}`);
+      }
+      
+      try {
+        // Create blacklist table
+        blacklistTableCreated = await createTables(dynamoDbClient, `${prefix}-scraping-blacklist`);
+      } catch (e) {
+        console.warn(`Error creating blacklist table: ${e.message}`);
+      }
+      
       if (sessionTableCreated && cacheTableCreated && blacklistTableCreated) {
         console.log('✅ All test tables created successfully');
       } else {
@@ -182,52 +124,78 @@ const setupTestEnvironment = async () => {
       }
     } catch (tableError) {
       console.warn(`Test table creation error: ${tableError.message}`);
-      console.warn('Continuing with tests, but table-dependent tests may fail');
+      console.warn('Continuing without test tables - some tests may fail');
     }
     
     console.log('✅ テスト環境のセットアップが完了しました');
     
-    // 最終的な環境設定を表示
+    // Fix: Log final environment configuration
     console.log('==== FINAL ENVIRONMENT CONFIG ====');
     console.log('NODE_ENV:', process.env.NODE_ENV);
     console.log('USE_API_MOCKS:', process.env.USE_API_MOCKS);
     console.log('RUN_E2E_TESTS:', process.env.RUN_E2E_TESTS);
-    console.log('FORCE_TESTS:', process.env.FORCE_TESTS);
+    console.log('FORCE_TESTS:', process.env.FORCE_TESTS || false);
     console.log('================================');
     
+    return {
+      dynamodbStarted: setupStatus.dynamodb,
+      mockApiSetup: setupStatus.mockApi,
+      tablesCreated: setupStatus.tables
+    };
   } catch (error) {
-    console.error(`Test environment setup error: ${error.message}`);
-    console.warn('Continuing with tests, but some tests may fail');
+    console.error('❌ テスト環境のセットアップに失敗しました:', error);
+    throw error;
   }
 };
 
 /**
- * テスト環境を破棄する
+ * テスト環境をクリーンアップする
  */
-const teardownTestEnvironment = async () => {
+const cleanupTestEnvironment = async () => {
+  console.log('テスト環境のクリーンアップを開始...');
+  
   try {
-    console.log('テスト環境のクリーンアップを開始...');
-    
-    // APIサーバーを停止（自動起動した場合のみ）
-    if (process.env.RUN_E2E_TESTS === 'true') {
-      stopApiServer();
-    }
-    
     // DynamoDB Localを停止
-    stopDynamoDBLocal();
+    await stopDynamoDBLocal();
     
     // モックサーバーを停止
-    if (process.env.USE_API_MOCKS === 'true') {
-      stopMockServer();
-    }
+    await stopMockServer();
+    
+    // APIサーバーを停止
+    await stopApiServer();
     
     console.log('✅ Test environment cleaned up');
+    
+    return true;
   } catch (error) {
-    console.error(`Test environment teardown error: ${error.message}`);
+    console.error('❌ Test environment cleanup failed:', error);
+    return false;
   }
+};
+
+/**
+ * テスト実行前の環境チェック
+ * @returns {boolean} テストを実行すべきかどうか
+ */
+const shouldRunTests = () => {
+  // 強制実行フラグがある場合は常に実行
+  if (process.env.FORCE_TESTS === 'true') {
+    return true;
+  }
+  
+  // E2Eテストのみ実行フラグがある場合
+  if (process.env.RUN_E2E_TESTS === 'true') {
+    // E2Eテストの場合のみ実行
+    const isE2ETest = process.env.JEST_WORKER_ID?.startsWith('e2e');
+    return isE2ETest;
+  }
+  
+  // デフォルトではすべてのテストを実行
+  return true;
 };
 
 module.exports = {
   setupTestEnvironment,
-  teardownTestEnvironment
+  cleanupTestEnvironment,
+  shouldRunTests
 };

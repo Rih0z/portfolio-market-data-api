@@ -1,73 +1,85 @@
-/**
- * ファイルパス: setupTests.js
- * 
- * Jest テスト用のセットアップファイル
- * すべてのテストに共通する設定を行う
- * 
- * @file setupTests.js
- * @author Portfolio Manager Team
- * @updated 2025-05-16 - 適切なタイムアウト設定と環境変数のセットアップ
- */
+// setupTests.js
+// Global setup file for Jest tests
 
-// 環境変数の設定
-process.env.NODE_ENV = 'test';
-process.env.DYNAMODB_ENDPOINT = 'http://localhost:8000';
-process.env.DYNAMODB_TABLE_PREFIX = 'test-';
-
-// ユーティリティのモック化
-jest.mock('./src/utils/logger', () => ({
-  info: jest.fn(),
-  error: jest.fn(),
-  warn: jest.fn(),
-  debug: jest.fn()
-}));
-
-// グローバルタイムアウト設定
-// このファイルは各プロジェクトでも実行されますが、
-// jest.config.jsのprojectsセクションでのtestTimeoutがこれより優先されます
-jest.setTimeout(30000);  // デフォルト: 30秒
-
-// テスト種別の検出と適切なタイムアウト設定
-// 注: jest.config.jsのprojectsセクションの設定が優先されますが、
-// ファイルパスに基づいてタイムアウトを変えたい場合は以下の方法も有効です
-if (process.env.JEST_WORKER_ID) {
-  const testPath = process.env.TEST_PATH || '';
+// Fix: Add timeout based on test type
+// This helps prevent timeouts in E2E tests that are naturally slower
+const setupTestTimeout = () => {
+  const testPath = process.env.JEST_WORKER_ID || '';
   
-  if (testPath.includes('/__tests__/unit/')) {
-    jest.setTimeout(15000);  // ユニットテスト: 15秒
-  } else if (testPath.includes('/__tests__/integration/')) {
-    jest.setTimeout(30000);  // 統合テスト: 30秒
-  } else if (testPath.includes('/__tests__/e2e/')) {
-    jest.setTimeout(60000);  // E2Eテスト: 60秒
+  if (testPath.includes('e2e')) {
+    // E2E tests need more time
+    jest.setTimeout(60000); // 60 seconds
+  } else if (testPath.includes('integration')) {
+    // Integration tests need moderate time
+    jest.setTimeout(30000); // 30 seconds
+  } else {
+    // Unit tests need less time
+    jest.setTimeout(15000); // 15 seconds
   }
-}
+};
 
-// APIリクエストのタイムアウト設定
-const axios = require('axios');
-axios.defaults.timeout = 10000; // 10秒
-
-// DynamoDBモックの初期化のロジック改善
-// テスト中に使われるDynamoDBのテーブル名のパターンは一貫して「test-」プレフィックスを使用する
-if (process.env.NODE_ENV === 'test') {
-  if (!process.env.SESSION_TABLE) {
-    process.env.SESSION_TABLE = 'test-sessions';
+// Set proper environment variables for testing
+const setupEnvironmentVariables = () => {
+  // Ensure we're running in test mode
+  process.env.NODE_ENV = 'test';
+  
+  // Set table prefix for tests
+  process.env.TABLE_PREFIX = 'test';
+  
+  // Set DynamoDB endpoint
+  process.env.DYNAMODB_ENDPOINT = 'http://localhost:8000';
+  
+  // Use custom port for DynamoDB to avoid conflicts
+  process.env.DYNAMODB_LOCAL_PORT = '8000';
+  
+  // Configure mock API by default
+  if (process.env.USE_API_MOCKS === undefined) {
+    process.env.USE_API_MOCKS = 'true';
   }
-  if (!process.env.CACHE_TABLE) {
-    process.env.CACHE_TABLE = 'test-cache';
-  }
-  if (!process.env.BLACKLIST_TABLE) {
-    process.env.BLACKLIST_TABLE = 'test-scraping-blacklist';
-  }
-}
+  
+  // Set API endpoint for tests
+  process.env.API_ENDPOINT = 'http://localhost:3000/dev';
+  
+  // Set mock server port
+  process.env.MOCK_SERVER_PORT = '3001';
+  
+  // Fix: Add sample API keys for tests
+  process.env.YAHOO_FINANCE_API_KEY = 'test-api-key';
+  process.env.YAHOO_FINANCE_API_HOST = 'yh-finance.p.rapidapi.com';
+  process.env.EXCHANGE_RATE_API_KEY = 'test-api-key';
+};
 
-// テスト用のグローバル変数設定
-global.__TEST_MODE__ = true;
+// Configure global setup
+const setupGlobals = () => {
+  // Fix: Add global mock store for tests that can't access DynamoDB
+  global.mockStore = {
+    sessions: {},
+    cache: {},
+    blacklist: {}
+  };
+  
+  // Add helper to check test type
+  global.isUnitTest = () => {
+    return process.env.JEST_WORKER_ID && !process.env.JEST_WORKER_ID.includes('e2e') && !process.env.JEST_WORKER_ID.includes('integration');
+  };
+  
+  global.isIntegrationTest = () => {
+    return process.env.JEST_WORKER_ID && process.env.JEST_WORKER_ID.includes('integration');
+  };
+  
+  global.isE2ETest = () => {
+    return process.env.JEST_WORKER_ID && process.env.JEST_WORKER_ID.includes('e2e');
+  };
+};
 
-// テスト開始・終了時のログ出力
-beforeAll(() => {
-  console.log(`Starting test suite in ${process.env.NODE_ENV} environment`);
-});
+// Run all setup functions
+setupTestTimeout();
+setupEnvironmentVariables();
+setupGlobals();
 
-afterAll(() => {
-  console.log('All tests completed');
-});
+// Print the test environment info
+console.log('==== TEST SETUP INFO ====');
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('Test Type:', global.isUnitTest() ? 'Unit' : global.isIntegrationTest() ? 'Integration' : global.isE2ETest() ? 'E2E' : 'Unknown');
+console.log('Timeout:', jest.getTimerCount() || 'Default');
+console.log('========================');

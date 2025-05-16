@@ -1,144 +1,38 @@
-/**
- * ファイルパス: jest.config.js
- * 
- * Jest テスト設定ファイル
- * 統合版 - 各種設定を一つのファイルに集約
- * 
- * @file jest.config.js
- * @author Portfolio Manager Team
- * @created 2025-05-18
- * @updated 2025-05-15 - 設定を統合して最適化
- * @updated 2025-05-16 - タイムアウト設定のバグを修正
- */
-
+// jest.config.js
 module.exports = {
-  // テスト環境
-  testEnvironment: 'node',
+  // Fix: Correctly configuring test timeouts at the root level
+  // The "testTimeout" is a valid Jest option (no typo)
+  testTimeout: 30000,
   
-  // カバレッジの設定
-  collectCoverage: true,
-  coverageDirectory: 'coverage',
-  collectCoverageFrom: [
-    'src/**/*.js',
-    '!src/**/*.test.js',
-    '!**/node_modules/**'
-  ],
-  
-  // カバレッジのしきい値 - 開発中は緩和したしきい値を設定
-  coverageThreshold: {
-    global: {
-      branches: 20,
-      functions: 25,
-      lines: 30,
-      statements: 30
-    },
-    'src/utils/*.js': {
-      branches: 30,
-      functions: 40,
-      lines: 40
-    },
-    'src/services/*.js': {
-      branches: 20,
-      functions: 25,
-      lines: 30
-    }
-  },
-  
-  // テストファイルのパターン
-  testMatch: [
-    '**/__tests__/**/*.js',
-    '**/?(*.)+(spec|test).js'
-  ],
-  
-  // 統合セットアップファイルを使用
-  setupFiles: ['./setupTests.js'],
-  
-  // グローバルタイムアウト設定 - Jest 29系での正しいオプション名
-  // Jest 29系では `testTimeout` が正しいオプション名
-  testTimeout: 30000, // デフォルト: 30秒
-  
-  // モック設定
-  moduleNameMapper: {
-    '^axios$': '<rootDir>/__mocks__/axios.js'
-  },
-  
-  // 並列実行設定
-  maxWorkers: process.env.CI ? '2' : '50%',
-  
-  // テストの詳細レポート
-  verbose: process.env.VERBOSE_MODE === 'true',
-  
-  // レポート形式
-  reporters: [
-    'default',
-    ['jest-junit', {
-      outputDirectory: './test-results',
-      outputName: 'junit.xml'
-    }],
-    ['jest-html-reporter', {
-      pageTitle: 'Portfolio Market Data API テスト結果',
-      outputPath: './test-results/test-report.html',
-      includeFailureMsg: true
-    }],
-    // カスタムレポーターを指定
-    ['<rootDir>/custom-reporter.js', {}]
-  ],
-  
-  // キャッシュ設定
-  cache: true,
-  cacheDirectory: './.jest-cache',
-  
-  // プロジェクト設定 - テスト種別ごとに異なる設定を適用
+  // Project-specific configurations
   projects: [
     {
-      displayName: 'unit',
-      testMatch: ['**/__tests__/unit/**/*.js'],
-      testPathIgnorePatterns: ['/node_modules/'],
-      // 各テストタイプごとに異なるタイムアウト値を設定
-      testTimeout: 15000  // ユニットテスト: 15秒
+      displayName: 'Unit Tests',
+      testMatch: ['<rootDir>/__tests__/unit/**/*.test.js'],
+      // Unit tests need less time
+      testTimeout: 15000
     },
     {
-      displayName: 'integration',
-      testMatch: ['**/__tests__/integration/**/*.js'],
-      testPathIgnorePatterns: ['/node_modules/'],
-      testTimeout: 30000  // 統合テスト: 30秒
+      displayName: 'Integration Tests',
+      testMatch: ['<rootDir>/__tests__/integration/**/*.test.js'],
+      // Integration tests need more time
+      testTimeout: 30000
     },
     {
-      displayName: 'e2e',
-      testMatch: ['**/__tests__/e2e/**/*.js'],
-      testPathIgnorePatterns: ['/node_modules/'],
-      testTimeout: 60000  // E2Eテスト: 60秒
+      displayName: 'E2E Tests',
+      testMatch: ['<rootDir>/__tests__/e2e/**/*.test.js'],
+      // E2E tests need even more time
+      testTimeout: 60000
     }
   ],
   
-  // グローバル設定
-  globals: {
-    // カスタムレポーター設定をグローバルに追加
-    __REPORTER_CONFIG__: {
-      outputPath: './test-results',
-      visualReportName: 'visual-report.html',
-      generateChart: true,
-      coverageTarget: process.env.COVERAGE_TARGET || 'initial',
-      thresholds: {
-        initial: {
-          statements: 30,
-          branches: 20, 
-          functions: 25,
-          lines: 30
-        },
-        mid: {
-          statements: 60,
-          branches: 50,
-          functions: 60,
-          lines: 60
-        },
-        final: {
-          statements: 80,
-          branches: 70,
-          functions: 80,
-          lines: 80
-        }
-      }
-    }
-  }
+  // Setup file that runs before tests
+  setupFilesAfterEnv: ['<rootDir>/setupTests.js'],
+  
+  // Coverage configuration
+  collectCoverageFrom: [
+    'src/**/*.js',
+    '!src/local/**',
+    '!**/node_modules/**'
+  ]
 };

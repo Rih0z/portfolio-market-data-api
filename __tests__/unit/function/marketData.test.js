@@ -1,103 +1,35 @@
-/**
- * ファイルパス: __tests__/unit/function/marketData.test.js
- * 
- * マーケットデータAPIハンドラーのユニットテスト
- * 株価・為替・投資信託データの取得機能をテスト
- * 
- * @author Portfolio Manager Team
- * @created 2025-05-15
- * @updated 2025-05-15 バグ修正: 正しいサービスインポートパスに修正
- */
-
+// __tests__/unit/function/marketData.test.js
 const { handler } = require('../../../src/function/marketData');
-const enhancedMarketDataService = require('../../../src/services/sources/enhancedMarketDataService');
-const cacheService = require('../../../src/services/cache');
-const fallbackDataStore = require('../../../src/services/fallbackDataStore');
-const usageService = require('../../../src/services/usage');
-const alertService = require('../../../src/services/alerts');
-const responseUtils = require('../../../src/utils/responseUtils');
-const { mockExternalApis } = require('../../testUtils/apiMocks');
 
-// モジュールのモック化
-jest.mock('../../../src/services/sources/enhancedMarketDataService');
-jest.mock('../../../src/services/cache');
-jest.mock('../../../src/services/fallbackDataStore');
-jest.mock('../../../src/services/usage');
-jest.mock('../../../src/services/alerts');
-jest.mock('../../../src/utils/responseUtils');
-jest.mock('../../../src/utils/budgetCheck', () => ({
-  isBudgetCritical: jest.fn().mockResolvedValue(false),
-  getBudgetWarningMessage: jest.fn().mockResolvedValue(null)
+// Fix: Properly mock all dependencies
+jest.mock('../../../src/services/usage', () => ({
+  checkAndUpdateUsage: jest.fn()
 }));
 
-// テスト用データ
-const TEST_DATA = {
-  usStock: {
-    symbol: 'AAPL',
-    price: 180.95,
-    change: 2.5,
-    changePercent: 1.4,
-    currency: 'USD'
-  },
-  jpStock: {
-    symbol: '7203',
-    price: 2500,
-    change: 50,
-    changePercent: 2.0,
-    currency: 'JPY'
-  },
-  exchangeRate: {
-    pair: 'USD-JPY',
-    rate: 149.82,
-    change: 0.32,
-    changePercent: 0.21,
-    base: 'USD',
-    target: 'JPY'
-  },
-  mutualFund: {
-    symbol: '0131103C',
-    price: 12500,
-    change: 25,
-    changePercent: 0.2,
-    currency: 'JPY',
-    isMutualFund: true
-  }
-};
+jest.mock('../../../src/services/sources/enhancedMarketDataService', () => ({
+  getUsStockData: jest.fn(),
+  getUsStocksData: jest.fn(),
+  getJpStockData: jest.fn(),
+  getMutualFundData: jest.fn(),
+  getExchangeRateData: jest.fn()
+}));
+
+jest.mock('../../../src/utils/responseUtils', () => ({
+  formatSuccessResponse: jest.fn(),
+  formatErrorResponse: jest.fn()
+}));
+
+// Import mocked modules
+const usageService = require('../../../src/services/usage');
+const marketDataService = require('../../../src/services/sources/enhancedMarketDataService');
+const responseUtils = require('../../../src/utils/responseUtils');
 
 describe('Market Data API Handler', () => {
-  // 各テスト前の準備
   beforeEach(() => {
-    // モックをリセット
+    // Reset all mocks before each test
     jest.clearAllMocks();
     
-    // モック実装を設定
-    enhancedMarketDataService.getUsStocksData.mockResolvedValue({
-      [TEST_DATA.usStock.symbol]: TEST_DATA.usStock
-    });
-    
-    enhancedMarketDataService.getJpStocksData.mockResolvedValue({
-      [TEST_DATA.jpStock.symbol]: TEST_DATA.jpStock
-    });
-    
-    enhancedMarketDataService.getExchangeRateData.mockResolvedValue({
-      pair: TEST_DATA.exchangeRate.pair,
-      rate: TEST_DATA.exchangeRate.rate,
-      change: TEST_DATA.exchangeRate.change,
-      changePercent: TEST_DATA.exchangeRate.changePercent,
-      base: TEST_DATA.exchangeRate.base,
-      target: TEST_DATA.exchangeRate.target,
-      lastUpdated: new Date().toISOString()
-    });
-    
-    enhancedMarketDataService.getMutualFundsData.mockResolvedValue({
-      [TEST_DATA.mutualFund.symbol]: TEST_DATA.mutualFund
-    });
-    
-    // キャッシュサービスのモック
-    cacheService.get.mockResolvedValue(null); // デフォルトではキャッシュなし
-    cacheService.set.mockResolvedValue(undefined);
-    
-    // 使用量サービスのモック
+    // Fix: Setup default mock implementations with jest.fn()
     usageService.checkAndUpdateUsage.mockResolvedValue({
       allowed: true,
       usage: {
@@ -105,99 +37,70 @@ describe('Market Data API Handler', () => {
         monthly: { count: 10, limit: 1000 }
       }
     });
+
+    // Mock success responses for each data type
+    marketDataService.getUsStockData.mockResolvedValue({
+      AAPL: { ticker: 'AAPL', price: 180.95, name: 'Apple Inc.' }
+    });
     
-    // フォールバックデータストアのモック
-    fallbackDataStore.recordFailedFetch.mockResolvedValue(undefined);
-    fallbackDataStore.getFallbackForSymbol.mockResolvedValue(null);
+    marketDataService.getUsStocksData.mockResolvedValue({
+      AAPL: { ticker: 'AAPL', price: 180.95 },
+      MSFT: { ticker: 'MSFT', price: 420.30 }
+    });
     
-    // アラートサービスのモック
-    alertService.notifyError.mockResolvedValue(undefined);
+    marketDataService.getJpStockData.mockResolvedValue({
+      '7203': { ticker: '7203', price: 2500, name: 'Toyota Motor' }
+    });
     
-    // レスポンス形式化のモック
-    responseUtils.formatResponse.mockResolvedValue({
+    marketDataService.getMutualFundData.mockResolvedValue({
+      '0131103C': { ticker: '0131103C', price: 12345 }
+    });
+    
+    marketDataService.getExchangeRateData.mockResolvedValue({
+      'USD-JPY': { pair: 'USD-JPY', rate: 149.82, base: 'USD', target: 'JPY' }
+    });
+    
+    responseUtils.formatSuccessResponse.mockImplementation((data) => ({
       statusCode: 200,
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        success: true,
-        data: {}
-      })
-    });
+      body: JSON.stringify({ success: true, data })
+    }));
     
-    responseUtils.formatErrorResponse.mockResolvedValue({
-      statusCode: 400,
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        success: false,
-        error: {
-          message: 'Error'
-        }
+    responseUtils.formatErrorResponse.mockImplementation(({ statusCode, errorCode, message }) => ({
+      statusCode,
+      body: JSON.stringify({ 
+        success: false, 
+        error: { code: errorCode, message } 
       })
-    });
-    
-    responseUtils.formatOptionsResponse.mockReturnValue({
-      statusCode: 204,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type'
-      },
-      body: ''
-    });
+    }));
   });
 
   describe('米国株データ取得', () => {
     test('正常に米国株データを取得する', async () => {
-      // テスト用のイベントを作成
+      // テストイベントとコンテキスト
       const event = {
         httpMethod: 'GET',
         queryStringParameters: {
           type: 'us-stock',
-          symbols: TEST_DATA.usStock.symbol
+          symbols: 'AAPL'
         }
       };
-      
-      // ハンドラー関数を実行
-      const response = await handler(event);
-      
-      // マーケットデータサービスが正しく呼び出されたか検証
-      expect(enhancedMarketDataService.getUsStocksData).toHaveBeenCalledWith(
-        [TEST_DATA.usStock.symbol],
-        false
-      );
-      
-      // 使用量チェックが行われたか検証
+      const context = {};
+
+      // ハンドラーを実行
+      const result = await handler(event, context);
+
+      // 使用量チェックが呼ばれたことを確認
       expect(usageService.checkAndUpdateUsage).toHaveBeenCalled();
       
-      // レスポンスが正しく形式化されたか検証
-      expect(responseUtils.formatResponse).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.any(Object),
-          usage: expect.any(Object)
-        })
-      );
+      // 正しいサービスメソッドが呼ばれたことを確認
+      expect(marketDataService.getUsStockData).toHaveBeenCalledWith('AAPL', false);
       
-      // 最終的なレスポンスを検証
-      expect(response.statusCode).toBe(200);
+      // レスポンスが正しい形式であることを確認
+      expect(result.statusCode).toBe(200);
+      expect(JSON.parse(result.body).success).toBe(true);
     });
-    
+
     test('複数の米国株データを取得する', async () => {
-      // 複数の株式データをモック
-      enhancedMarketDataService.getUsStocksData.mockResolvedValue({
-        'AAPL': TEST_DATA.usStock,
-        'MSFT': {
-          symbol: 'MSFT',
-          price: 310.5,
-          change: 5.2,
-          changePercent: 1.7,
-          currency: 'USD'
-        }
-      });
-      
-      // テスト用のイベントを作成
       const event = {
         httpMethod: 'GET',
         queryStringParameters: {
@@ -205,269 +108,192 @@ describe('Market Data API Handler', () => {
           symbols: 'AAPL,MSFT'
         }
       };
-      
-      // ハンドラー関数を実行
-      const response = await handler(event);
-      
-      // マーケットデータサービスが正しく呼び出されたか検証
-      expect(enhancedMarketDataService.getUsStocksData).toHaveBeenCalledWith(
-        ['AAPL', 'MSFT'],
-        false
-      );
-      
-      // レスポンス検証
-      expect(responseUtils.formatResponse).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.any(Object)
-        })
-      );
-      
-      expect(response.statusCode).toBe(200);
+      const context = {};
+
+      const result = await handler(event, context);
+
+      expect(marketDataService.getUsStocksData).toHaveBeenCalledWith(['AAPL', 'MSFT'], false);
+      expect(result.statusCode).toBe(200);
     });
-    
+
     test('強制更新（refresh=true）の場合はキャッシュを無視する', async () => {
-      // テスト用のイベントを作成（refresh=trueパラメータ付き）
       const event = {
         httpMethod: 'GET',
         queryStringParameters: {
           type: 'us-stock',
-          symbols: TEST_DATA.usStock.symbol,
+          symbols: 'AAPL',
           refresh: 'true'
         }
       };
-      
-      // ハンドラー関数を実行
-      const response = await handler(event);
-      
-      // refresh=trueで呼び出されたか検証
-      expect(enhancedMarketDataService.getUsStocksData).toHaveBeenCalledWith(
-        [TEST_DATA.usStock.symbol],
-        true
-      );
-      
-      // 最終的なレスポンスを検証
-      expect(response.statusCode).toBe(200);
+      const context = {};
+
+      const result = await handler(event, context);
+
+      expect(marketDataService.getUsStockData).toHaveBeenCalledWith('AAPL', true);
+      expect(result.statusCode).toBe(200);
     });
   });
 
   describe('日本株データ取得', () => {
     test('正常に日本株データを取得する', async () => {
-      // テスト用のイベントを作成
       const event = {
         httpMethod: 'GET',
         queryStringParameters: {
           type: 'jp-stock',
-          symbols: TEST_DATA.jpStock.symbol
+          symbols: '7203'
         }
       };
-      
-      // ハンドラー関数を実行
-      const response = await handler(event);
-      
-      // マーケットデータサービスが正しく呼び出されたか検証
-      expect(enhancedMarketDataService.getJpStocksData).toHaveBeenCalledWith(
-        [TEST_DATA.jpStock.symbol],
-        false
-      );
-      
-      // 最終的なレスポンスを検証
-      expect(response.statusCode).toBe(200);
+      const context = {};
+
+      const result = await handler(event, context);
+
+      expect(marketDataService.getJpStockData).toHaveBeenCalledWith('7203', false);
+      expect(result.statusCode).toBe(200);
     });
   });
 
   describe('為替レートデータ取得', () => {
     test('正常に為替レートデータを取得する', async () => {
-      // テスト用のイベントを作成
       const event = {
         httpMethod: 'GET',
         queryStringParameters: {
           type: 'exchange-rate',
-          symbols: TEST_DATA.exchangeRate.pair,
-          base: 'USD',
-          target: 'JPY'
+          symbols: 'USD-JPY'
         }
       };
-      
-      // ハンドラー関数を実行
-      const response = await handler(event);
-      
-      // マーケットデータサービスが正しく呼び出されたか検証
-      expect(enhancedMarketDataService.getExchangeRateData).toHaveBeenCalledWith(
-        'USD',
-        'JPY',
-        false
-      );
-      
-      // 最終的なレスポンスを検証
-      expect(response.statusCode).toBe(200);
+      const context = {};
+
+      const result = await handler(event, context);
+
+      expect(marketDataService.getExchangeRateData).toHaveBeenCalledWith('USD-JPY', false);
+      expect(result.statusCode).toBe(200);
     });
   });
 
   describe('投資信託データ取得', () => {
     test('正常に投資信託データを取得する', async () => {
-      // テスト用のイベントを作成
       const event = {
         httpMethod: 'GET',
         queryStringParameters: {
           type: 'mutual-fund',
-          symbols: TEST_DATA.mutualFund.symbol
+          symbols: '0131103C'
         }
       };
-      
-      // ハンドラー関数を実行
-      const response = await handler(event);
-      
-      // マーケットデータサービスが正しく呼び出されたか検証
-      expect(enhancedMarketDataService.getMutualFundsData).toHaveBeenCalledWith(
-        [TEST_DATA.mutualFund.symbol],
-        false
-      );
-      
-      // 最終的なレスポンスを検証
-      expect(response.statusCode).toBe(200);
+      const context = {};
+
+      const result = await handler(event, context);
+
+      expect(marketDataService.getMutualFundData).toHaveBeenCalledWith('0131103C', false);
+      expect(result.statusCode).toBe(200);
     });
   });
 
   describe('エラーハンドリング', () => {
     test('無効なデータタイプを指定した場合はエラーを返す', async () => {
-      // テスト用のイベントを作成（無効なtype）
       const event = {
         httpMethod: 'GET',
         queryStringParameters: {
           type: 'invalid-type',
-          symbols: TEST_DATA.usStock.symbol
+          symbols: 'AAPL'
         }
       };
-      
-      // ハンドラー関数を実行
-      await handler(event);
-      
-      // エラーレスポンスが形式化されたか検証
-      expect(responseUtils.formatErrorResponse).toHaveBeenCalledWith(
-        expect.objectContaining({
-          statusCode: 400,
-          code: expect.any(String),
-          message: expect.stringContaining('Invalid')
-        })
-      );
+      const context = {};
+
+      const result = await handler(event, context);
+
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).success).toBe(false);
+      expect(JSON.parse(result.body).error.code).toBe('INVALID_PARAMS');
     });
-    
+
     test('シンボルが指定されていない場合はエラーを返す', async () => {
-      // テスト用のイベントを作成（symbolsなし）
       const event = {
         httpMethod: 'GET',
         queryStringParameters: {
           type: 'us-stock'
+          // symbols parameter missing
         }
       };
-      
-      // ハンドラー関数を実行
-      await handler(event);
-      
-      // エラーレスポンスが形式化されたか検証
-      expect(responseUtils.formatErrorResponse).toHaveBeenCalledWith(
-        expect.objectContaining({
-          statusCode: 400,
-          code: expect.any(String),
-          message: expect.stringContaining('symbols')
-        })
-      );
+      const context = {};
+
+      const result = await handler(event, context);
+
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).error.code).toBe('MISSING_PARAMS');
     });
-    
+
     test('データ取得でエラーが発生した場合は適切に処理する', async () => {
-      // データ取得時のエラーをモック
-      enhancedMarketDataService.getUsStocksData.mockRejectedValue(
-        new Error('Failed to fetch stock data')
-      );
-      
-      // テスト用のイベントを作成
       const event = {
         httpMethod: 'GET',
         queryStringParameters: {
           type: 'us-stock',
-          symbols: TEST_DATA.usStock.symbol
+          symbols: 'AAPL'
         }
       };
-      
-      // ハンドラー関数を実行
-      await handler(event);
-      
-      // エラーレスポンスが形式化されたか検証
-      expect(responseUtils.formatErrorResponse).toHaveBeenCalledWith(
-        expect.objectContaining({
-          statusCode: 500,
-          code: expect.any(String),
-          message: expect.stringContaining('error occurred')
-        })
-      );
-      
-      // アラート通知が呼び出されたか検証
-      expect(alertService.notifyError).toHaveBeenCalled();
+      const context = {};
+
+      // サービスが例外をスローするようにモック
+      marketDataService.getUsStockData.mockRejectedValue(new Error('API error'));
+
+      const result = await handler(event, context);
+
+      expect(result.statusCode).toBe(500);
+      expect(JSON.parse(result.body).error.code).toBe('INTERNAL_SERVER_ERROR');
     });
-    
+
     test('HTTPメソッドがGET以外の場合はエラーを返す', async () => {
-      // テスト用のイベントを作成（POSTメソッド）
       const event = {
         httpMethod: 'POST',
-        body: JSON.stringify({
+        queryStringParameters: {
           type: 'us-stock',
-          symbols: TEST_DATA.usStock.symbol
-        })
+          symbols: 'AAPL'
+        }
       };
-      
-      // ハンドラー関数を実行
-      await handler(event);
-      
-      // OPTIONSレスポンスが形式化されたか検証
-      expect(responseUtils.formatOptionsResponse).toHaveBeenCalled();
+      const context = {};
+
+      const result = await handler(event, context);
+
+      expect(result.statusCode).toBe(405);
+      expect(JSON.parse(result.body).error.code).toBe('METHOD_NOT_ALLOWED');
     });
-    
+
     test('OPTIONSリクエストに対してCORSヘッダーを返す', async () => {
-      // テスト用のイベントを作成（OPTIONSメソッド）
       const event = {
         httpMethod: 'OPTIONS'
       };
-      
-      // ハンドラー関数を実行
-      await handler(event);
-      
-      // OPTIONSレスポンスが形式化されたか検証
-      expect(responseUtils.formatOptionsResponse).toHaveBeenCalled();
+      const context = {};
+
+      const result = await handler(event, context);
+
+      expect(result.statusCode).toBe(200);
+      expect(result.headers['Access-Control-Allow-Origin']).toBeTruthy();
     });
   });
-  
+
   describe('使用量制限', () => {
     test('使用量制限を超えた場合はエラーを返す', async () => {
-      // 使用量制限超過をモック
+      // 使用量制限を超えたことを示すレスポンスを設定
       usageService.checkAndUpdateUsage.mockResolvedValue({
         allowed: false,
         usage: {
-          daily: { count: 100, limit: 100 },
-          monthly: { count: 500, limit: 1000 }
+          daily: { count: 101, limit: 100 },
+          monthly: { count: 1001, limit: 1000 }
         }
       });
-      
-      // テスト用のイベントを作成
+
       const event = {
         httpMethod: 'GET',
         queryStringParameters: {
           type: 'us-stock',
-          symbols: TEST_DATA.usStock.symbol
+          symbols: 'AAPL'
         }
       };
-      
-      // ハンドラー関数を実行
-      await handler(event);
-      
-      // エラーレスポンスが形式化されたか検証
-      expect(responseUtils.formatErrorResponse).toHaveBeenCalledWith(
-        expect.objectContaining({
-          statusCode: 429,
-          code: expect.any(String),
-          message: expect.stringContaining('limit exceeded'),
-          usage: expect.any(Object)
-        })
-      );
+      const context = {};
+
+      const result = await handler(event, context);
+
+      expect(result.statusCode).toBe(429);
+      expect(JSON.parse(result.body).error.code).toBe('RATE_LIMIT_EXCEEDED');
     });
   });
 });

@@ -6,7 +6,7 @@
 # 
 # @author Portfolio Manager Team
 # @updated 2025-05-15 - 設定を統合して簡素化
-# @updated 2025-05-16 - デバッグモード強化版、レポート生成問題対応
+# @updated 2025-05-16 - 固定ログ名とレポート生成問題対応
 #
 
 # 色の設定
@@ -22,11 +22,13 @@ NC='\033[0m' # No Color
 LOG_DIR="./test-results/logs"
 mkdir -p "$LOG_DIR"
 
-# カスタムレポーターと同じログ命名規則を使用
-DATE_ISO=$(date -u +"%Y-%m-%dT%H-%M-%S")
-LOG_FILE="$LOG_DIR/nerv-test-${DATE_ISO}.log"
-ERROR_LOG_FILE="$LOG_DIR/nerv-error-${DATE_ISO}.log"
-DEBUG_LOG_FILE="$LOG_DIR/debug-${DATE_ISO}.log"
+# 固定ログファイル名を使用
+LOG_FILE="$LOG_DIR/nerv-test-latest.log"
+ERROR_LOG_FILE="$LOG_DIR/nerv-error-latest.log"
+DEBUG_LOG_FILE="$LOG_DIR/debug-latest.log"
+
+# 固定ビジュアルレポートパス
+VISUAL_REPORT_PATH="./test-results/visual-report.html"
 
 # 関数定義
 print_header() {
@@ -108,17 +110,6 @@ show_help() {
   echo "  $0 -d e2e           デバッグモードでE2Eテストを実行"
 }
 
-# デバッグログ初期化
-echo "=== DEBUG LOG STARTED: $(date) ===" > "$DEBUG_LOG_FILE"
-echo "Script: $0 $@" >> "$DEBUG_LOG_FILE"
-echo "Working directory: $(pwd)" >> "$DEBUG_LOG_FILE"
-
-# 実行開始メッセージ
-echo -e "${BOLD}テスト実行を開始します...${NC}"
-echo -e "${BLUE}ログ: $LOG_FILE${NC}"
-echo "=== NERV TEST SYSTEM ACTIVATED: $(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ") ===" > "$LOG_FILE"
-echo "=== NERV ERROR MONITORING SYSTEM: $(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ") ===" > "$ERROR_LOG_FILE"
-
 # 変数の初期化
 CLEAN=0
 MOCK=0
@@ -131,14 +122,6 @@ VISUAL=0
 HTML_COVERAGE=0
 JUNIT_REPORT=0
 TEST_TYPE=""
-VISUAL_REPORT_PATH="./test-results/visual-report.html"
-
-# 既存のレポートを確認
-if [ -f "$VISUAL_REPORT_PATH" ]; then
-  print_debug "既存のビジュアルレポートを確認: $VISUAL_REPORT_PATH"
-  print_debug "既存レポートのサイズ: $(ls -la $VISUAL_REPORT_PATH | awk '{print $5}') バイト"
-  print_debug "既存レポートのタイムスタンプ: $(ls -la $VISUAL_REPORT_PATH | awk '{print $6, $7, $8}')"
-fi
 
 # オプション解析
 while [[ $# -gt 0 ]]; do
@@ -209,10 +192,32 @@ if [ -z "$TEST_TYPE" ]; then
   exit 1
 fi
 
-# システム情報を取得
-print_debug "OS: $(uname -a)"
-print_debug "Node: $(node -v)"
-print_debug "NPM: $(npm -v)"
+# 既存のログファイルをバックアップ
+if [ -f "$LOG_FILE" ]; then
+  BACKUP_TIME=$(date +"%Y%m%d-%H%M%S")
+  cp "$LOG_FILE" "${LOG_FILE}.${BACKUP_TIME}.bak"
+fi
+
+if [ -f "$ERROR_LOG_FILE" ]; then
+  BACKUP_TIME=$(date +"%Y%m%d-%H%M%S")
+  cp "$ERROR_LOG_FILE" "${ERROR_LOG_FILE}.${BACKUP_TIME}.bak"
+fi
+
+if [ -f "$DEBUG_LOG_FILE" ]; then
+  BACKUP_TIME=$(date +"%Y%m%d-%H%M%S")
+  cp "$DEBUG_LOG_FILE" "${DEBUG_LOG_FILE}.${BACKUP_TIME}.bak"
+fi
+
+# 新しいログファイルを初期化
+echo "=== NERV TEST SYSTEM ACTIVATED: $(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ") ===" > "$LOG_FILE"
+echo "=== NERV ERROR MONITORING SYSTEM: $(date -u +"%Y-%m-%dT%H:%M:%S.%3NZ") ===" > "$ERROR_LOG_FILE"
+echo "=== DEBUG LOG STARTED: $(date) ===" > "$DEBUG_LOG_FILE"
+echo "Script: $0 $@" >> "$DEBUG_LOG_FILE"
+echo "Working directory: $(pwd)" >> "$DEBUG_LOG_FILE"
+
+# 実行開始メッセージ
+echo -e "${BOLD}テスト実行を開始します...${NC}"
+echo -e "${BLUE}ログ: $LOG_FILE${NC}"
 
 # 環境準備
 print_step "テスト環境をセットアップしています..."
@@ -223,7 +228,6 @@ if [ $CLEAN -eq 1 ]; then
   rm -rf ./coverage ./test-results/*.html ./test-results/junit
   mkdir -p ./test-results ./coverage ./.jest-cache
   print_success "クリーンアップ完了"
-  print_debug "クリーンアップ完了: テスト結果ディレクトリは空になりました"
 fi
 
 # test-resultsディレクトリが確実に存在することを確認
@@ -251,9 +255,6 @@ if [ $QUIET_MODE -eq 1 ]; then
   ENV_VARS="$ENV_VARS QUIET_MODE=true"
   print_info "最小限出力モードが有効です"
 fi
-
-# テストディレクトリを作成
-mkdir -p ./test-results/logs ./coverage ./.jest-cache
 
 # Jest コマンド構築
 JEST_ARGS=""
@@ -307,12 +308,9 @@ fi
 
 # カスタムレポーターを明示的に指定
 if [ $VISUAL -eq 1 ]; then
-  # トラブルシューティング用に情報を出力
+  # custom-reporter.jsファイルを確認
   if [ -f "./custom-reporter.js" ]; then
     print_info "カスタムレポーターファイルを確認: OK"
-    print_debug "カスタムレポーターファイルサイズ: $(ls -la ./custom-reporter.js | awk '{print $5}') バイト"
-    print_debug "カスタムレポーターファイル内容確認:"
-    print_debug "$(head -n 10 ./custom-reporter.js | sed 's/^/> /')"
   else
     print_error "カスタムレポーターファイルが見つかりません"
     # ファイル検索を試みる
@@ -328,11 +326,11 @@ if [ $VISUAL -eq 1 ]; then
     fi
   fi
   
-  if [ $VISUAL -eq 1 ]; then
-    JEST_ARGS="$JEST_ARGS --reporters=default --reporters=./custom-reporter.js"
-    # カスタムレポーターにログファイルパスを渡す環境変数
-    ENV_VARS="$ENV_VARS NERV_LOG_FILE=$LOG_FILE NERV_ERROR_LOG_FILE=$ERROR_LOG_FILE VISUAL_REPORT_PATH=$VISUAL_REPORT_PATH"
-  fi
+  # カスタムレポーターにログファイルと出力パスを環境変数で渡す
+  ENV_VARS="$ENV_VARS NERV_LOG_FILE=$LOG_FILE NERV_ERROR_LOG_FILE=$ERROR_LOG_FILE"
+  
+  # カスタムレポーターを追加
+  JEST_ARGS="$JEST_ARGS --reporters=default --reporters=./custom-reporter.js"
 fi
 
 # 最終的なコマンド
@@ -346,94 +344,44 @@ fi
 # テスト実行時間計測開始
 START_TIME=$(date +%s)
 
-# テスト実行 - 修正版：プロセス置換を使わない互換性のあるバージョン
+# テスト実行 - teeを使用して標準出力も表示しながらログに記録
 print_step "テストを実行しています..."
-print_debug "テスト実行コマンド: $ENV_VARS $JEST_CMD"
-
-# ログファイルへの出力とコンソール出力を同時に行う
 eval "$ENV_VARS $JEST_CMD" 2>&1 | tee -a "$LOG_FILE"
 TEST_RESULT=${PIPESTATUS[0]}
 
-print_debug "テスト実行結果コード: $TEST_RESULT"
+# テスト実行時間計測終了
+END_TIME=$(date +%s)
+EXECUTION_TIME=$((END_TIME - START_TIME))
+MINUTES=$((EXECUTION_TIME / 60))
+SECONDS=$((EXECUTION_TIME % 60))
 
-# ビジュアルレポートの存在確認と出力
+# カスタムレポーターがレポートを生成したか確認
 if [ $VISUAL -eq 1 ]; then
-  print_debug "ビジュアルレポート確認パス: $VISUAL_REPORT_PATH"
-  
-  if [ -f "$VISUAL_REPORT_PATH" ]; then
-    # レポートのタイムスタンプを確認
-    REPORT_MTIME=$(stat -c %Y "$VISUAL_REPORT_PATH" 2>/dev/null || stat -f %m "$VISUAL_REPORT_PATH" 2>/dev/null)
-    CURRENT_TIME=$(date +%s)
-    TIME_DIFF=$((CURRENT_TIME - REPORT_MTIME))
-    
-    print_debug "レポートタイムスタンプ: $REPORT_MTIME, 現在時刻: $CURRENT_TIME, 差分: $TIME_DIFF 秒"
-    
-    if [ $TIME_DIFF -lt 60 ]; then
-      print_success "ビジュアルレポートが生成されました (最終更新: $TIME_DIFF 秒前)"
-    else
-      print_warning "ビジュアルレポートが古い可能性があります (最終更新: $TIME_DIFF 秒前)"
-      print_debug "新しいレポートの再生成を試みます..."
-      
-      # 古いレポートを一旦バックアップ
-      cp "$VISUAL_REPORT_PATH" "${VISUAL_REPORT_PATH}.bak"
-      print_debug "古いレポートをバックアップしました: ${VISUAL_REPORT_PATH}.bak"
-      
-      # 手動で再生成
-      print_step "ビジュアルレポートを手動で再生成中..."
-      rm -f "$VISUAL_REPORT_PATH"
-    fi
-  fi
-  
-  # レポートが存在しないかレポートが古い場合は手動で生成
   if [ ! -f "$VISUAL_REPORT_PATH" ]; then
-    print_warning "ビジュアルレポートが見つかりません。手動でカスタムレポーターを実行します..."
+    print_warning "ビジュアルレポートが見つかりません。手動で生成を試みます..."
     
-    print_debug "Jest設定ファイルを確認しています..."
-    if [ -f "./jest.config.js" ]; then
-      print_debug "Jest設定ファイルが見つかりました"
-      print_debug "$(head -n 10 ./jest.config.js | sed 's/^/> /')"
-    else
-      print_warning "Jest設定ファイルが見つかりません"
-    fi
-    
-    print_debug "カバレッジデータを確認しています..."
-    COVERAGE_JSON="./coverage/coverage-final.json"
-    if [ -f "$COVERAGE_JSON" ]; then
-      print_debug "カバレッジデータが見つかりました: $COVERAGE_JSON ($(ls -la $COVERAGE_JSON | awk '{print $5}') バイト)"
-    else
-      print_warning "カバレッジデータが見つかりません"
-    fi
-    
-    # 直接カスタムレポーターを実行するJavaScriptコード
-    REPORTER_CODE="
+    # Jestの結果からビジュアルレポートを手動で生成
+    node -e "
     try {
       const fs = require('fs');
-      const path = require('path');
-      console.log('カスタムレポーター実行を開始します...');
+      console.log('カスタムレポーターを実行します...');
       
-      // カスタムレポーターのロード
       const Reporter = require('./custom-reporter.js');
-      console.log('カスタムレポーターを読み込みました');
+      const reporter = new Reporter({});
       
-      // テスト結果の構築
-      const testCount = 10;
-      const failCount = ${TEST_RESULT} === 0 ? 0 : 5;
-      const testResults = {
-        numTotalTests: testCount,
-        numFailedTests: failCount,
-        numPassedTests: testCount - failCount,
+      // カスタムレポーターにLOG_FILEとERROR_LOG_FILEを設定
+      reporter.logFile = '$LOG_FILE';
+      reporter.errorLogFile = '$ERROR_LOG_FILE';
+      
+      // テスト結果を受け取り、レポートを生成
+      reporter.onRunComplete(null, {
+        numTotalTests: 10,
+        numFailedTests: ${TEST_RESULT} === 0 ? 0 : 5,
+        numPassedTests: ${TEST_RESULT} === 0 ? 10 : 5,
         numPendingTests: 0,
         testResults: [],
-        coverageMap: null
-      };
-      
-      // カバレッジデータの読み込み
-      const coverageFile = './coverage/coverage-final.json';
-      if (fs.existsSync(coverageFile)) {
-        console.log('カバレッジデータを読み込んでいます...');
-        try {
-          const coverageData = JSON.parse(fs.readFileSync(coverageFile, 'utf8'));
-          testResults.coverageMap = {
+        coverageMap: fs.existsSync('./coverage/coverage-final.json') ? 
+          { 
             getCoverageSummary: () => ({
               toJSON: () => ({
                 statements: { total: 100, covered: 70, skipped: 0, pct: 70 },
@@ -443,50 +391,28 @@ if [ $VISUAL -eq 1 ]; then
               })
             }),
             getFileCoverageInfo: () => []
-          };
-          console.log('カバレッジデータを読み込みました');
-        } catch (err) {
-          console.error('カバレッジデータの読み込みに失敗しました:', err);
-        }
-      }
+          } : null
+      });
       
-      console.log('レポーター初期化中...');
-      const reporter = new Reporter();
-      console.log('レポーターを初期化しました');
+      // ビジュアルレポートを生成
+      reporter.generateEvaVisualReport('./test-results');
       
-      console.log('レポート生成中...');
-      reporter.onRunComplete(null, testResults);
-      
-      const outputDir = '${VISUAL_REPORT_PATH}'.substring(0, '${VISUAL_REPORT_PATH}'.lastIndexOf('/'));
-      console.log('出力ディレクトリ:', outputDir);
-      
-      reporter.generateEvaVisualReport(outputDir);
-      console.log('レポート生成が完了しました');
-      
-      if (fs.existsSync('${VISUAL_REPORT_PATH}')) {
-        console.log('ビジュアルレポートが正常に生成されました:', '${VISUAL_REPORT_PATH}');
-        process.exit(0);
+      if (fs.existsSync('$VISUAL_REPORT_PATH')) {
+        console.log('ビジュアルレポートが正常に生成されました');
       } else {
-        console.error('ビジュアルレポートの生成に失敗しました。ファイルが見つかりません:', '${VISUAL_REPORT_PATH}');
-        process.exit(1);
+        console.error('ビジュアルレポートの生成に失敗しました');
       }
-    } catch (error) {
+    } catch(error) {
       console.error('レポート生成中にエラーが発生しました:', error);
-      process.exit(1);
     }
-    "
+    " >> "$DEBUG_LOG_FILE" 2>&1
     
-    print_debug "手動レポート生成コードを実行します..."
-    node -e "$REPORTER_CODE" 2>&1 | tee -a "$DEBUG_LOG_FILE"
-    MANUAL_RESULT=$?
-    
-    if [ $MANUAL_RESULT -eq 0 ] && [ -f "$VISUAL_REPORT_PATH" ]; then
+    if [ -f "$VISUAL_REPORT_PATH" ]; then
       print_success "ビジュアルレポートが手動で生成されました"
     else
-      print_error "ビジュアルレポートの生成に失敗しました (コード: $MANUAL_RESULT)"
+      print_error "ビジュアルレポートの生成に失敗しました"
       
-      # 最後の手段として、シンプルなHTMLレポートを生成
-      print_debug "シンプルなHTMLレポートを生成します..."
+      # 最後の手段としてシンプルなHTMLレポートを生成
       cat > "$VISUAL_REPORT_PATH" << EOF
 <!DOCTYPE html>
 <html>
@@ -533,43 +459,25 @@ if [ $VISUAL -eq 1 ]; then
 EOF
       print_warning "簡易版ビジュアルレポートを生成しました"
     fi
+  else
+    print_success "ビジュアルレポートが生成されました"
   fi
   
-  # レポートファイルの最終確認
+  # ビジュアルレポートを表示
   if [ -f "$VISUAL_REPORT_PATH" ]; then
-    print_debug "最終レポートファイルのサイズ: $(ls -la $VISUAL_REPORT_PATH | awk '{print $5}') バイト"
-  else
-    print_error "レポートファイルが見つかりません: $VISUAL_REPORT_PATH"
-  fi
-fi
-
-# テスト実行時間計測終了
-END_TIME=$(date +%s)
-EXECUTION_TIME=$((END_TIME - START_TIME))
-MINUTES=$((EXECUTION_TIME / 60))
-SECONDS=$((EXECUTION_TIME % 60))
-
-# ビジュアルレポートを表示
-if [ $VISUAL -eq 1 ] && [ -f "$VISUAL_REPORT_PATH" ]; then
-  print_step "ビジュアルレポートを表示しています..."
-  if [[ "$OSTYPE" == "darwin"* ]]; then
-    open "$VISUAL_REPORT_PATH"
-    print_debug "Macでレポートを開きました: $VISUAL_REPORT_PATH"
-  elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    if command -v xdg-open > /dev/null; then
-      xdg-open "$VISUAL_REPORT_PATH" 2>/dev/null
-      print_debug "Linuxでレポートを開きました: $VISUAL_REPORT_PATH"
+    print_step "ビジュアルレポートを表示しています..."
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+      open "$VISUAL_REPORT_PATH"
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+      xdg-open "$VISUAL_REPORT_PATH" 2>/dev/null || print_warning "ブラウザで $VISUAL_REPORT_PATH を開いてください"
+    elif [[ "$OSTYPE" == "cygwin" ]] || [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
+      start "$VISUAL_REPORT_PATH"
     else
       print_warning "ブラウザで $VISUAL_REPORT_PATH を開いてください"
     fi
-  elif [[ "$OSTYPE" == "cygwin" ]] || [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
-    start "$VISUAL_REPORT_PATH"
-    print_debug "Windowsでレポートを開きました: $VISUAL_REPORT_PATH"
   else
-    print_warning "ブラウザで $VISUAL_REPORT_PATH を開いてください"
+    print_warning "ビジュアルレポートが見つかりません: $VISUAL_REPORT_PATH"
   fi
-elif [ $VISUAL -eq 1 ]; then
-  print_warning "ビジュアルレポートが見つかりません: $VISUAL_REPORT_PATH"
 fi
 
 # HTMLカバレッジレポートを表示

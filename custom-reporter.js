@@ -1596,8 +1596,102 @@ class EvaNervReporter {
       fs.writeFileSync(path.join(outputDir, 'visual-report.html'), basicHtml);
     }
   }
+/**
+   * テスト実行開始時のハンドラ
+   * @param {Object} results テスト結果
+   * @param {Object} options オプション
+   */
+  onRunStart(results, options) {
+    this.print('テスト実行を開始します...', 'info');
+    this.print(`実行日時: ${new Date().toLocaleString('ja-JP')}`, 'info');
+    
+    // 結果オブジェクトを初期化
+    this.results = {
+      numTotalTests: 0,
+      numFailedTests: 0,
+      numPassedTests: 0,
+      numPendingTests: 0,
+      testResults: [],
+      coverageMap: null
+    };
+  }
   
-  // これ以下にEvaNervReporterクラスの他のメソッドを追加...
+  /**
+   * 各テスト結果のハンドラ
+   * @param {Object} test テスト情報
+   * @param {Object} testResult テスト結果
+   */
+  onTestResult(test, testResult) {
+    // 結果を集計
+    this.results.testResults.push(testResult);
+    this.results.numTotalTests += testResult.numPassingTests + testResult.numFailingTests + testResult.numPendingTests;
+    this.results.numFailedTests += testResult.numFailingTests;
+    this.results.numPassedTests += testResult.numPassingTests;
+    this.results.numPendingTests += testResult.numPendingTests;
+    
+    // テスト結果をログに出力
+    const testPath = testResult.testFilePath;
+    const relativePath = path.relative(process.cwd(), testPath);
+    
+    if (testResult.numFailingTests > 0) {
+      this.print(`${relativePath}: ${testResult.numFailingTests} 件のテストが失敗`, 'error');
+    } else if (testResult.numPendingTests > 0) {
+      this.print(`${relativePath}: ${testResult.numPassingTests} 件成功, ${testResult.numPendingTests} 件保留`, 'warning');
+    } else {
+      this.print(`${relativePath}: ${testResult.numPassingTests} 件のテストがすべて成功`, 'success');
+    }
+  }
+  
+  /**
+   * テスト実行完了時のハンドラ
+   * @param {Object} contexts コンテキスト
+   * @param {Object} results 最終結果
+   */
+  onRunComplete(contexts, results) {
+    this.endTime = Date.now();
+    const executionTime = (this.endTime - this.startTime) / 1000;
+    
+    this.print(`テスト実行が完了しました (${executionTime.toFixed(2)}秒)`, 'info');
+    
+    // 結果を集計
+    this.results.numTotalTests = results.numTotalTests;
+    this.results.numFailedTests = results.numFailedTests;
+    this.results.numPassedTests = results.numPassedTests;
+    this.results.numPendingTests = results.numPendingTests;
+    
+    // カバレッジ情報があれば設定
+    if (results.coverageMap) {
+      this.results.coverageMap = results.coverageMap;
+    }
+    
+    // 結果サマリーを出力
+    const summary = [
+      `総テスト数: ${this.results.numTotalTests}`,
+      `成功: ${this.results.numPassedTests}`,
+      `失敗: ${this.results.numFailedTests}`,
+      `保留: ${this.results.numPendingTests}`,
+      `実行時間: ${executionTime.toFixed(2)}秒`
+    ].join(', ');
+    
+    this.print(summary, 'result');
+    
+    // 出力ディレクトリの確認と作成
+    const outputDir = './test-results';
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+    
+    // レポートを生成
+    try {
+      this.generateEvaVisualReport(outputDir);
+      this.print(`エヴァンゲリオン風ビジュアルレポートを生成しました: ${path.join(outputDir, 'visual-report.html')}`, 'success');
+    } catch (error) {
+      this.print(`レポート生成中にエラーが発生しました: ${error.message}`, 'error');
+    }
+  }
+}
+
+module.exports = EvaNervReporter;  
 }
 
 module.exports = EvaNervReporter;

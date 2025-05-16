@@ -436,105 +436,55 @@ function embedChartsInReport(barChartSvg, lineChartSvg) {
     // レポートHTMLを読み込む
     let html = fs.readFileSync(reportFile, 'utf8');
     
-    // チャートセクションが既に存在するか確認
-    const chartSectionExists = html.includes('<div class="coverage-charts">');
-    
-    if (chartSectionExists) {
-      // 既存のチャートセクションを置き換え
+    // バーチャートを埋め込む
+    const barChartRegex = /<div id="bar-chart-container"[^>]*>[\s\S]*?<\/div>/;
+    if (html.match(barChartRegex)) {
       html = html.replace(
-        /<div class="coverage-charts">[\s\S]*?<\/div><!-- end coverage-charts -->/,
-        `<div class="coverage-charts">
-          <h2>コードカバレッジチャート</h2>
-          <div class="chart-container">
-            ${barChartSvg}
-          </div>
-          <div class="chart-container">
-            ${lineChartSvg}
-          </div>
-        </div><!-- end coverage-charts -->`
+        barChartRegex,
+        `<div id="bar-chart-container" class="chart-container">
+          ${barChartSvg}
+        </div>`
       );
+      console.log('バーチャートを埋め込みました');
     } else {
-      // カスタムレポーターが生成したHTMLにチャートセクションを追加
-      // チャートセクションがない場合は追加する場所を探す
-      let insertPosition = html.indexOf('</body>');
-      if (insertPosition === -1) {
-        // </body>タグがない場合はファイルの最後に追加
-        insertPosition = html.length;
-        html = html + `
-          <div class="coverage-charts">
-            <h2>コードカバレッジチャート</h2>
-            <div class="chart-container">
-              ${barChartSvg}
-            </div>
-            <div class="chart-container">
-              ${lineChartSvg}
-            </div>
-          </div><!-- end coverage-charts -->
-        `;
-      } else {
-        html = html.slice(0, insertPosition) + 
-        `<div class="coverage-charts">
-          <h2>コードカバレッジチャート</h2>
-          <div class="chart-container">
-            ${barChartSvg}
-          </div>
-          <div class="chart-container">
-            ${lineChartSvg}
-          </div>
-        </div><!-- end coverage-charts -->
-        ` + 
-        html.slice(insertPosition);
-      }
+      console.warn('バーチャートコンテナが見つかりません');
     }
     
-    // スタイルシートを追加/更新
-    if (!html.includes('.coverage-charts')) {
-      const stylePosition = html.indexOf('</style>');
-      if (stylePosition !== -1) {
-        html = html.slice(0, stylePosition) + 
-        `
-        /* カバレッジチャートのスタイル */
-        .coverage-charts {
-          margin-top: 30px;
-          border-top: 1px solid #eee;
-          padding-top: 20px;
-        }
-        .coverage-charts h2 {
-          text-align: center;
-          margin-bottom: 20px;
-        }
-        .chart-container {
-          display: flex;
-          justify-content: center;
-          margin-bottom: 30px;
-        }
-        ` + 
-        html.slice(stylePosition);
-      } else {
-        // スタイルタグがない場合は追加
-        const headPosition = html.indexOf('</head>');
-        if (headPosition !== -1) {
-          html = html.slice(0, headPosition) + 
-          `<style>
-          /* カバレッジチャートのスタイル */
-          .coverage-charts {
-            margin-top: 30px;
-            border-top: 1px solid #eee;
-            padding-top: 20px;
-          }
-          .coverage-charts h2 {
-            text-align: center;
-            margin-bottom: 20px;
-          }
-          .chart-container {
-            display: flex;
-            justify-content: center;
-            margin-bottom: 30px;
-          }
-          </style>` + 
-          html.slice(headPosition);
-        }
+    // 折れ線チャートを埋め込む
+    const lineChartRegex = /<div id="line-chart-container"[^>]*>[\s\S]*?<\/div>/;
+    if (html.match(lineChartRegex)) {
+      html = html.replace(
+        lineChartRegex,
+        `<div id="line-chart-container" class="chart-container">
+          ${lineChartSvg}
+        </div>`
+      );
+      console.log('折れ線チャートを埋め込みました');
+    } else {
+      console.warn('折れ線チャートコンテナが見つかりません');
+    }
+    
+    // チャートセクション全体が見つからない場合は追加
+    if (!html.includes('id="coverage-charts"')) {
+      let insertPosition = html.indexOf('</body>');
+      if (insertPosition === -1) {
+        insertPosition = html.length;
       }
+      
+      html = html.slice(0, insertPosition) + 
+      `<div id="coverage-charts" class="coverage-charts">
+        <h2>コードカバレッジチャート</h2>
+        <div id="bar-chart-container" class="chart-container">
+          ${barChartSvg}
+        </div>
+        <div id="line-chart-container" class="chart-container">
+          ${lineChartSvg}
+        </div>
+      </div><!-- end coverage-charts -->
+      ` + 
+      html.slice(insertPosition);
+      
+      console.log('チャートセクション全体を追加しました');
     }
     
     // レポートを保存
@@ -542,6 +492,7 @@ function embedChartsInReport(barChartSvg, lineChartSvg) {
     console.log('ビジュアルレポートにチャートを埋め込みました:', reportFile);
   } catch (error) {
     console.error('レポートへのチャート埋め込みに失敗しました:', error);
+    console.error('エラーの詳細:', error.stack);
   }
 }
 

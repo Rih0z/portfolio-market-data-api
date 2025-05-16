@@ -271,6 +271,17 @@ print_step "テストを実行しています..."
 eval "$ENV_VARS $JEST_CMD" >> "$LOG_FILE" 2>> "$ERROR_LOG_FILE"
 TEST_RESULT=$?
 
+# カバレッジチャートを生成
+if [ $NO_COVERAGE -eq 0 ]; then
+  print_step "カバレッジチャートを生成しています..."
+  node ./scripts/generate-coverage-chart.js >> "$LOG_FILE" 2>> "$ERROR_LOG_FILE"
+  if [ $? -eq 0 ]; then
+    print_success "カバレッジチャートを生成しました"
+  else
+    print_warning "カバレッジチャートの生成に失敗しました"
+  fi
+fi
+
 # テスト実行時間計測終了
 END_TIME=$(date +%s)
 EXECUTION_TIME=$((END_TIME - START_TIME))

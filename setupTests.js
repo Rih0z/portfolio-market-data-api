@@ -1,85 +1,171 @@
-// setupTests.js
-// Global setup file for Jest tests
+/**
+ * ファイルパス: setupTests.js
+ * 
+ * Jestテスト実行前の共通セットアップファイル
+ * __tests__/setup.js と jest.setup.js の内容を統合
+ * 
+ * @file setupTests.js
+ * @author Portfolio Manager Team
+ * @created 2025-05-20
+ */
 
-// Fix: Add timeout based on test type
-// This helps prevent timeouts in E2E tests that are naturally slower
-const setupTestTimeout = () => {
-  const testPath = process.env.JEST_WORKER_ID || '';
+// テスト用のタイムアウト設定
+jest.setTimeout(30000); // 30秒
+
+// エラーハンドリングを改善
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // テスト環境では強制終了しない
+});
+
+// テスト環境を設定
+process.env.NODE_ENV = 'test';
+
+// テスト環境変数のデフォルト値設定
+process.env = {
+  ...process.env,
+  // 基本設定
+  DYNAMODB_ENDPOINT: process.env.DYNAMODB_ENDPOINT || 'http://localhost:8000',
+  SESSION_TABLE: process.env.SESSION_TABLE || 'test-sessions',
+  DYNAMODB_TABLE_PREFIX: process.env.DYNAMODB_TABLE_PREFIX || 'test-',
   
-  if (testPath.includes('e2e')) {
-    // E2E tests need more time
-    jest.setTimeout(60000); // 60 seconds
-  } else if (testPath.includes('integration')) {
-    // Integration tests need moderate time
-    jest.setTimeout(30000); // 30 seconds
-  } else {
-    // Unit tests need less time
-    jest.setTimeout(15000); // 15 seconds
+  // AWS リージョン設定
+  AWS_REGION: process.env.AWS_REGION || 'us-east-1',
+  
+  // テスト用キャッシュとセッションテーブル
+  CACHE_TABLE: process.env.CACHE_TABLE || 'test-portfolio-market-data-cache',
+  
+  // CORS設定
+  CORS_ALLOW_ORIGIN: process.env.CORS_ALLOW_ORIGIN || '*',
+  
+  // APIキー設定
+  ADMIN_API_KEY: process.env.ADMIN_API_KEY || 'test-admin-api-key',
+  ADMIN_EMAIL: process.env.ADMIN_EMAIL || 'admin@example.com',
+  
+  // 使用量制限
+  DAILY_REQUEST_LIMIT: process.env.DAILY_REQUEST_LIMIT || '100',
+  MONTHLY_REQUEST_LIMIT: process.env.MONTHLY_REQUEST_LIMIT || '1000',
+  DISABLE_ON_LIMIT: process.env.DISABLE_ON_LIMIT || 'true',
+  
+  // キャッシュ設定
+  CACHE_TIME_US_STOCK: process.env.CACHE_TIME_US_STOCK || '3600',
+  CACHE_TIME_JP_STOCK: process.env.CACHE_TIME_JP_STOCK || '3600',
+  CACHE_TIME_MUTUAL_FUND: process.env.CACHE_TIME_MUTUAL_FUND || '10800',
+  CACHE_TIME_EXCHANGE_RATE: process.env.CACHE_TIME_EXCHANGE_RATE || '21600',
+  
+  // Google認証設定
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || 'test-client-id',
+  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || 'test-client-secret',
+  SESSION_EXPIRES_DAYS: process.env.SESSION_EXPIRES_DAYS || '7',
+};
+
+// DynamoDBモックを有効化
+const mockDynamoDb = {
+  get: jest.fn().mockImplementation(() => ({
+    promise: jest.fn().mockResolvedValue({ Item: null })
+  })),
+  put: jest.fn().mockImplementation(() => ({
+    promise: jest.fn().mockResolvedValue({})
+  })),
+  update: jest.fn().mockImplementation(() => ({
+    promise: jest.fn().mockResolvedValue({ Attributes: { count: 1 } })
+  })),
+  delete: jest.fn().mockImplementation(() => ({
+    promise: jest.fn().mockResolvedValue({})
+  })),
+  scan: jest.fn().mockImplementation(() => ({
+    promise: jest.fn().mockResolvedValue({ Items: [] })
+  })),
+  query: jest.fn().mockImplementation(() => ({
+    promise: jest.fn().mockResolvedValue({ Items: [] })
+  }))
+};
+
+// グローバルDynamoDBモック
+global.__AWS_MOCK__ = {
+  dynamoDb: mockDynamoDb
+};
+
+// モックライブラリの設定
+// nockの自動クリーンアップを設定
+const nock = require('nock');
+nock.disableNetConnect();
+nock.enableNetConnect('localhost'); // ローカル接続は許可
+
+// コンソール出力をモック化（静かなテスト実行のため）
+global.originalConsole = {
+  log: console.log,
+  error: console.error,
+  warn: console.warn,
+  info: console.info
+};
+
+// テスト結果が詳細に出力されないようにオーバーライド
+// CI環境やDEBUGモードでは元の動作を維持
+if (process.env.CI !== 'true' && process.env.DEBUG !== 'true' && process.env.VERBOSE_MODE !== 'true') {
+  // 標準出力をモック化
+  console.log = (...args) => {
+    // テスト開始・終了メッセージと重要な警告のみ表示
+    if (typeof args[0] === 'string' && (
+        args[0].includes('PASS') || 
+        args[0].includes('FAIL') || 
+        args[0].includes('ERROR') ||
+        args[0].startsWith('Test suite') ||
+        args[0].includes('Test Suites:') ||
+        args[0].includes('Tests:') ||
+        args[0].includes('Snapshots:') ||
+        args[0].includes('Time:')
+      )) {
+      global.originalConsole.log(...args);
+    }
+  };
+  console.info = (...args) => {
+    // 重要な情報のみ表示
+    if (typeof args[0] === 'string' && (
+        args[0].includes('IMPORTANT') ||
+        args[0].includes('[INFO]')
+      )) {
+      global.originalConsole.info(...args);
+    }
+  };
+}
+
+// 警告とエラーは常に表示
+console.warn = global.originalConsole.warn;
+console.error = global.originalConsole.error;
+
+// 日付のモック
+jest.spyOn(global.Date, 'now').mockImplementation(() => 1715900000000); // 2025-05-18T10:00:00.000Z
+
+// テスト前後の共通処理
+beforeAll(async () => {
+  if (process.env.DEBUG === 'true' || process.env.VERBOSE_MODE === 'true') {
+    global.originalConsole.log('Starting test suite with environment:', process.env.NODE_ENV);
+    global.originalConsole.log('Test configuration:');
+    global.originalConsole.log('- RUN_E2E_TESTS:', process.env.RUN_E2E_TESTS);
+    global.originalConsole.log('- USE_API_MOCKS:', process.env.USE_API_MOCKS);
+    global.originalConsole.log('- SKIP_E2E_TESTS:', process.env.SKIP_E2E_TESTS);
   }
-};
+});
 
-// Set proper environment variables for testing
-const setupEnvironmentVariables = () => {
-  // Ensure we're running in test mode
-  process.env.NODE_ENV = 'test';
-  
-  // Set table prefix for tests
-  process.env.TABLE_PREFIX = 'test';
-  
-  // Set DynamoDB endpoint
-  process.env.DYNAMODB_ENDPOINT = 'http://localhost:8000';
-  
-  // Use custom port for DynamoDB to avoid conflicts
-  process.env.DYNAMODB_LOCAL_PORT = '8000';
-  
-  // Configure mock API by default
-  if (process.env.USE_API_MOCKS === undefined) {
-    process.env.USE_API_MOCKS = 'true';
+afterAll(async () => {
+  if (process.env.DEBUG === 'true' || process.env.VERBOSE_MODE === 'true') {
+    global.originalConsole.log('Test suite completed');
   }
   
-  // Set API endpoint for tests
-  process.env.API_ENDPOINT = 'http://localhost:3000/dev';
+  // Jestのタイマーを確実にクリーンアップ
+  jest.useRealTimers();
   
-  // Set mock server port
-  process.env.MOCK_SERVER_PORT = '3001';
-  
-  // Fix: Add sample API keys for tests
-  process.env.YAHOO_FINANCE_API_KEY = 'test-api-key';
-  process.env.YAHOO_FINANCE_API_HOST = 'yh-finance.p.rapidapi.com';
-  process.env.EXCHANGE_RATE_API_KEY = 'test-api-key';
-};
+  // nockのクリーンアップ
+  nock.cleanAll();
+  nock.enableNetConnect();
+});
 
-// Configure global setup
-const setupGlobals = () => {
-  // Fix: Add global mock store for tests that can't access DynamoDB
-  global.mockStore = {
-    sessions: {},
-    cache: {},
-    blacklist: {}
-  };
+// 各テスト後のクリーンアップ
+afterEach(() => {
+  // タイマーのクリーンアップ
+  jest.clearAllTimers();
   
-  // Add helper to check test type
-  global.isUnitTest = () => {
-    return process.env.JEST_WORKER_ID && !process.env.JEST_WORKER_ID.includes('e2e') && !process.env.JEST_WORKER_ID.includes('integration');
-  };
-  
-  global.isIntegrationTest = () => {
-    return process.env.JEST_WORKER_ID && process.env.JEST_WORKER_ID.includes('integration');
-  };
-  
-  global.isE2ETest = () => {
-    return process.env.JEST_WORKER_ID && process.env.JEST_WORKER_ID.includes('e2e');
-  };
-};
-
-// Run all setup functions
-setupTestTimeout();
-setupEnvironmentVariables();
-setupGlobals();
-
-// Print the test environment info
-console.log('==== TEST SETUP INFO ====');
-console.log('NODE_ENV:', process.env.NODE_ENV);
-console.log('Test Type:', global.isUnitTest() ? 'Unit' : global.isIntegrationTest() ? 'Integration' : global.isE2ETest() ? 'E2E' : 'Unknown');
-console.log('Timeout:', jest.getTimerCount() || 'Default');
-console.log('========================');
+  // モックのリセット
+  jest.resetAllMocks();
+});

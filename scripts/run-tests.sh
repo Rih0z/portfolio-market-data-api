@@ -1,10 +1,3 @@
-/**
- * スクリプト: scripts/run-tests.sh
- * 
- * テスト実行スクリプトの簡素化版
- * コマンドラインからテストを実行するための簡単なインターフェース
- */
-
 #!/bin/bash
 # 
 # ファイルパス: scripts/run-tests.sh
@@ -273,9 +266,9 @@ fi
 # テスト実行時間計測開始
 START_TIME=$(date +%s)
 
-# テスト実行
+# テスト実行 - 修正版：プロセス置換を使わない互換性のあるバージョン
 print_step "テストを実行しています..."
-eval "$ENV_VARS $JEST_CMD" > >(tee -a "$LOG_FILE") 2> >(tee -a "$ERROR_LOG_FILE" >&2)
+eval "$ENV_VARS $JEST_CMD" >> "$LOG_FILE" 2>> "$ERROR_LOG_FILE"
 TEST_RESULT=$?
 
 # テスト実行時間計測終了

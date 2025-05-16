@@ -8,12 +8,13 @@
  * @created 2025-05-13
  */
 
-const cacheService = require('../../../src/services/cacheService');
-const { getDynamoDBClient } = require('../../../src/utils/dynamoDbClient');
+// インポートパスを修正: cacheService → cache
+const cacheService = require('../../../src/services/cache');
+const { getDynamoDBClient } = require('../../../src/utils/dynamoDbService');
 const { withRetry } = require('../../../src/utils/retry');
 
 // モジュールのモック化
-jest.mock('../../../src/utils/dynamoDbClient');
+jest.mock('../../../src/utils/dynamoDbService');
 jest.mock('../../../src/utils/retry');
 
 // DynamoDBコマンドのモック
@@ -312,4 +313,3 @@ describe('Cache Service', () => {
     });
   });
 });
-

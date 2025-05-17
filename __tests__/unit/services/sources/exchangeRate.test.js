@@ -1,5 +1,5 @@
 /**
- * ファイルパス: __tests__/unit/services/sources/exchangeRateApi.test.js
+ * ファイルパス: __tests__/unit/services/sources/exchangeRate.test.js
  * 
  * 為替レートAPIサービスのユニットテスト
  * APIリクエスト、レスポンス処理、フォールバック動作を検証
@@ -14,7 +14,6 @@ jest.mock('axios');
 jest.mock('../../../../src/services/alerts');
 
 // テスト対象モジュールのインポート
-// 修正: exchangeRateApi.js → exchangeRate.js
 const exchangeRateService = require('../../../../src/services/sources/exchangeRate');
 const axios = require('axios');
 const alertService = require('../../../../src/services/alerts');

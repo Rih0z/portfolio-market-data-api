@@ -1,5 +1,5 @@
 /**
- * ファイルパス: __tests__/unit/services/sources/yahooFinanceApi.test.js
+ * ファイルパス: __tests__/unit/services/sources/yahooFinance.test.js
  * 
  * Yahoo Finance APIサービスのユニットテスト
  * APIリクエスト、レスポンス処理、エラーハンドリングを検証
@@ -11,12 +11,15 @@
 
 // モックの設定
 jest.mock('axios');
+jest.mock('../../../../src/services/alerts');
 
 // テスト対象モジュールのインポート
-// 修正: yahooFinanceApi.js → yahooFinance.js
 const yahooFinanceService = require('../../../../src/services/sources/yahooFinance');
 const axios = require('axios');
-const { withRetry } = require('../../../../src/utils/retry');
+const alertService = require('../../../../src/services/alerts');
+
+// モック関数
+alertService.notifyError = jest.fn();
 
 // テストデータ
 const TEST_DATA = {

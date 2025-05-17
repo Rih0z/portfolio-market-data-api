@@ -8,12 +8,13 @@
  * @created 2025-05-13
  */
 
-const cacheService = require('../../../src/services/cacheService');
-const { getDynamoDBClient } = require('../../../src/utils/dynamoDbClient');
+// 正しいモジュールパスに修正
+const cacheService = require('../../../src/services/cache');
+const { getDynamoDb } = require('../../../src/utils/awsConfig');
 const { withRetry } = require('../../../src/utils/retry');
 
 // モジュールのモック化
-jest.mock('../../../src/utils/dynamoDbClient');
+jest.mock('../../../src/utils/awsConfig');
 jest.mock('../../../src/utils/retry');
 
 // DynamoDBコマンドのモック
@@ -47,7 +48,7 @@ describe('Cache Service', () => {
       send: mockSend
     };
     
-    getDynamoDBClient.mockReturnValue(mockDynamoDb);
+    getDynamoDb.mockReturnValue(mockDynamoDb);
     
     // withRetryのモック実装 - 引数の関数をそのまま実行
     withRetry.mockImplementation((fn) => fn());

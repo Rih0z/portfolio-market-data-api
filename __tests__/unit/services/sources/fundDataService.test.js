@@ -1,5 +1,5 @@
 /**
- * ファイルパス: __tests__/unit/services/sources/mutualFundData.test.js
+ * ファイルパス: __tests__/unit/services/sources/fundDataService.test.js
  * 
  * 投資信託データ取得機能のユニットテスト
  * 投資信託データソースアダプターの機能をテスト
@@ -25,45 +25,10 @@ jest.mock('csv-parse/sync', () => ({
   parse: jest.fn()
 }));
 jest.mock('../../../../src/utils/retry');
-jest.mock('../../../../src/utils/scrapingBlacklist', () => ({
-  isBlacklisted: jest.fn(),
-  recordFailure: jest.fn(),   // 修正: addToBlacklist → recordFailure
-  recordSuccess: jest.fn()    // 追加: recordSuccess 関数
-}));
-jest.mock('../../../../src/services/cache', () => ({
-  get: jest.fn(),
-  set: jest.fn()
-}));
-jest.mock('../../../../src/services/alerts', () => ({
-  notifyError: jest.fn().mockResolvedValue({ success: true })
-}));
-jest.mock('../../../../src/utils/dataFetchUtils', () => {
-  const original = jest.requireActual('../../../../src/utils/dataFetchUtils');
-  return {
-    ...original,
-    recordDataFetchFailure: jest.fn().mockResolvedValue(undefined),
-    recordDataFetchSuccess: jest.fn().mockResolvedValue(undefined),
-    checkBlacklistAndGetFallback: jest.fn().mockImplementation(async (code, market, fallbackConfig) => {
-      const isInBlacklist = await blacklist.isBlacklisted(code, market);
-      return {
-        isBlacklisted: isInBlacklist,
-        fallbackData: {
-          ticker: `${code}C`,
-          price: fallbackConfig.defaultPrice || 10000,
-          change: 0,
-          changePercent: 0,
-          name: fallbackConfig.name || `投資信託 ${code}`,
-          currency: fallbackConfig.currencyCode || 'JPY',
-          lastUpdated: new Date().toISOString(),
-          source: 'Blacklisted Fallback',
-          isStock: false,
-          isMutualFund: true,
-          isBlacklisted: isInBlacklist
-        }
-      };
-    })
-  };
-});
+jest.mock('../../../../src/utils/scrapingBlacklist');
+jest.mock('../../../../src/services/cache');
+jest.mock('../../../../src/services/alerts');
+jest.mock('../../../../src/utils/dataFetchUtils');
 
 describe('Fund Data Service', () => {
   // テスト用データ
@@ -102,10 +67,39 @@ describe('Fund Data Service', () => {
     
     // ブラックリストのモック
     blacklist.isBlacklisted.mockResolvedValue(false);
+    blacklist.recordFailure.mockResolvedValue({ success: true });
+    blacklist.recordSuccess.mockResolvedValue(true);
     
     // キャッシュのモック
     cacheService.get.mockResolvedValue(null);
     cacheService.set.mockResolvedValue(undefined);
+    
+    // アラートのモック
+    alertService.notifyError.mockResolvedValue({ success: true });
+    
+    // dataFetchUtilsのモック
+    dataFetchUtils.getRandomUserAgent.mockReturnValue('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+    dataFetchUtils.recordDataFetchFailure.mockResolvedValue(undefined);
+    dataFetchUtils.recordDataFetchSuccess.mockResolvedValue(undefined);
+    dataFetchUtils.checkBlacklistAndGetFallback.mockImplementation(async (code, market, fallbackConfig) => {
+      const isInBlacklist = await blacklist.isBlacklisted(code, market);
+      return {
+        isBlacklisted: isInBlacklist,
+        fallbackData: {
+          ticker: `${code}C`,
+          price: fallbackConfig.defaultPrice || 10000,
+          change: 0,
+          changePercent: 0,
+          name: fallbackConfig.name || `投資信託 ${code}`,
+          currency: fallbackConfig.currencyCode || 'JPY',
+          lastUpdated: new Date().toISOString(),
+          source: 'Blacklisted Fallback',
+          isStock: false,
+          isMutualFund: true,
+          isBlacklisted: isInBlacklist
+        }
+      };
+    });
   });
 
   describe('getMutualFundData', () => {

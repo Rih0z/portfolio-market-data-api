@@ -494,8 +494,9 @@ const loadPortfolioFromDrive = async (accessToken, fileId) => {
  */
 const savePortfolioToDrive = async (accessToken, portfolioData, fileId = null, createBackup = true) => {
   try {
-    // ファイル名の生成 - テストに合わせて修正
-    const fileName = fileId ? null : 'test-file.json';
+    // ファイル名の生成（現在のタイムスタンプを含む）
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const fileName = fileId ? null : `portfolio-data-${timestamp}.json`;
     
     // ファイルのコンテンツ
     const content = JSON.stringify(portfolioData, null, 2);

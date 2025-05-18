@@ -5,15 +5,13 @@
  * @author Portfolio Manager Team
  * @created 2025-05-12
  * @updated 2025-05-13
+ * @updated 2025-05-20 改善: エラーハンドリング強化と共通関数の活用
  */
 'use strict';
 
-const { 
-  getSession,
-  refreshAccessToken,
-  savePortfolioToDrive 
-} = require('../../services/googleAuthService');
-const { formatResponse, formatErrorResponse } = require('../../utils/responseFormatter');
+const { getSession, refreshSessionToken } = require('../../services/googleAuthService');
+const { savePortfolioToDrive } = require('../../services/googleDriveService');
+const { formatResponse, formatErrorResponse } = require('../../utils/responseUtils');
 const { parseCookies } = require('../../utils/cookieParser');
 
 /**
@@ -24,7 +22,7 @@ const { parseCookies } = require('../../utils/cookieParser');
 module.exports.handler = async (event) => {
   try {
     // Cookieからセッションを取得
-    const cookies = parseCookies(event.headers.Cookie || event.headers.cookie || '');
+    const cookies = parseCookies(event.headers || {});
     const sessionId = cookies.session;
     
     if (!sessionId) {
@@ -47,8 +45,18 @@ module.exports.handler = async (event) => {
     }
     
     // リクエストボディを解析
-    const requestBody = JSON.parse(event.body || '{}');
-    const { portfolioData } = requestBody;
+    let requestBody;
+    try {
+      requestBody = JSON.parse(event.body || '{}');
+    } catch (parseError) {
+      return formatErrorResponse({
+        statusCode: 400,
+        code: 'INVALID_REQUEST_BODY',
+        message: 'リクエストボディのJSONが不正です'
+      });
+    }
+    
+    const { portfolioData, fileId, createBackup = true } = requestBody;
     
     if (!portfolioData) {
       return formatErrorResponse({
@@ -58,52 +66,81 @@ module.exports.handler = async (event) => {
       });
     }
     
-    // アクセストークンの有効期限をチェック
-    const tokenExpiry = new Date(session.tokenExpiry);
-    const now = new Date();
-    let accessToken = session.accessToken;
-    
-    // トークンが期限切れの場合は更新
-    if (tokenExpiry <= now && session.refreshToken) {
-      try {
-        const newTokens = await refreshAccessToken(session.refreshToken);
-        accessToken = newTokens.access_token;
-      } catch (refreshError) {
-        console.error('トークン更新エラー:', refreshError);
-        return formatErrorResponse({
-          statusCode: 401,
-          code: 'TOKEN_REFRESH_ERROR',
-          message: 'アクセストークンの更新に失敗しました',
-          details: refreshError.message
-        });
-      }
+    // データの基本検証（必須フィールド）
+    if (!portfolioData.name) {
+      return formatErrorResponse({
+        statusCode: 400,
+        code: 'INVALID_PORTFOLIO_DATA',
+        message: 'ポートフォリオ名は必須です'
+      });
     }
     
+    // トークンを検証・更新
+    let accessToken;
+    try {
+      const tokenResult = await refreshSessionToken(sessionId);
+      accessToken = tokenResult.accessToken;
+    } catch (tokenError) {
+      console.error('トークン更新エラー:', tokenError);
+      return formatErrorResponse({
+        statusCode: 401,
+        code: 'TOKEN_REFRESH_ERROR',
+        message: 'アクセストークンの更新に失敗しました',
+        details: tokenError.message
+      });
+    }
+    
+    // データを保存する前にユーザー情報を追加
+    const enhancedPortfolioData = {
+      ...portfolioData,
+      lastUpdated: new Date().toISOString(),
+      updatedBy: {
+        userId: session.googleId,
+        email: session.email,
+        name: session.name
+      }
+    };
+    
     // Google Driveにデータを保存
-    const result = await savePortfolioToDrive(accessToken, portfolioData);
+    const result = await savePortfolioToDrive(accessToken, enhancedPortfolioData, fileId, createBackup);
     
     // レスポンスを整形
     return formatResponse({
       statusCode: 200,
-      body: {
-        success: true,
-        message: 'ポートフォリオデータをGoogle Driveに保存しました',
+      data: {
         file: {
           id: result.fileId,
           name: result.fileName,
           url: result.webViewLink,
-          createdAt: result.createdTime
+          createdAt: result.createdTime,
+          modifiedAt: result.modifiedTime
         }
-      }
+      },
+      message: 'ポートフォリオデータをGoogle Driveに保存しました'
     });
   } catch (error) {
     console.error('Drive保存エラー:', error);
+    
+    // エラーの種類に応じたメッセージを設定
+    let statusCode = 500;
+    let code = 'DRIVE_SAVE_ERROR';
+    let message = 'Google Driveへの保存に失敗しました';
+    
+    if (error.message?.includes('quota')) {
+      statusCode = 403;
+      code = 'QUOTA_EXCEEDED';
+      message = 'Google Driveの容量制限を超えました';
+    } else if (error.message?.includes('Permission')) {
+      statusCode = 403;
+      code = 'PERMISSION_DENIED';
+      message = 'ファイルへの書き込み権限がありません';
+    }
+    
     return formatErrorResponse({
-      statusCode: 500,
-      code: 'DRIVE_SAVE_ERROR',
-      message: 'Google Driveへの保存に失敗しました',
+      statusCode,
+      code,
+      message,
       details: error.message
     });
   }
 };
-

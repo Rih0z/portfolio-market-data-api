@@ -1,20 +1,19 @@
 /**
- * Google Driveファイル読み込みハンドラー - ポートフォリオデータの読み込み
+ * Google Driveファイルバージョン履歴ハンドラー - ポートフォリオデータのバージョン管理
  * 
- * @file src/function/drive/loadFile.js
+ * @file src/function/drive/fileVersions.js
  * @author Portfolio Manager Team
- * @created 2025-05-13
- * @updated 2025-05-20 改善: エラーハンドリング強化と共通関数の活用
+ * @created 2025-05-20
  */
 'use strict';
 
 const { getSession, refreshSessionToken } = require('../../services/googleAuthService');
-const { loadPortfolioFromDrive } = require('../../services/googleDriveService');
+const { getPortfolioVersionHistory, getFileWithMetadata } = require('../../services/googleDriveService');
 const { formatResponse, formatErrorResponse } = require('../../utils/responseUtils');
 const { parseCookies } = require('../../utils/cookieParser');
 
 /**
- * Google Driveデータ読み込みハンドラー
+ * Google Driveファイルバージョン履歴ハンドラー
  * @param {Object} event - API Gatewayイベント
  * @returns {Object} - API Gatewayレスポンス
  */
@@ -45,7 +44,7 @@ module.exports.handler = async (event) => {
     
     // クエリパラメータからファイルIDを取得
     const queryParams = event.queryStringParameters || {};
-    const { fileId } = queryParams;
+    const { fileId, versionId } = queryParams;
     
     if (!fileId) {
       return formatErrorResponse({
@@ -70,60 +69,68 @@ module.exports.handler = async (event) => {
       });
     }
     
-    // 拡張オプションの取得
-    const includeHistory = queryParams.includeHistory === 'true';
-    
-    // Google Driveからデータを読み込み
-    const result = await loadPortfolioFromDrive(accessToken, fileId);
-    
-    // バージョン履歴を取得（オプション）
-    let history = [];
-    if (includeHistory) {
-      try {
-        const { getPortfolioVersionHistory } = require('../../services/googleDriveService');
-        history = await getPortfolioVersionHistory(fileId, accessToken);
-      } catch (historyError) {
-        console.warn('バージョン履歴取得エラー:', historyError);
-        // バージョン履歴のエラーは無視して処理を続行
-      }
+    // 特定のバージョンの取得リクエストの場合
+    if (versionId) {
+      // 指定されたバージョンのファイルとメタデータを取得
+      const versionFile = await getFileWithMetadata(versionId, accessToken);
+      
+      // レスポンスを整形
+      return formatResponse({
+        statusCode: 200,
+        data: {
+          file: {
+            id: versionFile.metadata.id,
+            name: versionFile.metadata.name,
+            createdAt: versionFile.metadata.createdTime,
+            modifiedAt: versionFile.metadata.modifiedTime,
+            isVersion: true,
+            originalFileId: fileId
+          },
+          data: typeof versionFile.content === 'string' 
+            ? JSON.parse(versionFile.content) 
+            : versionFile.content
+        },
+        message: 'ポートフォリオデータのバージョンを取得しました'
+      });
     }
+    
+    // バージョン履歴を取得
+    const versionHistory = await getPortfolioVersionHistory(fileId, accessToken);
+    
+    // 履歴情報を整形
+    const formattedVersions = versionHistory.map(version => ({
+      id: version.id,
+      name: version.name,
+      createdAt: version.createdTime,
+      size: version.size ? parseInt(version.size, 10) : 0
+    }));
     
     // レスポンスを整形
     return formatResponse({
       statusCode: 200,
       data: {
-        file: {
-          id: result.fileId,
-          name: result.fileName,
-          createdAt: result.createdTime,
-          modifiedAt: result.modifiedTime,
-          webViewLink: result.webViewLink
-        },
-        data: result.data,
-        ...(includeHistory && { versions: history.map(v => ({
-          id: v.id,
-          name: v.name,
-          createdAt: v.createdTime
-        })) })
+        fileId,
+        versions: formattedVersions,
+        count: formattedVersions.length
       },
-      message: 'ポートフォリオデータをGoogle Driveから読み込みました'
+      message: `ポートフォリオデータのバージョン履歴を取得しました (${formattedVersions.length}件)`
     });
   } catch (error) {
-    console.error('Drive読み込みエラー:', error);
+    console.error('バージョン履歴取得エラー:', error);
     
     // エラーの種類に応じたメッセージを設定
     let statusCode = 500;
-    let code = 'DRIVE_LOAD_ERROR';
-    let message = 'Google Driveからの読み込みに失敗しました';
+    let code = 'VERSION_HISTORY_ERROR';
+    let message = 'バージョン履歴の取得に失敗しました';
     
     if (error.message?.includes('file not found')) {
       statusCode = 404;
       code = 'FILE_NOT_FOUND';
       message = '指定されたファイルが見つかりません';
-    } else if (error.message?.includes('Invalid portfolio data')) {
+    } else if (error.message?.includes('Invalid')) {
       statusCode = 400;
       code = 'INVALID_DATA_FORMAT';
-      message = 'ポートフォリオデータの形式が無効です';
+      message = 'データ形式が無効です';
     } else if (error.message?.includes('Permission')) {
       statusCode = 403;
       code = 'PERMISSION_DENIED';

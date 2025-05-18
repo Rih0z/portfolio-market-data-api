@@ -1,28 +1,21 @@
 /**
- * Google認証サービス - OAuth認証とGoogleドライブ連携機能
+ * Google認証サービス - OAuth認証とセッション管理機能
  * 
  * @file src/services/googleAuthService.js
  * @author Koki Riho
  * @created 2025-05-12
  * @updated 2025-05-13
+ * @updated 2025-05-20 改善: ドライブ操作関連機能を削除し認証に特化
  */
 'use strict';
 
-const { OAuth2Client } = require('google-auth-library');
-const { google } = require('googleapis');
 const uuid = require('uuid');
-const { addItem, getItem, deleteItem } = require('../utils/dynamoDbService');
+const { addItem, getItem, deleteItem, updateItem } = require('../utils/dynamoDbService');
+const tokenManager = require('../utils/tokenManager');
 
 // 定数定義
 const SESSION_TABLE = process.env.SESSION_TABLE || `${process.env.DYNAMODB_TABLE_PREFIX || 'portfolio-market-data-'}-sessions`;
 const SESSION_EXPIRES_DAYS = parseInt(process.env.SESSION_EXPIRES_DAYS || '7', 10); // セッション有効期限（日）
-const DRIVE_FOLDER_NAME = process.env.DRIVE_FOLDER_NAME || 'PortfolioManagerData';
-
-// Google OAuth2 クライアントの初期化
-const oAuth2Client = new OAuth2Client(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET
-);
 
 /**
  * 認証コードをトークンと交換する
@@ -31,17 +24,7 @@ const oAuth2Client = new OAuth2Client(
  * @returns {Promise<Object>} - トークン情報
  */
 const exchangeCodeForTokens = async (code, redirectUri) => {
-  try {
-    const { tokens } = await oAuth2Client.getToken({
-      code,
-      redirect_uri: redirectUri
-    });
-    
-    return tokens;
-  } catch (error) {
-    console.error('トークン交換エラー:', error);
-    throw new Error('認証コードからトークンへの交換に失敗しました');
-  }
+  return tokenManager.exchangeCodeForTokens(code, redirectUri);
 };
 
 /**
@@ -50,17 +33,7 @@ const exchangeCodeForTokens = async (code, redirectUri) => {
  * @returns {Promise<Object>} - ユーザー情報
  */
 const verifyIdToken = async (idToken) => {
-  try {
-    const ticket = await oAuth2Client.verifyIdToken({
-      idToken,
-      audience: process.env.GOOGLE_CLIENT_ID
-    });
-    
-    return ticket.getPayload();
-  } catch (error) {
-    console.error('IDトークン検証エラー:', error);
-    throw new Error('IDトークンの検証に失敗しました');
-  }
+  return tokenManager.verifyIdToken(idToken);
 };
 
 /**
@@ -148,189 +121,86 @@ const invalidateSession = async (sessionId) => {
 };
 
 /**
- * アクセストークンを更新する
- * @param {string} refreshToken - リフレッシュトークン
- * @returns {Promise<Object>} - 新しいトークン情報
+ * セッション情報を更新する
+ * @param {string} sessionId - セッションID
+ * @param {Object} updates - 更新する項目
+ * @returns {Promise<boolean>} - 成功したかどうか
  */
-const refreshAccessToken = async (refreshToken) => {
+const updateSession = async (sessionId, updates) => {
   try {
-    oAuth2Client.setCredentials({
-      refresh_token: refreshToken
+    // 更新式とパラメータを構築
+    const updateExpressions = [];
+    const expressionAttributeNames = {};
+    const expressionAttributeValues = {};
+    
+    // 更新項目をチェック
+    Object.entries(updates).forEach(([key, value]) => {
+      if (key === 'sessionId') return; // セッションIDは更新しない
+      
+      const attributeName = `#${key}`;
+      const attributeValue = `:${key}`;
+      
+      updateExpressions.push(`${attributeName} = ${attributeValue}`);
+      expressionAttributeNames[attributeName] = key;
+      expressionAttributeValues[attributeValue] = value;
     });
     
-    const { credentials } = await oAuth2Client.refreshAccessToken();
-    return credentials;
+    // 最終更新日時を追加
+    updateExpressions.push('#updatedAt = :updatedAt');
+    expressionAttributeNames['#updatedAt'] = 'updatedAt';
+    expressionAttributeValues[':updatedAt'] = new Date().toISOString();
+    
+    // 更新式を作成
+    const updateExpression = `SET ${updateExpressions.join(', ')}`;
+    
+    await updateItem(
+      SESSION_TABLE,
+      { sessionId },
+      updateExpression,
+      expressionAttributeNames,
+      expressionAttributeValues
+    );
+    
+    return true;
   } catch (error) {
-    console.error('トークン更新エラー:', error);
-    throw new Error('アクセストークンの更新に失敗しました');
+    console.error('セッション更新エラー:', error);
+    return false;
   }
 };
 
 /**
- * Google Driveのデータフォルダを検索または作成する
- * @param {string} accessToken - アクセストークン
- * @returns {Promise<string>} - フォルダID
+ * アクセストークンを更新し、セッションも更新する
+ * @param {string} sessionId - セッションID
+ * @returns {Promise<Object>} 更新されたトークン情報
  */
-const getOrCreateDriveFolder = async (accessToken) => {
+const refreshSessionToken = async (sessionId) => {
   try {
-    // Google Drive APIクライアントの設定
-    const drive = google.drive({
-      version: 'v3',
-      auth: new google.auth.OAuth2().setCredentials({ access_token: accessToken })
-    });
+    // セッションを取得
+    const session = await getSession(sessionId);
     
-    // 既存のフォルダを検索
-    const response = await drive.files.list({
-      q: `name='${DRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
-      spaces: 'drive',
-      fields: 'files(id, name)'
-    });
-    
-    const folders = response.data.files;
-    
-    // フォルダが見つかった場合はそのIDを返す
-    if (folders && folders.length > 0) {
-      return folders[0].id;
+    if (!session) {
+      throw new Error('セッションが見つかりません');
     }
     
-    // フォルダが見つからない場合は新規作成
-    const folderMetadata = {
-      name: DRIVE_FOLDER_NAME,
-      mimeType: 'application/vnd.google-apps.folder'
-    };
+    // トークンを検証・更新
+    const tokenInfo = await tokenManager.validateAndRefreshToken(session);
     
-    const folder = await drive.files.create({
-      resource: folderMetadata,
-      fields: 'id'
-    });
-    
-    return folder.data.id;
-  } catch (error) {
-    console.error('Driveフォルダ作成エラー:', error);
-    throw new Error('Google Driveフォルダの作成に失敗しました');
-  }
-};
-
-/**
- * ポートフォリオデータをGoogle Driveに保存する
- * @param {string} accessToken - アクセストークン
- * @param {Object} portfolioData - 保存するポートフォリオデータ
- * @returns {Promise<Object>} - 保存結果
- */
-const savePortfolioToDrive = async (accessToken, portfolioData) => {
-  try {
-    // Google Drive APIクライアントの設定
-    const drive = google.drive({
-      version: 'v3',
-      auth: new google.auth.OAuth2().setCredentials({ access_token: accessToken })
-    });
-    
-    // フォルダの取得または作成
-    const folderId = await getOrCreateDriveFolder(accessToken);
-    
-    // ファイル名の生成（現在のタイムスタンプを含む）
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const fileName = `portfolio-data-${timestamp}.json`;
-    
-    // ファイルのメタデータ
-    const fileMetadata = {
-      name: fileName,
-      parents: [folderId]
-    };
-    
-    // ファイルのコンテンツ
-    const media = {
-      mimeType: 'application/json',
-      body: JSON.stringify(portfolioData, null, 2)
-    };
-    
-    // ファイルのアップロード
-    const file = await drive.files.create({
-      resource: fileMetadata,
-      media: media,
-      fields: 'id, name, webViewLink, createdTime'
-    });
+    // トークンが更新された場合はセッションも更新
+    if (tokenInfo.refreshed) {
+      await updateSession(sessionId, {
+        accessToken: tokenInfo.accessToken,
+        refreshToken: tokenInfo.refreshToken || session.refreshToken,
+        tokenExpiry: tokenInfo.tokenExpiry
+      });
+    }
     
     return {
-      success: true,
-      fileId: file.data.id,
-      fileName: file.data.name,
-      webViewLink: file.data.webViewLink,
-      createdTime: file.data.createdTime
+      accessToken: tokenInfo.accessToken,
+      refreshed: tokenInfo.refreshed
     };
   } catch (error) {
-    console.error('Drive保存エラー:', error);
-    throw new Error('Google Driveへのデータ保存に失敗しました');
-  }
-};
-
-/**
- * Google Driveからポートフォリオデータのファイル一覧を取得する
- * @param {string} accessToken - アクセストークン
- * @returns {Promise<Array>} - ファイル一覧
- */
-const listPortfolioFiles = async (accessToken) => {
-  try {
-    // Google Drive APIクライアントの設定
-    const drive = google.drive({
-      version: 'v3',
-      auth: new google.auth.OAuth2().setCredentials({ access_token: accessToken })
-    });
-    
-    // フォルダの取得または作成
-    const folderId = await getOrCreateDriveFolder(accessToken);
-    
-    // フォルダ内のファイル一覧を取得
-    const response = await drive.files.list({
-      q: `'${folderId}' in parents and trashed=false`,
-      spaces: 'drive',
-      fields: 'files(id, name, mimeType, size, createdTime, modifiedTime, webViewLink)',
-      orderBy: 'createdTime desc'
-    });
-    
-    return response.data.files || [];
-  } catch (error) {
-    console.error('Driveファイル一覧取得エラー:', error);
-    throw new Error('Google Driveのファイル一覧取得に失敗しました');
-  }
-};
-
-/**
- * Google Driveからポートフォリオデータを読み込む
- * @param {string} accessToken - アクセストークン
- * @param {string} fileId - ファイルID
- * @returns {Promise<Object>} - ポートフォリオデータ
- */
-const loadPortfolioFromDrive = async (accessToken, fileId) => {
-  try {
-    // Google Drive APIクライアントの設定
-    const drive = google.drive({
-      version: 'v3',
-      auth: new google.auth.OAuth2().setCredentials({ access_token: accessToken })
-    });
-    
-    // ファイルの内容を取得
-    const response = await drive.files.get({
-      fileId: fileId,
-      alt: 'media'
-    });
-    
-    // ファイルのメタデータも取得
-    const fileMetadata = await drive.files.get({
-      fileId: fileId,
-      fields: 'name, createdTime, modifiedTime'
-    });
-    
-    return {
-      success: true,
-      data: response.data,
-      fileName: fileMetadata.data.name,
-      createdTime: fileMetadata.data.createdTime,
-      modifiedTime: fileMetadata.data.modifiedTime
-    };
-  } catch (error) {
-    console.error('Drive読み込みエラー:', error);
-    throw new Error('Google Driveからのデータ読み込みに失敗しました');
+    console.error('セッショントークン更新エラー:', error);
+    throw new Error(`セッショントークンの更新に失敗しました: ${error.message}`);
   }
 };
 
@@ -341,9 +211,6 @@ module.exports = {
   createUserSession,
   getSession,
   invalidateSession,
-  refreshAccessToken,
-  savePortfolioToDrive,
-  listPortfolioFiles,
-  loadPortfolioFromDrive
+  updateSession,
+  refreshSessionToken
 };
-

@@ -5,15 +5,14 @@
  * @author Koki Riho
  * @created 2025-05-12
  * @updated 2025-05-13
+ * @updated 2025-05-20 改善: エラーハンドリング強化とモジュール参照の統一
  */
 'use strict';
 
-const { 
-  getSession,
-  refreshAccessToken,
-  listPortfolioFiles 
-} = require('../../services/googleAuthService');
-const { formatResponse, formatErrorResponse } = require('../../utils/responseFormatter');
+const { getSession } = require('../../services/googleAuthService');
+const { refreshSessionToken } = require('../../services/googleAuthService');
+const { listPortfolioFiles } = require('../../services/googleDriveService');
+const { formatResponse, formatErrorResponse } = require('../../utils/responseUtils');
 const { parseCookies } = require('../../utils/cookieParser');
 
 /**
@@ -23,8 +22,8 @@ const { parseCookies } = require('../../utils/cookieParser');
  */
 module.exports.handler = async (event) => {
   try {
-    // Cookieからセッションを取得 - 正しい実装例
-    const cookies = parseCookies(event.headers.Cookie || event.headers.cookie || '');
+    // Cookieからセッションを取得
+    const cookies = parseCookies(event.headers || {});
     const sessionId = cookies.session;
     
     if (!sessionId) {
@@ -46,29 +45,33 @@ module.exports.handler = async (event) => {
       });
     }
     
-    // アクセストークンの有効期限をチェック
-    const tokenExpiry = new Date(session.tokenExpiry);
-    const now = new Date();
-    let accessToken = session.accessToken;
-    
-    // トークンが期限切れの場合は更新
-    if (tokenExpiry <= now && session.refreshToken) {
-      try {
-        const newTokens = await refreshAccessToken(session.refreshToken);
-        accessToken = newTokens.access_token;
-      } catch (refreshError) {
-        console.error('トークン更新エラー:', refreshError);
-        return formatErrorResponse({
-          statusCode: 401,
-          code: 'TOKEN_REFRESH_ERROR',
-          message: 'アクセストークンの更新に失敗しました',
-          details: refreshError.message
-        });
-      }
+    // トークンを検証・更新
+    let accessToken;
+    try {
+      const tokenResult = await refreshSessionToken(sessionId);
+      accessToken = tokenResult.accessToken;
+    } catch (tokenError) {
+      console.error('トークン更新エラー:', tokenError);
+      return formatErrorResponse({
+        statusCode: 401,
+        code: 'TOKEN_REFRESH_ERROR',
+        message: 'アクセストークンの更新に失敗しました',
+        details: tokenError.message
+      });
     }
     
+    // クエリパラメータ取得
+    const queryParams = event.queryStringParameters || {};
+    const { maxResults, orderBy, nameFilter } = queryParams;
+    
+    // カスタム検索オプション
+    const searchOptions = {};
+    if (maxResults) searchOptions.maxResults = parseInt(maxResults, 10);
+    if (orderBy) searchOptions.orderBy = orderBy;
+    if (nameFilter) searchOptions.nameFilter = nameFilter;
+    
     // Google Driveのファイル一覧を取得
-    const files = await listPortfolioFiles(accessToken);
+    const files = await listPortfolioFiles(accessToken, searchOptions);
     
     // ファイル情報を整形
     const formattedFiles = files.map(file => ({
@@ -84,8 +87,7 @@ module.exports.handler = async (event) => {
     // レスポンスを整形
     return formatResponse({
       statusCode: 200,
-      body: {
-        success: true,
+      data: {
         files: formattedFiles,
         count: formattedFiles.length
       }

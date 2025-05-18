@@ -8,12 +8,15 @@
  */
 'use strict';
 
+const { addBudgetWarningToResponse } = require('./budgetCheck');
+
 // デフォルトのCORS設定
 const DEFAULT_HEADERS = {
   'Content-Type': 'application/json',
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Credentials': true
 };
 
 /**
@@ -44,26 +47,38 @@ const getContentType = (format) => {
  * @param {Object} [options.headers={}] - カスタムヘッダー
  * @param {boolean} [options.skipBudgetWarning=false] - 予算警告をスキップするかどうか
  * @param {string} [options.format='json'] - レスポンス形式
- * @returns {Object} - 整形されたAPIレスポンス
+ * @param {string} [options.source] - データソース
+ * @param {string} [options.lastUpdated] - 最終更新日時
+ * @param {string} [options.processingTime] - 処理時間
+ * @param {Function} [options._formatResponse] - テスト用フック
+ * @returns {Promise<Object>} - 整形されたAPIレスポンス
  */
-const formatResponse = (options = {}) => {
+const formatResponse = async (options = {}) => {
   // オプションの分割と既定値の設定
   const {
     statusCode = 200,
     data = {},
     headers = {},
     skipBudgetWarning = false,
-    format = 'json'
+    format = 'json',
+    source,
+    lastUpdated,
+    processingTime,
+    _formatResponse
   } = options;
   
-  // 予算使用状況の追加（オプション）
+  // レスポンスデータの準備
   let responseData = { ...data };
-  if (!skipBudgetWarning && process.env.BUDGET_WARNING === 'true') {
-    responseData.budgetWarning = {
-      message: '予算使用量が警告レベルに達しています',
-      usagePercent: 85
-    };
+  
+  // success フラグを追加 (テスト互換性のため)
+  if (responseData.success === undefined) {
+    responseData.success = true;
   }
+  
+  // メタデータを追加
+  if (source) responseData.source = source;
+  if (lastUpdated) responseData.lastUpdated = lastUpdated;
+  if (processingTime) responseData.processingTime = processingTime;
   
   // Content-Typeの設定
   const contentType = headers['Content-Type'] || getContentType(format);
@@ -75,7 +90,7 @@ const formatResponse = (options = {}) => {
     ...headers
   };
   
-  // テスト互換性のためのbodyプロパティ設定
+  // レスポンスボディの準備
   let responseBody;
   
   if (format === 'json') {
@@ -86,26 +101,43 @@ const formatResponse = (options = {}) => {
     responseBody = JSON.stringify(responseData);
   }
   
-  // 標準形式で返却
-  return {
+  // 標準形式のレスポンスを作成
+  let response = {
     statusCode,
     headers: responseHeaders,
     body: responseBody
   };
+  
+  // 予算警告を追加（オプション）
+  if (!skipBudgetWarning) {
+    try {
+      response = await addBudgetWarningToResponse(response);
+    } catch (error) {
+      console.error('Failed to add budget warning:', error);
+    }
+  }
+  
+  // テスト用フックがあれば使用
+  if (typeof _formatResponse === 'function') {
+    _formatResponse(response, options);
+  }
+  
+  return response;
 };
 
 /**
  * エラーレスポンスを標準形式に整形
  * @param {Object} options - エラーオプション
  * @param {number} [options.statusCode=400] - HTTPステータスコード
- * @param {string} options.code - エラーコード
- * @param {string} options.message - エラーメッセージ
+ * @param {string} [options.code='ERROR'] - エラーコード
+ * @param {string} [options.message='エラーが発生しました'] - エラーメッセージ
  * @param {Object} [options.details] - 詳細情報（開発環境のみ）
  * @param {Object} [options.headers={}] - カスタムヘッダー
  * @param {Object} [options.usage] - 使用量情報
- * @returns {Object} - 整形されたエラーレスポンス
+ * @param {Function} [options._formatResponse] - テスト用フック
+ * @returns {Promise<Object>} - 整形されたエラーレスポンス
  */
-const formatErrorResponse = (options = {}) => {
+const formatErrorResponse = async (options = {}) => {
   // オプションの分割と既定値の設定
   const {
     statusCode = 400,
@@ -113,7 +145,8 @@ const formatErrorResponse = (options = {}) => {
     message = 'エラーが発生しました',
     details,
     headers = {},
-    usage
+    usage,
+    _formatResponse
   } = options;
   
   // エラーオブジェクトの構築
@@ -143,12 +176,19 @@ const formatErrorResponse = (options = {}) => {
     ...headers
   };
   
-  // 標準形式で返却
-  return {
+  // 標準形式のレスポンスを作成
+  const response = {
     statusCode,
     headers: responseHeaders,
     body: JSON.stringify(responseData)
   };
+  
+  // テスト用フックがあれば使用
+  if (typeof _formatResponse === 'function') {
+    _formatResponse(response, options);
+  }
+  
+  return response;
 };
 
 /**
@@ -198,7 +238,7 @@ const formatOptionsResponse = (headers = {}) => {
  * CORS対応リクエストヘッダーの処理
  * @param {Object} event - API Gatewayイベント
  * @param {function} handler - リクエストハンドラー関数
- * @returns {Object} - レスポンス
+ * @returns {Promise<Object>} - レスポンス
  */
 const handleCors = async (event, handler) => {
   // OPTIONSリクエストの場合は即座にレスポンスを返す

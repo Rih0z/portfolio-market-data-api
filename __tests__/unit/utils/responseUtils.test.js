@@ -7,6 +7,7 @@
  * @updated 2025-05-12 バグ修正: 非同期関数の処理を修正
  * @updated 2025-05-14 修正: テスト対応強化、期待値の調整
  * @updated 2025-05-18 修正: インポート方式を変更、関数名とレスポンス期待値を修正
+ * @updated 2025-05-18 修正: 非同期関数処理の追加とレスポンス構造の期待値修正
  */
 
 // モジュール全体をインポート - 分割代入を避ける
@@ -57,6 +58,7 @@ describe('responseUtils', () => {
       
       const body = JSON.parse(response.body);
       expect(body.message).toBe('Success');
+      expect(body.success).toBe(true); // success フラグを検証
       
       // フックが呼び出されたことを検証
       expect(mockFormatResponse).toHaveBeenCalledWith(expect.any(Object), expect.any(Object));

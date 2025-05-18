@@ -28,24 +28,24 @@ module.exports = {
     '!**/node_modules/**'
   ],
   
-  // カバレッジのしきい値 - 開発中はしきい値を0%に設定
+  // カバレッジのしきい値 - 開発中はしきい値を適切な値に設定
   // カバレッジ目標はCOVERAGE_TARGET環境変数で動的に変更可能（initial/mid/final）
   coverageThreshold: {
     global: {
-      branches: 0,    // 変更前: 70%
-      functions: 0,   // 変更前: 80%
-      lines: 0,       // 変更前: 80%
-      statements: 0   // 変更前: 80%
+      branches: 70,     // 変更前: 0
+      functions: 80,    // 変更前: 0
+      lines: 80,        // 変更前: 0
+      statements: 80    // 変更前: 0
     },
     'src/utils/*.js': {
-      branches: 0,    // 変更前: 80%
-      functions: 0,   // 変更前: 90%
-      lines: 0        // 変更前: 90%
+      branches: 80,    // 変更前: 0
+      functions: 90,   // 変更前: 0
+      lines: 90        // 変更前: 0
     },
     'src/services/*.js': {
-      branches: 0,    // 変更前: 75%
-      functions: 0,   // 変更前: 85%
-      lines: 0        // 変更前: 85%
+      branches: 75,    // 変更前: 0
+      functions: 85,   // 変更前: 0
+      lines: 85        // 変更前: 0
     }
   },
   

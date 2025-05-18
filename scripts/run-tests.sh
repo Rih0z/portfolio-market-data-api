@@ -10,6 +10,7 @@
 # @updated 2025-05-16 - カバレッジチャートの自動生成機能追加、テストカバレッジ目標の段階追跡
 # @updated 2025-05-17 - カバレッジオプションが確実に有効になるように修正、強制カバレッジオプション追加
 # @updated 2025-05-19 - Jest設定ファイルを明示的に指定する機能追加、依存関係の明確化
+# @updated 2025-05-20 - カバレッジデータ生成の信頼性向上、デバッグオプション強化
 #
 
 # 便利なサンプルコマンド
@@ -69,6 +70,7 @@ show_help() {
   echo "  --nvm                       nvmを使用してNode.js 18に切り替え"
   echo "  --force-coverage            カバレッジ計測を強制的に有効化（--no-coverageより優先）"
   echo "  --config                    カスタムJest設定ファイルのパスを指定"
+  echo "  --verbose-coverage          カバレッジデータ処理の詳細ログを出力"
   echo ""
   echo "テスト種別:"
   echo "  unit                単体テストのみ実行"
@@ -105,6 +107,7 @@ show_help() {
   echo "  $0 --chart all      すべてのテストを実行し、カバレッジチャートを生成"
   echo "  $0 -t mid all       中間段階のカバレッジ目標を設定してすべてのテストを実行"
   echo "  $0 --config custom-jest.config.js unit  カスタム設定ファイルで単体テストを実行"
+  echo "  $0 --verbose-coverage all    カバレッジデータ処理の詳細ログを確認"
   echo ""
 }
 
@@ -127,6 +130,7 @@ SPECIFIC_PATTERN=""
 TEST_TYPE=""
 COVERAGE_TARGET="initial"
 JEST_CONFIG_PATH="jest.config.js"
+VERBOSE_COVERAGE=0
 
 # オプション解析
 while [[ $# -gt 0 ]]; do
@@ -202,6 +206,10 @@ while [[ $# -gt 0 ]]; do
     --config)
       JEST_CONFIG_PATH="$2"
       shift 2
+      ;;
+    --verbose-coverage)
+      VERBOSE_COVERAGE=1
+      shift
       ;;
     unit|unit:services|unit:utils|unit:function|integration|integration:auth|integration:market|integration:drive|e2e|all|quick|specific)
       TEST_TYPE=$1
@@ -430,6 +438,11 @@ if [ $GENERATE_CHART -eq 1 ]; then
   FORCE_COVERAGE=1  # チャート生成時は常にカバレッジを有効化
 fi
 
+if [ $VERBOSE_COVERAGE -eq 1 ]; then
+  ENV_VARS="$ENV_VARS VERBOSE_COVERAGE=true"
+  print_info "カバレッジデータ処理の詳細ログを出力します"
+fi
+
 # テストコマンドの構築
 TEST_CMD=""
 JEST_ARGS=""
@@ -502,12 +515,12 @@ if [ $FORCE_COVERAGE -eq 1 ]; then
   # 明示的にカバレッジを有効化
   if [ $HTML_COVERAGE -eq 1 ]; then
     print_info "HTMLカバレッジレポートを生成します"
-    JEST_ARGS="$JEST_ARGS --coverage --coverageReporters=lcov"
+    JEST_ARGS="$JEST_ARGS --coverage --coverageReporters=lcov --coverageReporters=json-summary --coverageReporters=json"
   else
-    JEST_ARGS="$JEST_ARGS --coverage"
+    JEST_ARGS="$JEST_ARGS --coverage --coverageReporters=json-summary --coverageReporters=json"
   fi
   # カバレッジ関連の環境変数を設定
-  ENV_VARS="$ENV_VARS COLLECT_COVERAGE=true"
+  ENV_VARS="$ENV_VARS COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true"
   NO_COVERAGE=0
 elif [ $NO_COVERAGE -eq 1 ]; then
   print_info "カバレッジチェックが無効化されています"
@@ -517,12 +530,12 @@ else
   # デフォルトでもカバレッジを有効化
   if [ $HTML_COVERAGE -eq 1 ]; then
     print_info "HTMLカバレッジレポートを生成します"
-    JEST_ARGS="$JEST_ARGS --coverage --coverageReporters=lcov"
+    JEST_ARGS="$JEST_ARGS --coverage --coverageReporters=lcov --coverageReporters=json-summary --coverageReporters=json"
   else
-    JEST_ARGS="$JEST_ARGS --coverage"
+    JEST_ARGS="$JEST_ARGS --coverage --coverageReporters=json-summary --coverageReporters=json"
   fi
   # カバレッジ関連の環境変数を設定
-  ENV_VARS="$ENV_VARS COLLECT_COVERAGE=true"
+  ENV_VARS="$ENV_VARS COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true"
 fi
 
 # JUnitレポート設定
@@ -546,7 +559,7 @@ fi
 JEST_CMD="jest $JEST_ARGS"
 
 # デバッグモードの場合、実行予定のコマンドを表示
-if [ $DEBUG_MODE -eq 1 ]; then
+if [ $DEBUG_MODE -eq 1 ] || [ $VERBOSE_COVERAGE -eq 1 ]; then
   print_info "実行するJestコマンド:"
   echo "npx $JEST_CMD"
   if [ -n "$ENV_VARS" ]; then
@@ -559,10 +572,10 @@ fi
 # テストの実行
 if [ -n "$ENV_VARS" ]; then
   # JESTのカバレッジ設定を強制的に有効化（.env.localの設定より優先）
-  eval "npx cross-env JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true $ENV_VARS $JEST_CMD"
+  eval "npx cross-env JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true ENABLE_COVERAGE=true $ENV_VARS $JEST_CMD"
 else
   # JESTのカバレッジ設定を強制的に有効化
-  eval "npx cross-env JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true $JEST_CMD"
+  eval "npx cross-env JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true ENABLE_COVERAGE=true $JEST_CMD"
 fi
 
 # テスト結果
@@ -573,11 +586,48 @@ if [ $NO_COVERAGE -ne 1 ] || [ $FORCE_COVERAGE -eq 1 ]; then
   # カバレッジ結果ファイルの存在チェック
   if [ ! -f "./test-results/detailed-results.json" ]; then
     print_warning "カバレッジ結果ファイルが見つかりません。Jest実行中にエラーが発生した可能性があります。"
+    
+    # カバレッジディレクトリを確認
+    if [ -d "./coverage" ]; then
+      print_info "coverage ディレクトリが存在します。内容を確認します："
+      ls -la ./coverage
+      
+      # coverage-final.json が存在するか確認
+      if [ -f "./coverage/coverage-final.json" ]; then
+        print_success "coverage-final.json ファイルが見つかりました。"
+        
+        # デバッグモードでカバレッジファイルの詳細を表示
+        if [ $DEBUG_MODE -eq 1 ] || [ $VERBOSE_COVERAGE -eq 1 ]; then
+          print_info "カバレッジファイルの先頭部分:"
+          head -n 20 ./coverage/coverage-final.json
+        fi
+      else
+        print_warning "coverage-final.json ファイルが見つかりません。"
+        
+        # 代替ファイルを確認
+        for file in ./coverage/*; do
+          if [ -f "$file" ]; then
+            print_info "検出されたファイル: $file"
+          fi
+        done
+      fi
+    else
+      print_warning "coverage ディレクトリが見つかりません。"
+      print_info "カバレッジを有効にして再実行してみてください: --force-coverage オプションを使用"
+    fi
   else
     # coverageMapプロパティの存在チェック
     if ! grep -q "coverageMap" ./test-results/detailed-results.json; then
       print_warning "カバレッジデータが結果ファイルに含まれていません。"
       print_info "Jest設定でcollectCoverageオプションが有効になっていることを確認してください。"
+      
+      # カバレッジファイルを直接コピー（緊急対応）
+      if [ -f "./coverage/coverage-final.json" ]; then
+        print_info "coverage-final.json ファイルを ./test-results/coverage-data.json にコピーします。"
+        cp ./coverage/coverage-final.json ./test-results/coverage-data.json
+      fi
+    else
+      print_success "カバレッジデータが結果ファイルに含まれています。"
     fi
   fi
 fi
@@ -800,6 +850,7 @@ else
   echo "- カバレッジエラーを無視してテスト: ./scripts/run-tests.sh -i $TEST_TYPE"
   echo "- カバレッジの問題が原因の場合は強制的に有効化: ./scripts/run-tests.sh --force-coverage $TEST_TYPE"
   echo "- デバッグモードで詳細情報を表示: ./scripts/run-tests.sh -d $TEST_TYPE"
+  echo "- カバレッジデータ処理の詳細を確認: ./scripts/run-tests.sh --verbose-coverage $TEST_TYPE"
 fi
 
 # テスト後のクリーンアップ提案

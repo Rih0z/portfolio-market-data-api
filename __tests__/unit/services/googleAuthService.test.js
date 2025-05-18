@@ -13,13 +13,13 @@ jest.mock('uuid');
 jest.mock('../../../src/utils/dynamoDbService');
 jest.mock('../../../src/utils/tokenManager');
 
-// テスト対象モジュールのインポート
-const googleAuthService = require('../../../src/services/googleAuthService');
-
 // 依存モジュールのインポート
 const uuid = require('uuid');
-const { addItem, getItem, deleteItem, updateItem } = require('../../../src/utils/dynamoDbService');
+const dynamoDbService = require('../../../src/utils/dynamoDbService');
 const tokenManager = require('../../../src/utils/tokenManager');
+
+// テスト対象モジュールのインポート
+const googleAuthService = require('../../../src/services/googleAuthService');
 
 describe('GoogleAuthService', () => {
   // テスト用のモックデータ
@@ -53,24 +53,26 @@ describe('GoogleAuthService', () => {
     jest.clearAllMocks();
     
     // uuid.v4のモック
-    uuid.v4.mockReturnValue(mockSessionId);
+    uuid.v4 = jest.fn().mockReturnValue(mockSessionId);
     
     // DynamoDBサービスのモック
-    addItem.mockResolvedValue({});
-    getItem.mockResolvedValue(null);
-    deleteItem.mockResolvedValue({});
-    updateItem.mockResolvedValue({});
+    // ここがエラーの原因。dynamoDbServiceの関数をモック関数に書き換える
+    dynamoDbService.addItem = jest.fn().mockResolvedValue({});
+    dynamoDbService.getItem = jest.fn().mockResolvedValue(null);
+    dynamoDbService.deleteItem = jest.fn().mockResolvedValue({});
+    dynamoDbService.updateItem = jest.fn().mockResolvedValue({});
     
     // tokenManagerのモック関数を明示的に実装
-    tokenManager.exchangeCodeForTokens.mockResolvedValue(mockTokens);
-    tokenManager.verifyIdToken.mockResolvedValue(mockIdTokenPayload);
-    tokenManager.validateAndRefreshToken.mockResolvedValue({
+    // ここがエラーの原因。tokenManagerの関数をモック関数に書き換える
+    tokenManager.exchangeCodeForTokens = jest.fn().mockResolvedValue(mockTokens);
+    tokenManager.verifyIdToken = jest.fn().mockResolvedValue(mockIdTokenPayload);
+    tokenManager.validateAndRefreshToken = jest.fn().mockResolvedValue({
       accessToken: 'new-access-token',
       refreshToken: 'new-refresh-token',
       tokenExpiry: new Date(Date.now() + 3600 * 1000).toISOString(),
       refreshed: true
     });
-    tokenManager.refreshAccessToken.mockResolvedValue({
+    tokenManager.refreshAccessToken = jest.fn().mockResolvedValue({
       access_token: 'new-access-token',
       refresh_token: 'new-refresh-token',
       expires_in: 3600
@@ -106,7 +108,7 @@ describe('GoogleAuthService', () => {
       });
 
       expect(uuid.v4).toHaveBeenCalled();
-      expect(addItem).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      expect(dynamoDbService.addItem).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
         sessionId: mockSessionId,
         googleId: mockUserData.googleId,
         email: mockUserData.email,
@@ -121,7 +123,7 @@ describe('GoogleAuthService', () => {
 
     test('DynamoDBエラー時は適切なエラーをスローする', async () => {
       const mockError = new Error('DynamoDB error');
-      addItem.mockRejectedValueOnce(mockError);
+      dynamoDbService.addItem.mockRejectedValueOnce(mockError);
 
       await expect(googleAuthService.createUserSession(mockUserData))
         .rejects
@@ -136,16 +138,16 @@ describe('GoogleAuthService', () => {
         sessionId: mockSessionId,
         expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString() // 1時間後
       };
-      getItem.mockResolvedValueOnce(mockValidSession);
+      dynamoDbService.getItem.mockResolvedValueOnce(mockValidSession);
 
       const result = await googleAuthService.getSession(mockSessionId);
       
       expect(result).toEqual(mockValidSession);
-      expect(getItem).toHaveBeenCalledWith(expect.any(String), { sessionId: mockSessionId });
+      expect(dynamoDbService.getItem).toHaveBeenCalledWith(expect.any(String), { sessionId: mockSessionId });
     });
 
     test('セッションが存在しない場合はnullを返す', async () => {
-      getItem.mockResolvedValueOnce(null);
+      dynamoDbService.getItem.mockResolvedValueOnce(null);
 
       const result = await googleAuthService.getSession(mockSessionId);
       
@@ -158,12 +160,12 @@ describe('GoogleAuthService', () => {
         sessionId: mockSessionId,
         expiresAt: new Date(Date.now() - 60 * 60 * 1000).toISOString() // 1時間前
       };
-      getItem.mockResolvedValueOnce(mockExpiredSession);
+      dynamoDbService.getItem.mockResolvedValueOnce(mockExpiredSession);
 
       const result = await googleAuthService.getSession(mockSessionId);
       
       expect(result).toBeNull();
-      expect(deleteItem).toHaveBeenCalledWith(expect.any(String), { sessionId: mockSessionId });
+      expect(dynamoDbService.deleteItem).toHaveBeenCalledWith(expect.any(String), { sessionId: mockSessionId });
     });
   });
 
@@ -172,12 +174,12 @@ describe('GoogleAuthService', () => {
       const result = await googleAuthService.invalidateSession(mockSessionId);
       
       expect(result).toBe(true);
-      expect(deleteItem).toHaveBeenCalledWith(expect.any(String), { sessionId: mockSessionId });
+      expect(dynamoDbService.deleteItem).toHaveBeenCalledWith(expect.any(String), { sessionId: mockSessionId });
     });
 
     test('エラー時はfalseを返す', async () => {
       const mockError = new Error('Delete error');
-      deleteItem.mockRejectedValueOnce(mockError);
+      dynamoDbService.deleteItem.mockRejectedValueOnce(mockError);
 
       const result = await googleAuthService.invalidateSession(mockSessionId);
       
@@ -195,12 +197,12 @@ describe('GoogleAuthService', () => {
       const result = await googleAuthService.updateSession(mockSessionId, updates);
       
       expect(result).toBe(true);
-      expect(updateItem).toHaveBeenCalled();
+      expect(dynamoDbService.updateItem).toHaveBeenCalled();
     });
 
     test('エラー時はfalseを返す', async () => {
       const mockError = new Error('Update error');
-      updateItem.mockRejectedValueOnce(mockError);
+      dynamoDbService.updateItem.mockRejectedValueOnce(mockError);
 
       const result = await googleAuthService.updateSession(mockSessionId, {});
       
@@ -218,7 +220,7 @@ describe('GoogleAuthService', () => {
         tokenExpiry: new Date(Date.now() - 60 * 60 * 1000).toISOString(), // 1時間前（期限切れ）
         expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString() // 1時間後
       };
-      getItem.mockResolvedValueOnce(mockValidSession);
+      dynamoDbService.getItem.mockResolvedValueOnce(mockValidSession);
 
       const result = await googleAuthService.refreshSessionToken(mockSessionId);
       
@@ -228,11 +230,11 @@ describe('GoogleAuthService', () => {
       });
 
       expect(tokenManager.validateAndRefreshToken).toHaveBeenCalledWith(mockValidSession);
-      expect(updateItem).toHaveBeenCalled(); // セッションが更新されたことを確認
+      expect(dynamoDbService.updateItem).toHaveBeenCalled(); // セッションが更新されたことを確認
     });
 
     test('セッションが存在しない場合はエラーをスローする', async () => {
-      getItem.mockResolvedValueOnce(null);
+      dynamoDbService.getItem.mockResolvedValueOnce(null);
 
       await expect(googleAuthService.refreshSessionToken(mockSessionId))
         .rejects
@@ -248,7 +250,7 @@ describe('GoogleAuthService', () => {
         tokenExpiry: new Date(Date.now() + 60 * 60 * 1000).toISOString(), // 1時間後（有効）
         expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString() // 1時間後
       };
-      getItem.mockResolvedValueOnce(mockValidSession);
+      dynamoDbService.getItem.mockResolvedValueOnce(mockValidSession);
 
       // トークンが更新されないようにモック
       tokenManager.validateAndRefreshToken.mockResolvedValueOnce({
@@ -264,7 +266,7 @@ describe('GoogleAuthService', () => {
       });
 
       expect(tokenManager.validateAndRefreshToken).toHaveBeenCalledWith(mockValidSession);
-      expect(updateItem).not.toHaveBeenCalled(); // セッションが更新されないことを確認
+      expect(dynamoDbService.updateItem).not.toHaveBeenCalled(); // セッションが更新されないことを確認
     });
   });
 });

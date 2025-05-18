@@ -46,22 +46,25 @@ describe('TokenManager', () => {
     name: 'Test User'
   };
 
+  let mockOAuth2Client;
+
   beforeEach(() => {
     // テスト前の準備
     jest.clearAllMocks();
 
     // OAuth2Clientのモック実装
-    const mockOAuth2Client = {
+    mockOAuth2Client = {
       refreshAccessToken: jest.fn().mockResolvedValue({ credentials: mockNewTokens }),
       verifyIdToken: jest.fn().mockResolvedValue({ getPayload: () => mockIdTokenPayload }),
       getToken: jest.fn().mockResolvedValue({ tokens: mockNewTokens }),
       setCredentials: jest.fn()
     };
 
+    // 確実にmockOAuth2Clientが使われるように修正
     OAuth2Client.mockImplementation(() => mockOAuth2Client);
 
     // withRetryのモック実装
-    withRetry.mockImplementation(fn => fn());
+    withRetry.mockImplementation((fn) => fn());
   });
   
   afterEach(() => {
@@ -79,8 +82,7 @@ describe('TokenManager', () => {
       });
 
       // OAuth2ClientのsetCredentialsが呼ばれていないことを確認
-      const oAuthInstance = OAuth2Client.mock.results[0].value;
-      expect(oAuthInstance.setCredentials).not.toHaveBeenCalled();
+      expect(mockOAuth2Client.setCredentials).not.toHaveBeenCalled();
     });
 
     test('有効期限切れのトークンを更新する', async () => {
@@ -94,8 +96,7 @@ describe('TokenManager', () => {
       });
 
       // OAuth2ClientのsetCredentialsが呼ばれたことを確認
-      const oAuthInstance = OAuth2Client.mock.results[0].value;
-      expect(oAuthInstance.setCredentials).toHaveBeenCalledWith({
+      expect(mockOAuth2Client.setCredentials).toHaveBeenCalledWith({
         refresh_token: mockExpiredSession.refreshToken
       });
     });
@@ -125,18 +126,16 @@ describe('TokenManager', () => {
       expect(result).toEqual(mockNewTokens);
 
       // OAuth2ClientのsetCredentialsが呼ばれたことを確認
-      const oAuthInstance = OAuth2Client.mock.results[0].value;
-      expect(oAuthInstance.setCredentials).toHaveBeenCalledWith({
+      expect(mockOAuth2Client.setCredentials).toHaveBeenCalledWith({
         refresh_token: 'test-refresh-token'
       });
-      expect(oAuthInstance.refreshAccessToken).toHaveBeenCalled();
+      expect(mockOAuth2Client.refreshAccessToken).toHaveBeenCalled();
     });
 
     test('エラー発生時は適切なエラーメッセージをスローする', async () => {
       // refreshAccessTokenでエラーが発生するようにモック設定
       const mockError = new Error('Token refresh failed');
-      const oAuthInstance = OAuth2Client.mock.results[0].value;
-      oAuthInstance.refreshAccessToken.mockRejectedValueOnce(mockError);
+      mockOAuth2Client.refreshAccessToken.mockRejectedValueOnce(mockError);
 
       await expect(tokenManager.refreshAccessToken('test-refresh-token'))
         .rejects
@@ -153,8 +152,7 @@ describe('TokenManager', () => {
       expect(result).toEqual(mockIdTokenPayload);
 
       // OAuth2ClientのverifyIdTokenが呼ばれたことを確認
-      const oAuthInstance = OAuth2Client.mock.results[0].value;
-      expect(oAuthInstance.verifyIdToken).toHaveBeenCalledWith({
+      expect(mockOAuth2Client.verifyIdToken).toHaveBeenCalledWith({
         idToken: 'test-id-token',
         audience: process.env.GOOGLE_CLIENT_ID
       });
@@ -163,8 +161,7 @@ describe('TokenManager', () => {
     test('トークン期限切れエラーの場合は適切なメッセージをスローする', async () => {
       // verifyIdTokenでトークン期限切れエラーが発生するようにモック設定
       const mockError = new Error('Token has expired');
-      const oAuthInstance = OAuth2Client.mock.results[0].value;
-      oAuthInstance.verifyIdToken.mockRejectedValueOnce(mockError);
+      mockOAuth2Client.verifyIdToken.mockRejectedValueOnce(mockError);
 
       await expect(tokenManager.verifyIdToken('expired-token'))
         .rejects
@@ -176,8 +173,7 @@ describe('TokenManager', () => {
     test('audience不一致エラーの場合は適切なメッセージをスローする', async () => {
       // verifyIdTokenでaudience不一致エラーが発生するようにモック設定
       const mockError = new Error('Invalid audience');
-      const oAuthInstance = OAuth2Client.mock.results[0].value;
-      oAuthInstance.verifyIdToken.mockRejectedValueOnce(mockError);
+      mockOAuth2Client.verifyIdToken.mockRejectedValueOnce(mockError);
 
       await expect(tokenManager.verifyIdToken('invalid-audience-token'))
         .rejects
@@ -194,8 +190,7 @@ describe('TokenManager', () => {
       expect(result).toEqual(mockNewTokens);
 
       // OAuth2ClientのgetTokenが呼ばれたことを確認
-      const oAuthInstance = OAuth2Client.mock.results[0].value;
-      expect(oAuthInstance.getToken).toHaveBeenCalledWith({
+      expect(mockOAuth2Client.getToken).toHaveBeenCalledWith({
         code: 'test-auth-code',
         redirect_uri: 'https://example.com/callback'
       });
@@ -204,8 +199,7 @@ describe('TokenManager', () => {
     test('invalid_grantエラーの場合は適切なメッセージをスローする', async () => {
       // getTokenでinvalid_grantエラーが発生するようにモック設定
       const mockError = new Error('invalid_grant');
-      const oAuthInstance = OAuth2Client.mock.results[0].value;
-      oAuthInstance.getToken.mockRejectedValueOnce(mockError);
+      mockOAuth2Client.getToken.mockRejectedValueOnce(mockError);
 
       await expect(tokenManager.exchangeCodeForTokens('invalid-code', 'https://example.com/callback'))
         .rejects
@@ -217,8 +211,7 @@ describe('TokenManager', () => {
     test('redirect_uri_mismatchエラーの場合は適切なメッセージをスローする', async () => {
       // getTokenでredirect_uri_mismatchエラーが発生するようにモック設定
       const mockError = new Error('redirect_uri_mismatch');
-      const oAuthInstance = OAuth2Client.mock.results[0].value;
-      oAuthInstance.getToken.mockRejectedValueOnce(mockError);
+      mockOAuth2Client.getToken.mockRejectedValueOnce(mockError);
 
       await expect(tokenManager.exchangeCodeForTokens('test-code', 'https://invalid-uri.com'))
         .rejects

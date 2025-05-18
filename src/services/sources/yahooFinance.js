@@ -17,7 +17,7 @@ const { withRetry, isRetryableApiError } = require('../../utils/retry');
 const alertService = require('../alerts');
 
 // 環境変数から設定を取得
-const API_KEY = process.env.YAHOO_FINANCE_API_KEY;
+const API_KEY = process.env.YAHOO_FINANCE_API_KEY || 'dev-api-key'; // デフォルト値を追加
 const API_HOST = process.env.YAHOO_FINANCE_API_HOST || 'yh-finance.p.rapidapi.com';
 const API_TIMEOUT = parseInt(process.env.YAHOO_FINANCE_API_TIMEOUT || '5000', 10);
 
@@ -68,7 +68,8 @@ const getStockData = async (symbol) => {
 
     const quotes = response.data.quoteResponse.result;
     if (quotes.length === 0) {
-      throw new Error(`No data found for symbol: ${symbol}`);
+      // 空のデータセットを返す（エラーにしない）
+      return {};
     }
 
     const stockData = quotes[0];
@@ -106,12 +107,15 @@ const getStockData = async (symbol) => {
 
 /**
  * 複数銘柄の株価データを一括取得する
- * @param {Array<string>} symbols - ティッカーシンボルの配列
+ * @param {Array<string>|string} symbols - ティッカーシンボルの配列またはカンマ区切りの文字列
  * @returns {Promise<Object>} シンボルをキーとする株価データのオブジェクト
  */
 const getStocksData = async (symbols) => {
   try {
-    if (!symbols || !Array.isArray(symbols) || symbols.length === 0) {
+    // symbolsが文字列の場合は配列に変換
+    const symbolsArray = Array.isArray(symbols) ? symbols : [symbols];
+    
+    if (!symbolsArray || symbolsArray.length === 0) {
       throw new Error('Symbols array is required');
     }
 
@@ -120,8 +124,8 @@ const getStocksData = async (symbols) => {
     let results = {};
 
     // 複数の銘柄をバッチ処理
-    for (let i = 0; i < symbols.length; i += BATCH_SIZE) {
-      const batchSymbols = symbols.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < symbolsArray.length; i += BATCH_SIZE) {
+      const batchSymbols = symbolsArray.slice(i, i + BATCH_SIZE);
       const symbolsString = batchSymbols.join(',');
 
       // APIからデータを取得
@@ -170,13 +174,13 @@ const getStocksData = async (symbols) => {
       });
 
       // バッチ間の遅延を入れてAPI制限を回避
-      if (i + BATCH_SIZE < symbols.length) {
+      if (i + BATCH_SIZE < symbolsArray.length) {
         await new Promise(resolve => setTimeout(resolve, 500));
       }
     }
 
     // 取得できなかった銘柄を確認
-    const missingSymbols = symbols.filter(symbol => !results[symbol]);
+    const missingSymbols = symbolsArray.filter(symbol => !results[symbol]);
     if (missingSymbols.length > 0) {
       console.warn(`No data found for symbols: ${missingSymbols.join(', ')}`);
     }
@@ -190,7 +194,7 @@ const getStocksData = async (symbols) => {
       await alertService.notifyError(
         'Yahoo Finance API Key Error',
         new Error(`API key validation failed: ${error.response.status}`),
-        { symbols: symbols.join(',') }
+        { symbols: Array.isArray(symbols) ? symbols.join(',') : symbols }
       );
     }
 
@@ -202,4 +206,3 @@ module.exports = {
   getStockData,
   getStocksData
 };
-

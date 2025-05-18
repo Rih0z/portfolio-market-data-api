@@ -52,19 +52,31 @@ describe('TokenManager', () => {
     // テスト前の準備
     jest.clearAllMocks();
 
+    // モックのTicketオブジェクト
+    const mockTicket = {
+      getPayload: jest.fn().mockReturnValue(mockIdTokenPayload)
+    };
+
     // OAuth2Clientのモック実装
     mockOAuth2Client = {
-      refreshAccessToken: jest.fn().mockResolvedValue({ credentials: mockNewTokens }),
-      verifyIdToken: jest.fn().mockResolvedValue({ getPayload: () => mockIdTokenPayload }),
-      getToken: jest.fn().mockResolvedValue({ tokens: mockNewTokens }),
+      // refreshAccessTokenはこの形式で返す必要があります
+      refreshAccessToken: jest.fn().mockResolvedValue({
+        credentials: mockNewTokens
+      }),
+      // verifyIdTokenはチケットオブジェクトを返す
+      verifyIdToken: jest.fn().mockResolvedValue(mockTicket),
+      // getTokenはtokensプロパティを返す
+      getToken: jest.fn().mockResolvedValue({ 
+        tokens: mockNewTokens 
+      }),
       setCredentials: jest.fn()
     };
 
-    // 確実にmockOAuth2Clientが使われるように修正
+    // OAuth2Clientコンストラクタのモック
     OAuth2Client.mockImplementation(() => mockOAuth2Client);
 
     // withRetryのモック実装
-    withRetry.mockImplementation((fn) => fn());
+    withRetry.mockImplementation(fn => fn());
   });
   
   afterEach(() => {

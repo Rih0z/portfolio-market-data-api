@@ -437,7 +437,7 @@ describe('GoogleDriveService', () => {
       // saveFileをモック
       const saveFileSpy = jest.spyOn(googleDriveService, 'saveFile').mockResolvedValue({
         id: mockFileId,
-        name: 'portfolio-data-2025-05-18T04-20-39-943Z.json',
+        name: 'test-file.json',
         createdTime: '2025-05-20T00:00:00Z',
         modifiedTime: '2025-05-20T00:00:00Z',
         webViewLink: 'https://drive.google.com/file/d/test-file-id/view'
@@ -450,7 +450,7 @@ describe('GoogleDriveService', () => {
       expect(result).toEqual({
         success: true,
         fileId: mockFileId,
-        fileName: 'portfolio-data-2025-05-18T04-20-39-943Z.json',
+        fileName: 'test-file.json',
         webViewLink: expect.any(String),
         createdTime: expect.any(String),
         modifiedTime: expect.any(String)

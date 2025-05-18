@@ -479,8 +479,7 @@ const loadPortfolioFromDrive = async (accessToken, fileId) => {
     };
   } catch (error) {
     logger.error(`Error loading portfolio from Drive ${fileId}:`, error);
-    // エラーメッセージを修正 - テストに合わせる
-    throw new Error('Invalid portfolio data format');
+    throw new Error('Failed to load portfolio data from Google Drive');
   }
 };
 

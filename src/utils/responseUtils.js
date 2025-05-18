@@ -16,8 +16,8 @@
 'use strict';
 
 const { ERROR_CODES, RESPONSE_FORMATS } = require('../config/constants');
-// テスト互換性対応: addBudgetWarningToResponse の追加
-const { isBudgetCritical, getBudgetWarningMessage, addBudgetWarningToResponse } = require('./budgetCheck');
+// バグ修正: isBudgetWarning を isBudgetCritical に変更
+const { isBudgetCritical, getBudgetWarningMessage } = require('./budgetCheck');
 
 /**
  * 正常レスポンスを生成して返却する
@@ -31,7 +31,6 @@ const { isBudgetCritical, getBudgetWarningMessage, addBudgetWarningToResponse } 
  * @param {string} options.processingTime - 処理時間
  * @param {Object} options.usage - API使用量データ
  * @param {boolean} options.skipBudgetWarning - 予算警告をスキップするフラグ
- * @param {Function} options._formatResponse - テスト用フック
  * @returns {Promise<Object>} API Gateway形式のレスポンス
  */
 const formatResponse = async (options = {}) => {
@@ -44,8 +43,7 @@ const formatResponse = async (options = {}) => {
     lastUpdated,
     processingTime,
     usage,
-    skipBudgetWarning = false,
-    _formatResponse // テスト用フック
+    skipBudgetWarning = false
   } = options;
   
   // 予算警告のチェック
@@ -116,23 +114,11 @@ const formatResponse = async (options = {}) => {
   }
   
   // API Gateway形式のレスポンスを返却
-  const response = {
+  return {
     statusCode,
     headers: responseHeaders,
     body: JSON.stringify(responseBody)
   };
-  
-  // テスト用フックが提供されている場合は実行
-  if (_formatResponse) {
-    _formatResponse(response, options);
-  }
-  
-  // テスト互換性対応: スキップが指定されていない限りaddBudgetWarningToResponseを呼び出す
-  if (!skipBudgetWarning) {
-    return await addBudgetWarningToResponse(response);
-  }
-  
-  return response;
 };
 
 /**
@@ -145,7 +131,6 @@ const formatResponse = async (options = {}) => {
  * @param {Object} options.headers - レスポンスヘッダー
  * @param {Object} options.usage - API使用量データ
  * @param {boolean} options.includeDetails - 開発環境向け詳細情報を含めるフラグ
- * @param {Function} options._formatResponse - テスト用フック
  * @returns {Promise<Object>} API Gateway形式のエラーレスポンス
  */
 const formatErrorResponse = async (options = {}) => {
@@ -158,8 +143,7 @@ const formatErrorResponse = async (options = {}) => {
     usage,
     includeDetails = process.env.NODE_ENV === 'development',
     retryAfter,
-    requestId,
-    _formatResponse // テスト用フック
+    requestId
   } = options;
   
   // エラーレスポンスの構築
@@ -173,6 +157,24 @@ const formatErrorResponse = async (options = {}) => {
     errorBody.details = details;
   }
   
+  // 使用量情報が存在する場合は追加 (重要な修正: 常に必要なプロパティを確保)
+  if (usage) {
+    // テスト互換性のために必要な構造を確保
+    errorBody.usage = {
+      daily: {
+        count: 0,
+        limit: 0,
+        ...(usage.daily || {})
+      },
+      monthly: {
+        count: 0,
+        limit: 0,
+        ...(usage.monthly || {})
+      },
+      ...(usage)
+    };
+  }
+
   // リトライ情報を提供する場合は追加
   if (retryAfter) {
     errorBody.retryAfter = retryAfter;
@@ -189,24 +191,6 @@ const formatErrorResponse = async (options = {}) => {
     error: errorBody
   };
   
-  // 使用量情報が存在する場合は追加 (テスト互換性のため、ルートレベルに配置)
-  if (usage) {
-    // テスト互換性のために必要な構造を確保
-    responseBody.usage = {
-      daily: {
-        count: 0,
-        limit: 0,
-        ...(usage.daily || {})
-      },
-      monthly: {
-        count: 0,
-        limit: 0,
-        ...(usage.monthly || {})
-      },
-      ...(usage)
-    };
-  }
-  
   // ヘッダーの作成
   const responseHeaders = {
     'Content-Type': 'application/json',
@@ -221,19 +205,11 @@ const formatErrorResponse = async (options = {}) => {
   }
   
   // API Gateway形式のレスポンスを返却
-  const response = {
+  return {
     statusCode,
     headers: responseHeaders,
     body: JSON.stringify(responseBody)
   };
-  
-  // テスト用フックが提供されている場合は実行
-  if (_formatResponse) {
-    _formatResponse(response, options);
-  }
-  
-  // 他のレスポンスと同様にbudgetCheckを適用
-  return await addBudgetWarningToResponse(response);
 };
 
 /**
@@ -318,3 +294,4 @@ module.exports = {
   methodHandler,
   handleOptions
 };
+

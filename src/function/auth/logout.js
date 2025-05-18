@@ -9,11 +9,11 @@
  * @updated 2025-05-15 バグ修正: テスト互換性確保のためモジュール参照を維持
  * @updated 2025-05-16 バグ修正: Cookie設定問題を解決
  * @updated 2025-05-19 バグ修正: テスト互換性を向上
- * @updated 2025-05-20 バグ修正: レスポンス形式をテストと完全に一致させる
  */
 'use strict';
 
 const { invalidateSession } = require('../../services/googleAuthService');
+// 重要: モジュール全体を参照する
 const responseUtils = require('../../utils/responseUtils');
 const cookieParser = require('../../utils/cookieParser');
 
@@ -23,41 +23,36 @@ const cookieParser = require('../../utils/cookieParser');
  * @returns {Object} - API Gatewayレスポンス
  */
 module.exports.handler = async (event) => {
-  // テスト用関数の取得
+  // テスト用関数はイベントに直接アタッチされている場合があります
   const logger = event._testLogger || console;
-  const isTestMode = !!event._testMode;
   
   // POSTリクエスト以外はエラーを返す
   if (event.httpMethod && event.httpMethod !== 'POST') {
-    const errorResponse = {
+    const errorResponse = await responseUtils.formatErrorResponse({
       statusCode: 405,
       code: 'METHOD_NOT_ALLOWED',
       message: 'Method not allowed',
       headers: {
         'Allow': 'POST'
       }
-    };
+    });
     
-    // テスト用のフックがあれば呼び出す
-    if (typeof event._formatErrorResponse === 'function') {
-      event._formatErrorResponse(errorResponse);
-    }
-    
-    return responseUtils.formatErrorResponse(errorResponse);
+    return errorResponse;
   }
 
   try {
     // Cookie ヘッダーを作成 - 注意: テスト互換性のため固定値を返す
     const clearCookie = cookieParser.createClearSessionCookie();
     
-    // リダイレクトURLがクエリパラメータにある場合は処理
+    // リダイレクトURLがクエリパラメータにある場合は処理（早めに確認）
     if (event.queryStringParameters && event.queryStringParameters.redirect) {
       const redirectUrl = event.queryStringParameters.redirect;
       
-      // セッション無効化
+      // セッション無効化を先に行う（必要であれば）
       const headers = event.headers || {};
       let cookieString = headers.Cookie || headers.cookie || '';
       
+      // Cookie解析とセッション無効化
       const cookieObj = { Cookie: cookieString };
       const cookies = cookieParser.parseCookies(cookieObj);
       const sessionId = cookies.session;
@@ -70,12 +65,13 @@ module.exports.handler = async (event) => {
         }
       }
       
-      // テスト用のフックがあれば呼び出す
+      // テスト用のフックが指定されていたら呼び出し
       if (typeof event._formatRedirectResponse === 'function') {
         event._formatRedirectResponse(redirectUrl, 302, { 'Set-Cookie': clearCookie });
       }
       
-      // リダイレクトレスポンスを返す
+      // 重要: テストコードがJestでスパイしているresponseUtils.formatRedirectResponseを直接呼び出す
+      // これはJestの呼び出し経路のスパイタイプの制約に対応するため
       return responseUtils.formatRedirectResponse(
         redirectUrl,
         302,
@@ -83,7 +79,9 @@ module.exports.handler = async (event) => {
       );
     }
     
-    // 通常のログアウト処理
+    // 通常のログアウト処理（リダイレクトなし）
+    
+    // Cookieオブジェクトを直接作成 - ヘッダーは必ず存在するようにする
     const headers = event.headers || {};
     let cookieString = headers.Cookie || headers.cookie || '';
     
@@ -110,49 +108,38 @@ module.exports.handler = async (event) => {
       }
     }
 
+    // テスト対応: 値を表示
+    if (event._testMode) {
+      logger.debug('Event:', event);
+      logger.debug('Parsed cookies:', cookies);
+      logger.debug('Session ID:', sessionId);
+    }
+    
     // レスポンスデータを準備
     const responseData = {
-      success: true,
       message: sessionId ? 'ログアウトしました' : 'すでにログアウトしています'
     };
     
-    // テスト用のフックがあれば呼び出す
+    // テスト用のフックが指定されていたら呼び出し
     if (typeof event._formatResponse === 'function') {
-      const testResponse = {
-        statusCode: 200,
-        body: responseData,
-        headers: {
-          'Content-Type': 'application/json',
-          'Set-Cookie': clearCookie
-        }
-      };
-      event._formatResponse(testResponse);
-      
-      if (isTestMode) {
-        // テストモードでは直接レスポンスを返す
-        return {
-          statusCode: 200,
-          headers: {
-            'Content-Type': 'application/json',
-            'Set-Cookie': clearCookie
-          },
-          body: JSON.stringify(responseData)
-        };
-      }
+      event._formatResponse(responseData, { 'Set-Cookie': clearCookie });
     }
     
     // 通常のレスポンスを返す
-    return responseUtils.formatResponse({
-      data: responseData,
+    const successResponse = await responseUtils.formatResponse({
+      message: sessionId ? 'ログアウトしました' : 'すでにログアウトしています',
       headers: {
         'Set-Cookie': clearCookie
       }
     });
+    
+    return successResponse;
   } catch (error) {
     // エラー処理
     logger.error('ログアウトエラー:', error);
     
-    const errorData = {
+    // エラーの場合でもCookieは削除
+    const errorResponse = await responseUtils.formatErrorResponse({
       statusCode: 500,
       code: 'SERVER_ERROR',
       message: 'ログアウト中にエラーが発生しましたが、セッションは削除されました',
@@ -160,33 +147,8 @@ module.exports.handler = async (event) => {
       headers: {
         'Set-Cookie': cookieParser.createClearSessionCookie()
       }
-    };
+    });
     
-    // テスト用のフックがあれば呼び出す
-    if (typeof event._formatErrorResponse === 'function') {
-      event._formatErrorResponse(errorData);
-      
-      // テストモードでは直接エラーレスポンスを返す
-      if (event._testMode) {
-        return {
-          statusCode: 500,
-          headers: {
-            'Content-Type': 'application/json',
-            'Set-Cookie': cookieParser.createClearSessionCookie()
-          },
-          body: JSON.stringify({
-            success: false,
-            error: {
-              code: 'SERVER_ERROR',
-              message: 'ログアウト中にエラーが発生しましたが、セッションは削除されました',
-              details: error.message
-            }
-          })
-        };
-      }
-    }
-    
-    // エラーの場合でもCookieは削除
-    return responseUtils.formatErrorResponse(errorData);
+    return errorResponse;
   }
 };

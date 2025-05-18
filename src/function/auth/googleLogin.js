@@ -1,187 +1,130 @@
 /**
- * セッション取得ハンドラー - 現在のセッション情報を取得する
+ * Google認証ログインハンドラー - 認証コードを受け取りセッションを作成する
  * 
- * @file src/function/auth/getSession.js
+ * @file src/function/auth/googleLogin.js
  * @author Portfolio Manager Team
  * @created 2025-05-12
- * @updated 2025-05-14 バグ修正: セッション期限切れ処理の追加
- * @updated 2025-05-19 バグ修正: テスト互換性を向上
- * @updated 2025-05-20 新規実装: テスト互換性のあるレスポンス形式に統一
+ * @updated 2025-05-13 新規追加: 基本的なログイン処理実装
+ * @updated 2025-05-15 バグ修正: Cookie設定を強化
+ * @updated 2025-05-16 バグ修正: テスト互換性を向上
  */
 'use strict';
 
-const { getSession } = require('../../services/googleAuthService');
+const { 
+  exchangeCodeForTokens, 
+  verifyIdToken, 
+  createUserSession 
+} = require('../../services/googleAuthService');
 const { formatResponse, formatErrorResponse } = require('../../utils/responseUtils');
-const { parseCookies } = require('../../utils/cookieParser');
+const { createSessionCookie } = require('../../utils/cookieParser');
 
 /**
- * セッション取得ハンドラー
+ * Google認証処理ハンドラー
  * @param {Object} event - API Gatewayイベント
  * @returns {Object} - API Gatewayレスポンス
  */
 module.exports.handler = async (event) => {
-  // テスト用変数の設定
-  const logger = event._testLogger || console;
-  const isTestMode = !!event._testMode;
-  
   try {
-    // Cookieからセッションを取得
-    const cookies = parseCookies(event.headers);
-    const sessionId = cookies.session;
+    // テスト用のフックとロガー
+    const testLogger = event._testLogger || console;
     
-    if (!sessionId) {
-      // セッションがない場合のエラーレスポンス
-      const errorData = {
-        statusCode: 401,
-        code: 'NO_SESSION',
-        message: '認証されていません'
-      };
-      
-      // テスト用のフックがあれば呼び出す
+    // リクエストボディをパース（ボディが存在しない場合は空オブジェクトを使用）
+    const requestBody = JSON.parse(event.body || '{}');
+    const { code, redirectUri } = requestBody;
+    
+    // テスト情報出力
+    if (event._testMode) {
+      testLogger.debug('Login request received:', { code: code ? '[REDACTED]' : undefined, redirectUri });
+    }
+    
+    if (!code) {
+      // テスト用のフックが指定されていたら呼び出し
       if (typeof event._formatErrorResponse === 'function') {
-        event._formatErrorResponse(errorData);
+        event._formatErrorResponse({
+          statusCode: 400,
+          code: 'INVALID_PARAMS',
+          message: '認証コードが不足しています'
+        });
       }
       
-      if (isTestMode) {
-        // テストモードでは直接エラーレスポンスを返す
-        return {
-          statusCode: 401,
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            success: false,
-            error: {
-              code: 'NO_SESSION',
-              message: '認証されていません'
-            }
-          })
-        };
-      }
-      
-      return formatErrorResponse(errorData);
+      return formatErrorResponse({
+        statusCode: 400,
+        code: 'INVALID_PARAMS',
+        message: '認証コードが不足しています'
+      });
     }
     
-    // セッション情報を取得
-    const sessionData = await getSession(sessionId);
+    // Googleで認証コードをトークンに交換
+    const tokens = await exchangeCodeForTokens(code, redirectUri);
     
-    if (!sessionData) {
-      // セッションが無効または期限切れの場合のエラーレスポンス
-      const errorData = {
-        statusCode: 401,
-        code: 'INVALID_SESSION',
-        message: 'セッションが無効か期限切れです'
-      };
-      
-      // テスト用のフックがあれば呼び出す
-      if (typeof event._formatErrorResponse === 'function') {
-        event._formatErrorResponse(errorData);
-      }
-      
-      if (isTestMode) {
-        // テストモードでは直接エラーレスポンスを返す
-        return {
-          statusCode: 401,
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            success: false,
-            error: {
-              code: 'INVALID_SESSION',
-              message: 'セッションが無効か期限切れです'
-            }
-          })
-        };
-      }
-      
-      return formatErrorResponse(errorData);
-    }
+    // IDトークンを検証してユーザー情報を取得
+    const userInfo = await verifyIdToken(tokens.id_token);
     
-    // セッション情報とユーザー情報をレスポンスに含める
-    const sessionInfo = {
-      success: true,
-      data: {
-        isAuthenticated: true,
-        user: {
-          id: sessionData.googleId,
-          email: sessionData.email,
-          name: sessionData.name,
-          picture: sessionData.picture
-        }
-      }
-    };
-    
-    // デバッグモードの場合は追加情報を含める
-    if (process.env.DEBUG_MODE === 'true') {
-      sessionInfo.data.debug = {
-        sessionId: sessionId,
-        expiresAt: sessionData.expiresAt
-      };
-    }
-    
-    // テスト用のフックがあれば呼び出す
-    if (typeof event._formatResponse === 'function') {
-      const testResponse = {
-        statusCode: 200,
-        body: sessionInfo,
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      };
-      event._formatResponse(testResponse);
-      
-      if (isTestMode) {
-        // テストモードでは直接レスポンスを返す
-        return {
-          statusCode: 200,
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(sessionInfo)
-        };
-      }
-    }
-    
-    // 通常のレスポンスを返す - formatResponseが期待する形式
-    return formatResponse({
-      statusCode: 200,
-      data: sessionInfo
+    // セッションを作成
+    const session = await createUserSession({
+      googleId: userInfo.sub,
+      email: userInfo.email,
+      name: userInfo.name,
+      picture: userInfo.picture,
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      tokenExpiry: new Date(Date.now() + tokens.expires_in * 1000).toISOString()
     });
     
-  } catch (error) {
-    logger.error('セッション取得エラー:', error);
+    // セッションCookieを作成（7日間有効）
+    const maxAge = 60 * 60 * 24 * 7; // 7日間（秒単位）
+    const sessionCookie = createSessionCookie(session.sessionId, maxAge);
     
-    const errorData = {
-      statusCode: 500,
-      code: 'SERVER_ERROR',
-      message: 'セッション情報の取得中にエラーが発生しました',
-      details: error.message
-    };
-    
-    // テスト用のフックがあれば呼び出す
-    if (typeof event._formatErrorResponse === 'function') {
-      event._formatErrorResponse(errorData);
-      
-      if (isTestMode) {
-        // テストモードでは直接エラーレスポンスを返す
-        return {
-          statusCode: 500,
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            success: false,
-            error: {
-              code: 'SERVER_ERROR',
-              message: 'セッション情報の取得中にエラーが発生しました',
-              details: error.message
-            }
-          })
-        };
-      }
+    // テスト用のフックが指定されていたら呼び出し
+    if (typeof event._formatResponse === 'function') {
+      event._formatResponse({
+        success: true,
+        isAuthenticated: true,
+        user: {
+          id: userInfo.sub,
+          email: userInfo.email,
+          name: userInfo.name,
+          picture: userInfo.picture
+        }
+      }, { 'Set-Cookie': sessionCookie });
     }
     
-    return formatErrorResponse(errorData);
+    // レスポンスを整形 - テストが期待する形式に合わせる
+    return formatResponse({
+      statusCode: 200,
+      body: {
+        success: true,
+        isAuthenticated: true,
+        user: {
+          id: userInfo.sub,
+          email: userInfo.email,
+          name: userInfo.name,
+          picture: userInfo.picture
+        }
+      },
+      headers: {
+        'Set-Cookie': sessionCookie
+      }
+    });
+  } catch (error) {
+    console.error('Google認証エラー:', error);
+    
+    // テスト用のフックが指定されていたら呼び出し
+    if (typeof event._formatErrorResponse === 'function') {
+      event._formatErrorResponse({
+        statusCode: 401,
+        code: 'AUTH_ERROR',
+        message: '認証に失敗しました',
+        details: error.message
+      });
+    }
+    
+    return formatErrorResponse({
+      statusCode: 401,
+      code: 'AUTH_ERROR',
+      message: '認証に失敗しました',
+      details: error.message
+    });
   }
 };
+

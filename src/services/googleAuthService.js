@@ -6,11 +6,13 @@
  * @created 2025-05-12
  * @updated 2025-05-13
  * @updated 2025-05-20 改善: ドライブ操作関連機能を削除し認証に特化
+ * @updated 2025-05-21 修正: dynamoDbServiceのインポート方法を変更
  */
 'use strict';
 
 const uuid = require('uuid');
-const { addItem, getItem, deleteItem, updateItem } = require('../utils/dynamoDbService');
+// 分割代入でのインポートからモジュールとしてのインポートに変更
+const dynamoDbService = require('../utils/dynamoDbService');
 const tokenManager = require('../utils/tokenManager');
 
 // 定数定義
@@ -63,7 +65,8 @@ const createUserSession = async (userData) => {
   };
   
   try {
-    await addItem(SESSION_TABLE, sessionItem);
+    // 関数呼び出しをdynamoDbService.関数名の形式に変更
+    await dynamoDbService.addItem(SESSION_TABLE, sessionItem);
     
     return {
       sessionId,
@@ -82,7 +85,8 @@ const createUserSession = async (userData) => {
  */
 const getSession = async (sessionId) => {
   try {
-    const session = await getItem(SESSION_TABLE, { sessionId });
+    // 関数呼び出しをdynamoDbService.関数名の形式に変更
+    const session = await dynamoDbService.getItem(SESSION_TABLE, { sessionId });
     
     if (!session) {
       return null;
@@ -94,7 +98,7 @@ const getSession = async (sessionId) => {
     
     if (expiresAt <= now) {
       // 期限切れの場合はセッションを削除
-      await deleteItem(SESSION_TABLE, { sessionId });
+      await dynamoDbService.deleteItem(SESSION_TABLE, { sessionId });
       return null;
     }
     
@@ -112,7 +116,8 @@ const getSession = async (sessionId) => {
  */
 const invalidateSession = async (sessionId) => {
   try {
-    await deleteItem(SESSION_TABLE, { sessionId });
+    // 関数呼び出しをdynamoDbService.関数名の形式に変更
+    await dynamoDbService.deleteItem(SESSION_TABLE, { sessionId });
     return true;
   } catch (error) {
     console.error('セッション無効化エラー:', error);
@@ -153,7 +158,8 @@ const updateSession = async (sessionId, updates) => {
     // 更新式を作成
     const updateExpression = `SET ${updateExpressions.join(', ')}`;
     
-    await updateItem(
+    // 関数呼び出しをdynamoDbService.関数名の形式に変更
+    await dynamoDbService.updateItem(
       SESSION_TABLE,
       { sessionId },
       updateExpression,

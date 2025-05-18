@@ -6,7 +6,7 @@
  * 
  * @author Portfolio Manager Team
  * @created 2025-05-15
- * @updated 2025-05-17
+ * @updated 2025-05-18
  */
 
 const portfolioService = require('../../../src/services/portfolioService');
@@ -72,6 +72,14 @@ describe('Portfolio Service', () => {
     
     // withRetryのモック
     withRetry.mockImplementation((fn) => fn());
+    
+    // 日付を固定してテストを安定させる
+    jest.spyOn(global.Date, 'now').mockImplementation(() => new Date('2025-05-18T10:00:00Z').valueOf());
+  });
+  
+  afterEach(() => {
+    // Date.nowのモックを元に戻す
+    global.Date.now.mockRestore();
   });
 
   describe('savePortfolio', () => {
@@ -85,7 +93,7 @@ describe('Portfolio Service', () => {
       
       // Google Driveサービスが正しく呼び出されたか検証
       expect(googleDriveService.saveFile).toHaveBeenCalledWith(
-        expect.stringContaining(mockPortfolio.name),
+        expect.stringContaining('Test Portfolio'),
         expect.any(String), // JSONシリアライズされたデータ
         'application/json',
         mockAccessToken,
@@ -115,7 +123,7 @@ describe('Portfolio Service', () => {
       
       // Google Driveサービスが正しく呼び出されたか検証
       expect(googleDriveService.saveFile).toHaveBeenCalledWith(
-        expect.stringContaining(mockPortfolio.name),
+        expect.stringContaining('Test Portfolio'),
         expect.any(String), // JSONシリアライズされたデータ
         'application/json',
         mockAccessToken,
@@ -218,6 +226,9 @@ describe('Portfolio Service', () => {
         JSON.stringify(oldFormatPortfolio)
       );
       
+      // コンストラクタをモックして日付を固定
+      jest.spyOn(Date.prototype, 'toISOString').mockReturnValue('2025-05-18T10:00:00Z');
+      
       // テスト対象の関数を実行
       const result = await portfolioService.getPortfolio(mockFileId, mockAccessToken);
       
@@ -227,6 +238,9 @@ describe('Portfolio Service', () => {
       expect(result.holdings[0]).toHaveProperty('shares', 10);
       expect(result).toHaveProperty('lastUpdated');
       expect(result).toHaveProperty('createdBy', 'user-123');
+      
+      // モックをリストアする
+      Date.prototype.toISOString.mockRestore();
     });
   });
 
@@ -347,11 +361,17 @@ describe('Portfolio Service', () => {
         holdings: []
       };
       
+      // 日付固定モックを設定
+      jest.spyOn(Date.prototype, 'toISOString').mockReturnValue('2025-05-18T10:00:00Z');
+      
       // テスト対象の関数を実行
       const validatedData = portfolioService.validatePortfolioData(noNameData);
       
       // 結果の検証
       expect(validatedData.name).toContain('Portfolio');
+      
+      // モックをリストアする
+      Date.prototype.toISOString.mockRestore();
     });
     
     test('保有銘柄の必須フィールドを検証する', () => {
@@ -372,13 +392,8 @@ describe('Portfolio Service', () => {
       expect(validatedData.holdings[0]).toHaveProperty('shares', 0);
       expect(validatedData.holdings[0]).toHaveProperty('cost', 0);
       
-      // symbolがない要素は削除されるか、デフォルト値が設定される
-      if (validatedData.holdings.length > 1) {
-        expect(validatedData.holdings[1]).toHaveProperty('symbol');
-      } else {
-        // symbolがない要素は削除される実装の場合
-        expect(validatedData.holdings.length).toBe(1);
-      }
+      // symbolがない要素は削除される（filter(Boolean)による効果）
+      expect(validatedData.holdings.length).toBe(1);
     });
   });
 });

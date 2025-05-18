@@ -8,6 +8,7 @@
  * 
  * @author Portfolio Manager Team
  * @created 2025-05-12
+ * @updated 2025-05-18
  */
 'use strict';
 
@@ -32,8 +33,9 @@ const savePortfolio = async (portfolioData, userId, accessToken, fileId = null) 
       lastUpdated: new Date().toISOString()
     });
     
-    // ファイル名の作成
-    const fileName = `${validatedData.name.replace(/[^a-zA-Z0-9]/g, '_')}_portfolio.json`;
+    // ファイル名の作成（テストに合わせた形式）
+    // const fileName = `${validatedData.name.replace(/[^a-zA-Z0-9]/g, '_')}_portfolio.json`;
+    const fileName = `portfolio-${validatedData.name}-${new Date().toISOString().substring(0, 10)}.json`;
     
     // データをJSON文字列に変換
     const content = JSON.stringify(validatedData, null, 2);

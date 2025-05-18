@@ -7,6 +7,7 @@
  * @file src/utils/dynamoDbService.js
  * @author Portfolio Manager Team
  * @updated 2025-05-13 AWS SDK v3への完全移行
+ * @updated 2025-05-20 addItem, getItem, deleteItem, updateItem関数の追加
  */
 
 const { DynamoDBClient, GetItemCommand, PutItemCommand, UpdateItemCommand, 
@@ -210,6 +211,105 @@ const unmarshallItems = (items) => {
   return items ? items.map(item => unmarshall(item)) : [];
 };
 
+/**
+ * アイテムをDynamoDBテーブルに追加する
+ * 
+ * @param {string} tableName - テーブル名
+ * @param {Object} item - 追加するアイテム
+ * @returns {Promise<Object>} 結果
+ */
+const addItem = async (tableName, item) => {
+  try {
+    const params = {
+      TableName: tableName,
+      Item: marshallItem(item)
+    };
+    
+    return await putDynamoDBItem(params);
+  } catch (error) {
+    logger.error(`Error adding item to ${tableName}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * DynamoDBテーブルからアイテムを取得する
+ * 
+ * @param {string} tableName - テーブル名
+ * @param {Object} key - 主キー
+ * @returns {Promise<Object|null>} 取得したアイテムまたはnull
+ */
+const getItem = async (tableName, key) => {
+  try {
+    const params = {
+      TableName: tableName,
+      Key: marshallItem(key)
+    };
+    
+    const response = await getDynamoDBItem(params);
+    return response.Item ? unmarshallItem(response.Item) : null;
+  } catch (error) {
+    logger.error(`Error getting item from ${tableName}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * DynamoDBテーブルからアイテムを削除する
+ * 
+ * @param {string} tableName - テーブル名
+ * @param {Object} key - 主キー
+ * @returns {Promise<Object>} 結果
+ */
+const deleteItem = async (tableName, key) => {
+  try {
+    const params = {
+      TableName: tableName,
+      Key: marshallItem(key)
+    };
+    
+    return await deleteDynamoDBItem(params);
+  } catch (error) {
+    logger.error(`Error deleting item from ${tableName}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * DynamoDBテーブルのアイテムを更新する
+ * 
+ * @param {string} tableName - テーブル名
+ * @param {Object} key - 主キー
+ * @param {string} updateExpression - 更新式
+ * @param {Object} expressionAttributeNames - 属性名のマッピング
+ * @param {Object} expressionAttributeValues - 属性値のマッピング
+ * @returns {Promise<Object>} 結果
+ */
+const updateItem = async (tableName, key, updateExpression, expressionAttributeNames, expressionAttributeValues) => {
+  try {
+    const params = {
+      TableName: tableName,
+      Key: marshallItem(key),
+      UpdateExpression: updateExpression,
+      ExpressionAttributeNames: expressionAttributeNames
+    };
+    
+    // 属性値をマーシャリング
+    if (expressionAttributeValues) {
+      const marshalledValues = {};
+      Object.entries(expressionAttributeValues).forEach(([key, value]) => {
+        marshalledValues[key] = marshall({ value }).value;
+      });
+      params.ExpressionAttributeValues = marshalledValues;
+    }
+    
+    return await updateDynamoDBItem(params);
+  } catch (error) {
+    logger.error(`Error updating item in ${tableName}:`, error);
+    throw error;
+  }
+};
+
 module.exports = {
   getDynamoDBClient,
   getDynamoDBItem,
@@ -220,5 +320,10 @@ module.exports = {
   scanDynamoDB,
   marshallItem,
   unmarshallItem,
-  unmarshallItems
+  unmarshallItems,
+  // 新しく追加した高レベルAPI関数をエクスポート
+  addItem,
+  getItem,
+  deleteItem,
+  updateItem
 };

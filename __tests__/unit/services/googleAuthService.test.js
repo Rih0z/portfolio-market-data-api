@@ -18,7 +18,13 @@ const tokenManager = require('../../../src/utils/tokenManager');
 // モックの設定
 jest.mock('uuid');
 jest.mock('../../../src/utils/dynamoDbService');
-jest.mock('../../../src/utils/tokenManager');
+// 明示的なモック実装を提供する
+jest.mock('../../../src/utils/tokenManager', () => ({
+  exchangeCodeForTokens: jest.fn(),
+  verifyIdToken: jest.fn(),
+  validateAndRefreshToken: jest.fn(),
+  refreshAccessToken: jest.fn()
+}));
 
 describe('GoogleAuthService', () => {
   // テスト用のモックデータ

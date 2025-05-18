@@ -15,7 +15,7 @@ const uuid = require('uuid');
 const { addItem, getItem, deleteItem, updateItem } = require('../../../src/utils/dynamoDbService');
 const tokenManager = require('../../../src/utils/tokenManager');
 
-// すべてのモジュールを自動的にモック化
+// モジュールのモック化
 jest.mock('uuid');
 jest.mock('../../../src/utils/dynamoDbService');
 jest.mock('../../../src/utils/tokenManager');
@@ -61,15 +61,16 @@ describe('GoogleAuthService', () => {
     updateItem.mockResolvedValue({});
     
     // tokenManagerのモック関数を明示的に実装
-    tokenManager.exchangeCodeForTokens = jest.fn().mockResolvedValue(mockTokens);
-    tokenManager.verifyIdToken = jest.fn().mockResolvedValue(mockIdTokenPayload);
-    tokenManager.validateAndRefreshToken = jest.fn().mockResolvedValue({
+    // 直接プロパティに値を割り当てる代わりに、モックメソッドを呼び出す
+    tokenManager.exchangeCodeForTokens.mockResolvedValue(mockTokens);
+    tokenManager.verifyIdToken.mockResolvedValue(mockIdTokenPayload);
+    tokenManager.validateAndRefreshToken.mockResolvedValue({
       accessToken: 'new-access-token',
       refreshToken: 'new-refresh-token',
       tokenExpiry: new Date(Date.now() + 3600 * 1000).toISOString(),
       refreshed: true
     });
-    tokenManager.refreshAccessToken = jest.fn().mockResolvedValue({
+    tokenManager.refreshAccessToken.mockResolvedValue({
       access_token: 'new-access-token',
       refresh_token: 'new-refresh-token',
       expires_in: 3600

@@ -8,7 +8,7 @@
  * @updated 2025-05-15 バグ修正: Cookie設定を強化
  * @updated 2025-05-16 バグ修正: テスト互換性を向上
  * @updated 2025-05-17 バグ修正: formatResponseの呼び出し修正
- * @updated 2025-05-18 バグ修正: テスト用レスポンス形式の対応
+ * @updated 2025-05-18 バグ修正: テスト用レスポンス形式を完全に一致させる
  */
 'use strict';
 
@@ -90,11 +90,11 @@ module.exports.handler = async (event) => {
     };
     
     // テスト用のフックが指定されていたら呼び出し
-    // 重要: テスト用には 'body' プロパティを使用する
+    // 重要: テストが期待する完全な形式で呼び出す
     if (typeof event._formatResponse === 'function') {
       event._formatResponse({
         statusCode: 200,
-        body: userData,  // テスト用に 'body' プロパティを使用
+        body: userData,  // テストは "body" プロパティを期待している
         headers: {
           'Set-Cookie': sessionCookie
         }

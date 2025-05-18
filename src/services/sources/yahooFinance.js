@@ -16,9 +16,10 @@ const axios = require('axios');
 const { withRetry, isRetryableApiError } = require('../../utils/retry');
 const alertService = require('../alerts');
 
-// 環境変数から設定を取得
-const API_KEY = process.env.YAHOO_FINANCE_API_KEY || 'dev-api-key'; // デフォルト値を追加
+// 環境変数から設定を取得（環境変数が優先されるように修正）
+// 環境変数が存在する場合はそれを使用し、存在しない場合のみデフォルト値を使用
 const API_HOST = process.env.YAHOO_FINANCE_API_HOST || 'yh-finance.p.rapidapi.com';
+const API_KEY = process.env.YAHOO_FINANCE_API_KEY; // デフォルト値を削除
 const API_TIMEOUT = parseInt(process.env.YAHOO_FINANCE_API_TIMEOUT || '5000', 10);
 
 /**
@@ -62,7 +63,17 @@ const getStockData = async (symbol) => {
     );
 
     // レスポンスを検証
-    if (!response.data || !response.data.quoteResponse || !response.data.quoteResponse.result) {
+    if (!response.data || !response.data.quoteResponse) {
+      throw new Error('Invalid API response format');
+    }
+
+    // エラーチェック（APIレスポンスにエラーが含まれる場合は例外をスロー）
+    if (response.data.quoteResponse.error) {
+      throw new Error('Invalid API response format');
+    }
+
+    // 結果配列の検証
+    if (!response.data.quoteResponse.result) {
       throw new Error('Invalid API response format');
     }
 
@@ -149,7 +160,17 @@ const getStocksData = async (symbols) => {
       );
 
       // レスポンスを検証
-      if (!response.data || !response.data.quoteResponse || !response.data.quoteResponse.result) {
+      if (!response.data || !response.data.quoteResponse) {
+        throw new Error('Invalid API response format');
+      }
+
+      // エラーチェック（APIレスポンスにエラーが含まれる場合は例外をスロー）
+      if (response.data.quoteResponse.error) {
+        throw new Error('Invalid API response format');
+      }
+
+      // 結果配列の検証
+      if (!response.data.quoteResponse.result) {
         throw new Error('Invalid API response format');
       }
 

@@ -273,14 +273,12 @@ const getExchangeRateFromExchangerateHost = async (base, target) => {
   } catch (error) {
     console.error('Error fetching from exchangerate.host:', error.message);
     
-    // レート制限エラーの場合はアラート
-    if (error.response && error.response.status === 429) {
-      await alertService.notifyError(
-        'Exchange Rate API Rate Limit',
-        error,
-        { base, target, provider: PROVIDERS.PRIMARY }
-      );
-    }
+    // すべてのAPIエラーに対してアラート通知を行う
+    await alertService.notifyError(
+      'Exchange Rate API Error',
+      error,
+      { base, target, provider: PROVIDERS.PRIMARY }
+    );
     
     // null を返すと次のソースを試す
     return null;
@@ -439,4 +437,3 @@ module.exports = {
   getExchangeRate,
   getBatchExchangeRates
 };
-

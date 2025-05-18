@@ -7,6 +7,12 @@
  * @created 2025-05-20
  */
 
+// モックは必ずインポートの前に定義する必要があります
+// モジュールをモック化
+jest.mock('uuid');
+jest.mock('../../../src/utils/dynamoDbService');
+jest.mock('../../../src/utils/tokenManager');
+
 // テスト対象モジュールのインポート
 const googleAuthService = require('../../../src/services/googleAuthService');
 
@@ -14,16 +20,6 @@ const googleAuthService = require('../../../src/services/googleAuthService');
 const uuid = require('uuid');
 const { addItem, getItem, deleteItem, updateItem } = require('../../../src/utils/dynamoDbService');
 const tokenManager = require('../../../src/utils/tokenManager');
-
-// モックのセットアップ
-jest.mock('uuid');
-jest.mock('../../../src/utils/dynamoDbService');
-jest.mock('../../../src/utils/tokenManager', () => ({
-  exchangeCodeForTokens: jest.fn(),
-  verifyIdToken: jest.fn(),
-  validateAndRefreshToken: jest.fn(),
-  refreshAccessToken: jest.fn()
-}));
 
 describe('GoogleAuthService', () => {
   // テスト用のモックデータ
@@ -56,7 +52,7 @@ describe('GoogleAuthService', () => {
     // すべてのモックをクリア
     jest.clearAllMocks();
     
-    // モック関数の実装を再設定
+    // uuid.v4のモック
     uuid.v4.mockReturnValue(mockSessionId);
     
     // DynamoDBサービスのモック

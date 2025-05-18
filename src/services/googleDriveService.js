@@ -127,10 +127,10 @@ const setFolderMetadata = async (drive, folderId) => {
  */
 const getOrCreateBackupFolder = async (accessToken) => {
   // メインのデータフォルダを取得
-  const mainFolderId = await getOrCreateFolder(accessToken);
+  const mainFolderId = await module.exports.getOrCreateFolder(accessToken);
   
   // バックアップフォルダを取得または作成
-  return getOrCreateFolder(accessToken, DRIVE_BACKUP_FOLDER_NAME, mainFolderId);
+  return module.exports.getOrCreateFolder(accessToken, DRIVE_BACKUP_FOLDER_NAME, mainFolderId);
 };
 
 /**
@@ -149,7 +149,7 @@ const saveFile = async (fileName, content, mimeType, accessToken, fileId = null,
     
     // 既存ファイルの更新でバックアップが必要な場合
     if (fileId && createBackup) {
-      await createFileBackup(drive, fileId, accessToken);
+      await module.exports.createFileBackup(drive, fileId, accessToken);
     }
     
     // メタデータの準備
@@ -163,7 +163,7 @@ const saveFile = async (fileName, content, mimeType, accessToken, fileId = null,
     
     // 新規作成の場合はフォルダを指定
     if (!fileId) {
-      const folderId = await getOrCreateFolder(accessToken);
+      const folderId = await module.exports.getOrCreateFolder(accessToken);
       fileMetadata.parents = [folderId];
     }
     
@@ -222,7 +222,7 @@ const createFileBackup = async (drive, fileId, accessToken) => {
     }));
     
     // バックアップフォルダを取得
-    const backupFolderId = await getOrCreateBackupFolder(accessToken);
+    const backupFolderId = await module.exports.getOrCreateBackupFolder(accessToken);
     
     // バックアップファイル名を作成
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -306,8 +306,8 @@ const getFileWithMetadata = async (fileId, accessToken) => {
   try {
     // 並列に取得
     const [content, metadata] = await Promise.all([
-      getFile(fileId, accessToken),
-      getFileMetadata(fileId, accessToken)
+      module.exports.getFile(fileId, accessToken),
+      module.exports.getFileMetadata(fileId, accessToken)
     ]);
     
     return {
@@ -340,7 +340,7 @@ const listFiles = async (accessToken, options = {}) => {
     } = options;
     
     const drive = getDriveClient(accessToken);
-    const folderId = await getOrCreateFolder(accessToken);
+    const folderId = await module.exports.getOrCreateFolder(accessToken);
     
     // クエリの構築
     let query = `'${folderId}' in parents and trashed=false`;
@@ -374,7 +374,7 @@ const listFiles = async (accessToken, options = {}) => {
  * @returns {Promise<Array>} ファイル一覧
  */
 const listPortfolioFiles = async (accessToken) => {
-  return listFiles(accessToken, {
+  return module.exports.listFiles(accessToken, {
     nameFilter: 'portfolio',
     mimeType: 'application/json'
   });
@@ -457,7 +457,7 @@ const moveFile = async (fileId, targetFolderId, accessToken) => {
 const loadPortfolioFromDrive = async (accessToken, fileId) => {
   try {
     // ファイルとメタデータを取得
-    const { content, metadata } = await getFileWithMetadata(fileId, accessToken);
+    const { content, metadata } = await module.exports.getFileWithMetadata(fileId, accessToken);
     
     // JSONとしてパース
     let data;
@@ -501,8 +501,8 @@ const savePortfolioToDrive = async (accessToken, portfolioData, fileId = null, c
     // ファイルのコンテンツ
     const content = JSON.stringify(portfolioData, null, 2);
     
-    // ファイルの保存
-    const saveResult = await saveFile(
+    // ファイルの保存 - モジュール自身の関数を参照するように修正
+    const saveResult = await module.exports.saveFile(
       fileName,
       content,
       'application/json',
@@ -536,10 +536,10 @@ const getPortfolioVersionHistory = async (fileId, accessToken) => {
     const drive = getDriveClient(accessToken);
     
     // バックアップフォルダを取得
-    const backupFolderId = await getOrCreateBackupFolder(accessToken);
+    const backupFolderId = await module.exports.getOrCreateBackupFolder(accessToken);
     
     // ファイルのメタデータを取得
-    const fileInfo = await getFileMetadata(fileId, accessToken);
+    const fileInfo = await module.exports.getFileMetadata(fileId, accessToken);
     
     // ファイル名を取得
     const fileName = fileInfo.name;

@@ -34,8 +34,7 @@ const savePortfolio = async (portfolioData, userId, accessToken, fileId = null) 
     });
     
     // ファイル名の作成（テストに合わせた形式）
-    // const fileName = `${validatedData.name.replace(/[^a-zA-Z0-9]/g, '_')}_portfolio.json`;
-    const fileName = `portfolio-${validatedData.name}-${new Date().toISOString().substring(0, 10)}.json`;
+    const fileName = `${validatedData.name.replace(/[^a-zA-Z0-9]/g, '_')}_portfolio.json`;
     
     // データをJSON文字列に変換
     const content = JSON.stringify(validatedData, null, 2);
@@ -71,13 +70,13 @@ const getPortfolio = async (fileId, accessToken) => {
       // JSONとしてパース
       const portfolioData = JSON.parse(fileContent);
       
-      // データを検証・正規化
-      const validatedData = validatePortfolioData(portfolioData);
-      
       // 古い形式のデータを新形式に変換
-      const convertedData = convertLegacyPortfolio(validatedData);
+      const convertedData = convertLegacyPortfolio(portfolioData);
       
-      return convertedData;
+      // データを検証・正規化
+      const validatedData = validatePortfolioData(convertedData);
+      
+      return validatedData;
     } catch (parseError) {
       logger.error('Error parsing portfolio data:', parseError);
       throw new Error('Invalid portfolio data format');
@@ -178,7 +177,7 @@ const convertLegacyPortfolio = (portfolio) => {
   const converted = { ...portfolio };
   
   // ポートフォリオ名の変換（portfolioName → name）
-  if (portfolio.portfolioName && !portfolio.name) {
+  if (portfolio.portfolioName) {
     converted.name = portfolio.portfolioName;
     delete converted.portfolioName;
   }
@@ -216,5 +215,6 @@ module.exports = {
   getPortfolio,
   listPortfolios,
   deletePortfolio,
-  validatePortfolioData
+  validatePortfolioData,
+  convertLegacyPortfolio  // テスト用にexport
 };

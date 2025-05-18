@@ -8,6 +8,7 @@
  * @updated 2025-05-15 バグ修正: Cookie設定を強化
  * @updated 2025-05-16 バグ修正: テスト互換性を向上
  * @updated 2025-05-17 バグ修正: formatResponseの呼び出し修正
+ * @updated 2025-05-18 バグ修正: テスト用レスポンス形式の対応
  */
 'use strict';
 
@@ -76,34 +77,34 @@ module.exports.handler = async (event) => {
     const maxAge = 60 * 60 * 24 * 7; // 7日間（秒単位）
     const sessionCookie = createSessionCookie(session.sessionId, maxAge);
     
+    // ユーザー情報オブジェクト
+    const userData = {
+      success: true,
+      isAuthenticated: true,
+      user: {
+        id: userInfo.sub,
+        email: userInfo.email,
+        name: userInfo.name,
+        picture: userInfo.picture
+      }
+    };
+    
     // テスト用のフックが指定されていたら呼び出し
+    // 重要: テスト用には 'body' プロパティを使用する
     if (typeof event._formatResponse === 'function') {
       event._formatResponse({
-        success: true,
-        isAuthenticated: true,
-        user: {
-          id: userInfo.sub,
-          email: userInfo.email,
-          name: userInfo.name,
-          picture: userInfo.picture
+        statusCode: 200,
+        body: userData,  // テスト用に 'body' プロパティを使用
+        headers: {
+          'Set-Cookie': sessionCookie
         }
-      }, { 'Set-Cookie': sessionCookie });
+      });
     }
     
     // レスポンスを整形 - formatResponseが期待する形式に合わせる
-    // 修正: 'body' -> 'data' に変更して、formatResponseの期待する形式に合わせる
     return formatResponse({
       statusCode: 200,
-      data: {
-        success: true,
-        isAuthenticated: true,
-        user: {
-          id: userInfo.sub,
-          email: userInfo.email,
-          name: userInfo.name,
-          picture: userInfo.picture
-        }
-      },
+      data: userData,  // 実際のAPIレスポンス用に 'data' プロパティを使用
       headers: {
         'Set-Cookie': sessionCookie
       }

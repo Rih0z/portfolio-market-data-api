@@ -18,7 +18,7 @@ const tokenManager = require('../../../src/utils/tokenManager');
 // モックの設定
 jest.mock('uuid');
 jest.mock('../../../src/utils/dynamoDbService');
-// 明示的なモック実装を提供する
+// 明示的なモック実装を提供する - 自動モックではなく手動モックを設定
 jest.mock('../../../src/utils/tokenManager', () => ({
   exchangeCodeForTokens: jest.fn(),
   verifyIdToken: jest.fn(),

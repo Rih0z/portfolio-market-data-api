@@ -4,6 +4,7 @@
  * @file __tests__/testUtils/apiMocks.js
  * @updated 2025-05-15 - モック機能強化、エラーハンドリング改善
  * @updated 2025-05-20 - クエリパラメータマッチング改善
+ * @updated 2025-05-21 - バグ修正: ヘッダー処理を改善し、テスト互換性を強化
  */
 
 const nock = require('nock');
@@ -648,6 +649,22 @@ const mockApiRequest = (url, method = 'GET', response = {}, statusCode = 200, he
       }
     }
     
+    // ヘッダーの正規化を行い、大文字小文字の不一致を解決
+    const normalizedHeaders = {};
+    
+    // ヘッダーの正規化
+    Object.entries(headers).forEach(([key, value]) => {
+      // ヘッダー名を正規化
+      normalizedHeaders[key] = value;
+      
+      // Set-CookieヘッダーはCapitalizationが重要なので両方提供
+      if (key.toLowerCase() === 'set-cookie') {
+        // 明示的に両方のケースでヘッダーを提供
+        normalizedHeaders['Set-Cookie'] = value;
+        normalizedHeaders['set-cookie'] = value;
+      }
+    });
+    
     // レスポンス設定
     mockScope.reply(function(uri, requestBody) {
       // リクエストマッチング
@@ -689,7 +706,7 @@ const mockApiRequest = (url, method = 'GET', response = {}, statusCode = 200, he
                 message: '認証されていません'
               }
             }, 
-            headers
+            normalizedHeaders
           ];
         }
       } else if (uri.includes('/auth/logout')) {
@@ -714,13 +731,13 @@ const mockApiRequest = (url, method = 'GET', response = {}, statusCode = 200, he
       if (options.delay && options.delay > 0) {
         return new Promise(resolve => {
           setTimeout(() => {
-            resolve([statusCode, finalResponse, headers]);
+            resolve([statusCode, finalResponse, normalizedHeaders]);
           }, options.delay);
         });
       }
       
       // 通常レスポンス
-      return [statusCode, finalResponse, headers];
+      return [statusCode, finalResponse, normalizedHeaders];
     });
     
     return true;
@@ -1077,6 +1094,7 @@ const setupFallbackResponses = () => {
             message: 'ログアウトしました'
           },
           {
+            'Set-Cookie': ['session=; Max-Age=0; HttpOnly; Secure'],
             'set-cookie': ['session=; Max-Age=0; HttpOnly; Secure']
           }
         ];

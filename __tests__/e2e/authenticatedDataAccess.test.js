@@ -6,6 +6,7 @@
  * 
  * @author Portfolio Manager Team
  * @created 2025-05-16
+ * @updated 2025-05-21 バグ修正: ヘッダー処理の堅牢性改善
  */
 
 const axios = require('axios');
@@ -59,6 +60,43 @@ let apiServerAvailable = USE_MOCKS; // これですべてのテストが実行�
 
 // テスト用セッションクッキー
 let sessionCookie = '';
+
+/**
+ * レスポンスからクッキーを安全に抽出する関数
+ * @param {Object} response - Axiosレスポンスオブジェクト
+ * @return {string} - 抽出されたCookieまたはデフォルト値
+ */
+const extractCookieFromResponse = (response) => {
+  if (!response || !response.headers) return 'session=test-session-id';
+  
+  // 大文字小文字を区別せずにヘッダーを探す
+  let cookieHeader;
+  
+  // レスポンスヘッダーオブジェクトをチェック
+  if (response.headers['set-cookie']) {
+    cookieHeader = response.headers['set-cookie'];
+  } else if (response.headers['Set-Cookie']) {
+    cookieHeader = response.headers['Set-Cookie'];
+  } else {
+    // 全てのキーをチェックして、大文字小文字を区別せずに探す
+    for (const key in response.headers) {
+      if (key.toLowerCase() === 'set-cookie') {
+        cookieHeader = response.headers[key];
+        break;
+      }
+    }
+  }
+  
+  // 配列か文字列かをチェック
+  if (Array.isArray(cookieHeader) && cookieHeader.length > 0) {
+    return cookieHeader[0];
+  } else if (typeof cookieHeader === 'string') {
+    return cookieHeader;
+  }
+  
+  // フォールバック - テスト用の値を返す
+  return 'session=test-session-id';
+};
 
 // 条件付きテスト関数
 const conditionalTest = (name, fn) => {
@@ -130,7 +168,7 @@ describe('認証とデータアクセスのE2Eテスト', () => {
         name: 'Test User'
       }
     }, 200, {
-      'set-cookie': ['session=test-session-id; HttpOnly; Secure']
+      'Set-Cookie': ['session=test-session-id; HttpOnly; Secure']
     });
     
     // セッション確認用モックレスポンス
@@ -271,7 +309,7 @@ describe('認証とデータアクセスのE2Eテスト', () => {
       success: true,
       message: 'ログアウトしました'
     }, 200, {
-      'set-cookie': ['session=; Max-Age=0; HttpOnly; Secure']
+      'Set-Cookie': ['session=; Max-Age=0; HttpOnly; Secure']
     });
     
     // ログアウト後のセッション確認APIモック
@@ -297,10 +335,8 @@ describe('認証とデータアクセスのE2Eテスト', () => {
       expect(loginResponse.data.success).toBe(true);
       expect(loginResponse.data.isAuthenticated).toBe(true);
       
-      // セッションクッキーを保存
-      sessionCookie = loginResponse.headers['set-cookie'] 
-        ? loginResponse.headers['set-cookie'][0]
-        : 'session=test-session-id';
+      // セッションクッキーを保存 - 改善された抽出関数を使用
+      sessionCookie = extractCookieFromResponse(loginResponse);
       
       expect(sessionCookie).toContain('session=');
       
@@ -450,10 +486,8 @@ describe('認証とデータアクセスのE2Eテスト', () => {
       expect(logoutResponse.status).toBe(200);
       expect(logoutResponse.data.success).toBe(true);
       
-      // ログアウト後のクッキーを取得
-      const logoutCookie = logoutResponse.headers['set-cookie'] 
-        ? logoutResponse.headers['set-cookie'][0]
-        : 'session=; Max-Age=0';
+      // ログアウト後のクッキーを取得 - 改善された抽出関数を使用
+      const logoutCookie = extractCookieFromResponse(logoutResponse);
       
       // ログアウト後にセッション確認
       try {
@@ -546,10 +580,8 @@ describe('認証とデータアクセスのE2Eテスト', () => {
       
       expect(loginResponse.status).toBe(200);
       
-      // セッションクッキーを保存
-      const authCookie = loginResponse.headers['set-cookie'] 
-        ? loginResponse.headers['set-cookie'][0]
-        : 'session=test-session-id';
+      // セッションクッキーを保存 - 改善された抽出関数を使用
+      const authCookie = extractCookieFromResponse(loginResponse);
       
       // ステップ2: 複数の株式データを取得
       const stocksResponse = await axios.get(`${API_BASE_URL}/api/market-data`, {
@@ -647,12 +679,15 @@ describe('認証とデータアクセスのE2Eテスト', () => {
       
       expect(logoutResponse.status).toBe(200);
       
+      // ログアウト後のクッキーを取得 - 改善された抽出関数を使用
+      const logoutCookie = extractCookieFromResponse(logoutResponse);
+      
       // ステップ8: ログアウト後にポートフォリオ読み込みを試みる（エラーになるはず）
       try {
         await axios.get(`${API_BASE_URL}/drive/load`, {
           params: { fileId },
           headers: {
-            Cookie: logoutResponse.headers['set-cookie'][0]
+            Cookie: logoutCookie
           }
         });
         
@@ -663,4 +698,3 @@ describe('認証とデータアクセスのE2Eテスト', () => {
     });
   });
 });
-

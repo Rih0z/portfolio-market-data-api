@@ -46,22 +46,48 @@ PFWise-APIのテスト失敗の主な原因はモック化の不一致です。�
    ```
 
 #### アプローチ3: 内部参照オブジェクトの使用
-   ```javascript
-   // ファイル先頭
-   const internalService = {};
-   
-   // 関数定義
-   internalService.method1 = function(param1, param2) { ... };
-   internalService.method2 = function(param1) { 
-     return internalService.method1(param1, 'default');
-   };
-   
-   // 最後に全てをエクスポート
-   module.exports = {
-     method1: internalService.method1,
-     method2: internalService.method2
-   };
-   ```
+
+このアプローチは、モジュール内の関数が相互に参照する場合や、テストでスパイを使用する場合に特に有効です。実装には2つのパターンがあります：
+
+**パターン1: 内部オブジェクトを使用する方法**
+```javascript
+// ファイル先頭
+const internalService = {};
+
+// 関数定義
+internalService.method1 = function(param1, param2) { ... };
+internalService.method2 = function(param1) { 
+  return internalService.method1(param1, 'default');
+};
+
+// 最後に全てをエクスポート
+module.exports = {
+  method1: internalService.method1,
+  method2: internalService.method2
+};
+```
+
+**パターン2: 自己参照オブジェクトを直接エクスポートする方法（推奨）**
+```javascript
+// サービスオブジェクトとして定義 
+const serviceModule = {
+  method1: function(param1, param2) { 
+    // 実装...
+  },
+  
+  method2: function(param1) {
+    // 同じモジュール内の他のメソッドを呼び出す場合、自己参照する
+    return serviceModule.method1(param1, 'default');
+  },
+  
+  // 他のメソッド...
+};
+
+// オブジェクト全体をエクスポート
+module.exports = serviceModule;
+```
+
+パターン2は特に、テストでモジュール全体をモック化し、特定のメソッドをスパイする場合に効果的です。これにより、内部的な関数呼び出しもテストで検出できるようになります。
 
 #### アプローチ4: テスト側のモック方法を変更
    ```javascript
@@ -84,7 +110,9 @@ PFWise-APIのテスト失敗の主な原因はモック化の不一致です。�
    expect(result).toBe(expectedValue);
    ```
 
-## 2. 修正済みの例: googleAuthService.js
+## 2. 修正済みの例
+
+### 例1: googleAuthService.js
 
 ```javascript
 /**
@@ -117,6 +145,102 @@ const createUserSession = async (userData) => {
 };
 
 // ... (後略)
+```
+
+### 例2: googleDriveService.js
+
+```javascript
+/**
+ * GoogleDriveとの連携サービス
+ */
+'use strict';
+
+const { google } = require('googleapis');
+const { withRetry } = require('../utils/retry');
+const logger = require('../utils/logger');
+
+// オブジェクトとして定義し、自己参照できるようにする
+const googleDriveService = {
+  /**
+   * ファイルを保存する
+   */
+  saveFile: async (fileName, content, mimeType, accessToken, fileId = null, createBackup = false) => {
+    try {
+      const drive = googleDriveService.getDriveClient(accessToken);
+      
+      // 既存ファイルの更新でバックアップが必要な場合
+      if (fileId && createBackup) {
+        await googleDriveService.createFileBackup(drive, fileId, accessToken);
+      }
+      
+      // その他の実装...
+      
+      return saveResult;
+    } catch (error) {
+      logger.error('Error saving file to Drive:', error);
+      throw new Error('Failed to save file to Google Drive');
+    }
+  },
+  
+  /**
+   * ポートフォリオデータを保存する
+   */
+  savePortfolioToDrive: async (accessToken, portfolioData, fileId = null, createBackup = true) => {
+    try {
+      // ファイル名の生成
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const fileName = `portfolio-data-${timestamp}.json`;
+      
+      // ファイルのコンテンツ
+      const content = JSON.stringify(portfolioData, null, 2);
+      
+      // 自己参照を使用して同じモジュール内の関数を呼び出す
+      const saveResult = await googleDriveService.saveFile(
+        fileName,
+        content,
+        'application/json',
+        accessToken,
+        fileId,
+        createBackup
+      );
+      
+      return {
+        success: true,
+        fileId: saveResult.id,
+        fileName: saveResult.name,
+        webViewLink: saveResult.webViewLink,
+        createdTime: saveResult.createdTime,
+        modifiedTime: saveResult.modifiedTime
+      };
+    } catch (error) {
+      logger.error('Error saving portfolio to Drive:', error);
+      throw new Error('Failed to save portfolio data to Google Drive');
+    }
+  },
+  
+  // その他のメソッド...
+};
+
+module.exports = googleDriveService;
+```
+
+この修正により、テスト側で以下のようなスパイの設定が正しく機能するようになります：
+
+```javascript
+// テスト内
+const saveFileSpy = jest.spyOn(googleDriveService, 'saveFile');
+
+// テスト実行...
+
+// saveFile関数が正しいパラメータで呼ばれたことを検証
+expect(saveFileSpy).toHaveBeenCalledWith(
+  'portfolio-data-2025-05-18T04-20-39-943Z.json',
+  expect.stringContaining('Test Portfolio'),
+  'application/json',
+  'test-access-token',
+  null,
+  true
+);
 ```
 
 ## 3. 各ファイルの修正ポイント
@@ -155,6 +279,7 @@ const createUserSession = async (userData) => {
 2. **修正点**:
    - Google Drive APIクライアントのモック化確認
    - ファイル操作関数の呼び出し方法の修正
+   - 自己参照オブジェクトパターンを適用して、モジュール内部の関数呼び出しがテストスパイで検出できるようにする
 
 ## 4. コードパターン別の修正アプローチ
 
@@ -170,15 +295,12 @@ module.exports = { funcA, funcB };
 
 解決策 (内部参照オブジェクトを使用):
 ```javascript
-const internal = {};
-
-internal.funcB = () => { return 2; };
-internal.funcA = () => { return internal.funcB() + 1; };
-
-module.exports = { 
-  funcA: internal.funcA, 
-  funcB: internal.funcB 
+const myModule = {
+  funcB: () => { return 2; },
+  funcA: function() { return myModule.funcB() + 1; }
 };
+
+module.exports = myModule;
 ```
 
 ### 条件付きモック化
@@ -423,6 +545,7 @@ test('複雑なサービスの使用', () => {
 1. **一貫性のあるコード構造**
    - インポート/エクスポート方法を統一する
    - 関数呼び出しパターンを統一する
+   - **自己参照オブジェクトパターンを積極的に採用する**
 
 2. **テスト種類に応じた適切なアプローチ**
    - ユニットテスト：細かい実装の検証

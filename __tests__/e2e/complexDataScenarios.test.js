@@ -9,7 +9,7 @@
  * @modified 2025-05-16 インポートパスをソースコードの実際のパスに合わせて修正
  * @modified 2025-05-21 クエリパラメータのマッチングとモックセットアップを改善
  * @modified 2025-05-25 デバッグログを強化し、モックの詳細を表示
- * @modified 2025-05-30 モックマッチングを改善し、テスト失敗を修正
+ * @modified 2025-05-30 モックマッチングロジックを修正し、テスト失敗を解決
  */
 
 const axios = require('axios');
@@ -127,55 +127,48 @@ describe('複雑なマーケットデータシナリオのE2Eテスト', () => {
     });
     logDebug("setupMockResponses: ヘルスチェックAPIのモック設定完了");
     
-    // 1. 大量の米国株データAPIモック - より正確なマッチング条件を設定
+    // ======== 米国株データのモック ==========
+    
+    // 1. 大量の米国株データAPIモック - 最初に大量シンボルのモックを設定
     const usStockMockData = generateMockStockData(50, 'us');
     logDebug(`setupMockResponses: 米国株データモック生成完了 - ${Object.keys(usStockMockData).length}銘柄`);
     logDebug("最初の数銘柄:", Object.keys(usStockMockData).slice(0, 3));
     
-    // モックリクエストを正確に設定 - 実装を改善
+    // 大量シンボル用の正確なモック
     mockApiRequest(`${API_BASE_URL}/api/market-data`, 'GET', {
       success: true,
       data: usStockMockData
     }, 200, {}, { 
       queryParams: { 
-        type: 'us-stock'
+        type: 'us-stock',
+        // symbols パラメータが存在する場合のみに一致（値は任意）
+        symbols: (val) => val !== undefined && val.length > 0
       }
     });
-    logDebug("setupMockResponses: 米国株データAPIのモック設定完了");
     
-    // 特定のシンボルリストに対するモックも追加
+    // 特定のキーワードを含むシンボルに対するさらに具体的なモック
+    const mainUsSymbols = Object.keys(usStockMockData).slice(0, 10); // 主要10銘柄
+    logDebug(`主要シンボル: ${mainUsSymbols.join(', ')}`);
+    
+    const specificUsStockData = {};
+    mainUsSymbols.forEach(symbol => {
+      specificUsStockData[symbol] = usStockMockData[symbol];
+    });
+    
+    // AAPLを含むシンボルリストに対する専用モック
     mockApiRequest(`${API_BASE_URL}/api/market-data`, 'GET', {
       success: true,
-      data: {
-        'AAPL': usStockMockData['AAPL'],
-        'MSFT': usStockMockData['MSFT'],
-        'GOOGL': usStockMockData['GOOGL'],
-        // 他の主要銘柄も含める
-        'AMZN': usStockMockData['AMZN'],
-        'META': usStockMockData['META'],
-        'TSLA': usStockMockData['TSLA'],
-        'NVDA': usStockMockData['NVDA'],
-        'BRK.A': usStockMockData['BRK.A'],
-        'JPM': usStockMockData['JPM'],
-        'JNJ': usStockMockData['JNJ'],
-        // さらに10銘柄追加して、最低20銘柄を確保
-        'STOCK0': usStockMockData['STOCK0'],
-        'STOCK1': usStockMockData['STOCK1'],
-        'STOCK2': usStockMockData['STOCK2'],
-        'STOCK3': usStockMockData['STOCK3'],
-        'STOCK4': usStockMockData['STOCK4'],
-        'STOCK5': usStockMockData['STOCK5'],
-        'STOCK6': usStockMockData['STOCK6'],
-        'STOCK7': usStockMockData['STOCK7'],
-        'STOCK8': usStockMockData['STOCK8'],
-        'STOCK9': usStockMockData['STOCK9']
-      }
+      data: specificUsStockData
     }, 200, {}, { 
       queryParams: { 
         type: 'us-stock',
-        symbols: (val) => val && val.includes('AAPL') // シンボルにAAPLを含むクエリに一致
+        symbols: (val) => val && val.includes('AAPL')
       }
     });
+    
+    logDebug("setupMockResponses: 米国株データAPIのモック設定完了");
+    
+    // ======== 日本株データのモック ==========
     
     // 2. 大量の日本株データAPIモック
     const jpStockMockData = generateMockStockData(50, 'jp');
@@ -186,10 +179,14 @@ describe('複雑なマーケットデータシナリオのE2Eテスト', () => {
       data: jpStockMockData
     }, 200, {}, { 
       queryParams: { 
-        type: 'jp-stock'
+        type: 'jp-stock',
+        // symbols パラメータが存在する場合のみに一致（値は任意）
+        symbols: (val) => val !== undefined && val.length > 0
       }
     });
     logDebug("setupMockResponses: 日本株データAPIのモック設定完了");
+    
+    // ======== 為替レートデータのモック ==========
     
     // 3. 複数の為替レートデータAPIモック - 修正: 改善されたレスポンス形式
     const exchangeRateData = {
@@ -231,28 +228,31 @@ describe('複雑なマーケットデータシナリオのE2Eテスト', () => {
       }
     };
     
-    // 正確なクエリパラメータマッチングを使用
-    mockApiRequest(`${API_BASE_URL}/api/market-data`, 'GET', {
-      success: true,
-      data: exchangeRateData
-    }, 200, {}, { 
-      queryParams: { 
-        type: 'exchange-rate'
-      }
-    });
-    
-    // 特定の為替レートのリストに対するモックも追加
+    // 為替レート用の基本モック - 特定のsymbolsパラメータを検査する
     mockApiRequest(`${API_BASE_URL}/api/market-data`, 'GET', {
       success: true,
       data: exchangeRateData
     }, 200, {}, { 
       queryParams: { 
         type: 'exchange-rate',
-        symbols: (val) => val && val.includes('USD-JPY') // USD-JPYを含むクエリに一致
+        symbols: (val) => val !== undefined && val.length > 0
+      }
+    });
+    
+    // 特定の為替レートシンボルに対する具体的なモック - テストで使用する明確なパラメータ値を指定
+    mockApiRequest(`${API_BASE_URL}/api/market-data`, 'GET', {
+      success: true,
+      data: exchangeRateData
+    }, 200, {}, { 
+      queryParams: { 
+        type: 'exchange-rate',
+        symbols: 'USD-JPY,EUR-JPY,GBP-JPY,USD-EUR'
       }
     });
     
     logDebug("setupMockResponses: 為替レートデータAPIのモック設定完了");
+    
+    // ======== 投資信託データのモック ==========
     
     // 4. 投資信託データAPIモック
     const mutualFundData = {
@@ -283,10 +283,14 @@ describe('複雑なマーケットデータシナリオのE2Eテスト', () => {
       data: mutualFundData
     }, 200, {}, { 
       queryParams: { 
-        type: 'mutual-fund'
+        type: 'mutual-fund',
+        // symbols パラメータが存在する場合のみに一致（値は任意）
+        symbols: (val) => val !== undefined && val.length > 0
       }
     });
     logDebug("setupMockResponses: 投資信託データAPIのモック設定完了");
+    
+    // ======== 複合マーケットデータのモック ==========
     
     // 5. 複合型のマーケットデータAPIモック
     const combinedData = {
@@ -340,6 +344,8 @@ describe('複雑なマーケットデータシナリオのE2Eテスト', () => {
     
     mockApiRequest(`${API_BASE_URL}/api/market-data/combined`, 'POST', combinedData);
     logDebug("setupMockResponses: 複合型マーケットデータAPIのモック設定完了");
+    
+    // ======== エラーケースと特殊ケースのモック ==========
     
     // 6. エラーケース: 過剰なデータリクエスト
     mockApiRequest(`${API_BASE_URL}/api/market-data`, 'GET', {
@@ -409,17 +415,18 @@ describe('複雑なマーケットデータシナリオのE2Eテスト', () => {
     });
     logDebug("setupMockResponses: キャッシュフラグ付きリクエストのモック設定完了");
     
-    // フォールバックモック - 特定のパターンに一致しないリクエストに対応するため
-    // 汎用性の高いフォールバックを追加（米国株データ用）
+    // ======== フォールバックモック ==========
+    
+    // 特定のパターンに一致しないリクエストに対応するためのフォールバック
+    
+    // 米国株用のフォールバック
     mockApiRequest(`${API_BASE_URL}/api/market-data`, 'GET', {
       success: true,
       data: usStockMockData,
       mock: 'fallback-us-stock'
     }, 200, {}, {
       queryParams: {
-        type: 'us-stock',
-        // シンボルのパラメータがあればどんな値でもマッチ
-        symbols: (val) => val !== undefined
+        type: 'us-stock'
       }
     });
     
@@ -430,16 +437,17 @@ describe('複雑なマーケットデータシナリオのE2Eテスト', () => {
       mock: 'fallback-exchange-rate'
     }, 200, {}, {
       queryParams: {
-        type: 'exchange-rate',
-        // シンボルのパラメータがあればどんな値でもマッチ
-        symbols: (val) => val !== undefined
+        type: 'exchange-rate'
       }
     });
     
-    // 完全なフォールバック（他に何もマッチしない場合）
+    // 完全なフォールバック（最後のリゾートとして）
     mockApiRequest(`${API_BASE_URL}/api/market-data`, 'GET', {
       success: true,
-      data: usStockMockData,
+      data: {
+        ...usStockMockData,
+        ...exchangeRateData
+      },
       mock: 'fallback-complete'
     }, 200);
     
@@ -460,8 +468,24 @@ describe('複雑なマーケットデータシナリオのE2Eテスト', () => {
       // 最低10銘柄は確実に生成
       const actualCount = Math.max(count, symbols.length);
       
-      for (let i = 0; i < actualCount; i++) {
-        const symbol = i < symbols.length ? symbols[i] : `STOCK${i}`;
+      // 主要銘柄を必ず含める
+      symbols.forEach(symbol => {
+        data[symbol] = {
+          ticker: symbol,
+          price: symbol === 'AAPL' ? 190.5 : 
+                 symbol === 'MSFT' ? 345.22 : 
+                 symbol === 'GOOGL' ? 127.75 : 
+                 Math.round(100 + Math.random() * 900) + Math.round(Math.random() * 99) / 100,
+          change: Math.round((Math.random() * 20 - 10) * 100) / 100,
+          changePercent: Math.round((Math.random() * 6 - 3) * 100) / 100,
+          currency: 'USD',
+          lastUpdated: new Date().toISOString()
+        };
+      });
+      
+      // 残りの銘柄を生成
+      for (let i = symbols.length; i < actualCount; i++) {
+        const symbol = `STOCK${i-symbols.length}`;
         data[symbol] = {
           ticker: symbol,
           price: Math.round(100 + Math.random() * 900) + Math.round(Math.random() * 99) / 100,
@@ -478,8 +502,24 @@ describe('複雑なマーケットデータシナリオのE2Eテスト', () => {
       // 最低10銘柄は確実に生成
       const actualCount = Math.max(count, symbols.length);
       
-      for (let i = 0; i < actualCount; i++) {
-        const symbol = i < symbols.length ? symbols[i] : `${1000 + i}`;
+      // 主要銘柄を必ず含める
+      symbols.forEach(symbol => {
+        data[symbol] = {
+          ticker: symbol,
+          price: symbol === '7203' ? 2500 : 
+                 symbol === '9984' ? 8750 : 
+                 symbol === '6758' ? 12500 : 
+                 Math.round(1000 + Math.random() * 9000),
+          change: Math.round((Math.random() * 400 - 200)),
+          changePercent: Math.round((Math.random() * 6 - 3) * 100) / 100,
+          currency: 'JPY',
+          lastUpdated: new Date().toISOString()
+        };
+      });
+      
+      // 残りの銘柄を生成
+      for (let i = symbols.length; i < actualCount; i++) {
+        const symbol = `${1000 + i-symbols.length}`;
         data[symbol] = {
           ticker: symbol,
           price: Math.round(1000 + Math.random() * 9000),
@@ -657,6 +697,4 @@ describe('複雑なマーケットデータシナリオのE2Eテスト', () => {
     
     // 他のテストケースも追加できます
   });
-  
-  // 他のテストグループも必要に応じて追加
 });

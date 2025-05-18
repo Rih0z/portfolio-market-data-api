@@ -496,7 +496,7 @@ const savePortfolioToDrive = async (accessToken, portfolioData, fileId = null, c
   try {
     // ファイル名の生成（現在のタイムスタンプを含む）
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const fileName = fileId ? null : `portfolio-data-${timestamp}.json`;
+    const fileName = `portfolio-data-${timestamp}.json`;
     
     // ファイルのコンテンツ
     const content = JSON.stringify(portfolioData, null, 2);

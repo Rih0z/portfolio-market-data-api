@@ -1,4 +1,4 @@
-# PFWise-API テスト修正ガイド
+# JavaScriptモックテスト戦略ガイド: PFWise-API実践事例
 
 ## 1. モック化の問題と修正方針
 

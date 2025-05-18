@@ -16,10 +16,7 @@ const axios = require('axios');
 const { withRetry, isRetryableApiError } = require('../../utils/retry');
 const alertService = require('../alerts');
 
-// 環境変数から設定を取得（環境変数が優先されるように修正）
-// 環境変数が存在する場合はそれを使用し、存在しない場合のみデフォルト値を使用
-const API_HOST = process.env.YAHOO_FINANCE_API_HOST || 'yh-finance.p.rapidapi.com';
-const API_KEY = process.env.YAHOO_FINANCE_API_KEY; // デフォルト値を削除
+// API_TIMEOUTはテスト環境による更新が少ないので定数定義のままにする
 const API_TIMEOUT = parseInt(process.env.YAHOO_FINANCE_API_TIMEOUT || '5000', 10);
 
 /**
@@ -28,6 +25,8 @@ const API_TIMEOUT = parseInt(process.env.YAHOO_FINANCE_API_TIMEOUT || '5000', 10
  * @returns {string} 完全なAPIエンドポイントURL
  */
 const buildApiUrl = (path) => {
+  // 関数呼び出し時に毎回環境変数を読み込む
+  const API_HOST = process.env.YAHOO_FINANCE_API_HOST || 'yh-finance.p.rapidapi.com';
   return `https://${API_HOST}${path}`;
 };
 
@@ -41,6 +40,10 @@ const getStockData = async (symbol) => {
     if (!symbol) {
       throw new Error('Symbol is required');
     }
+
+    // 関数呼び出し時に毎回環境変数を読み込む
+    const API_HOST = process.env.YAHOO_FINANCE_API_HOST || 'yh-finance.p.rapidapi.com';
+    const API_KEY = process.env.YAHOO_FINANCE_API_KEY;
 
     // APIからデータを取得
     const response = await withRetry(
@@ -129,6 +132,10 @@ const getStocksData = async (symbols) => {
     if (!symbolsArray || symbolsArray.length === 0) {
       throw new Error('Symbols array is required');
     }
+
+    // 関数呼び出し時に毎回環境変数を読み込む
+    const API_HOST = process.env.YAHOO_FINANCE_API_HOST || 'yh-finance.p.rapidapi.com';
+    const API_KEY = process.env.YAHOO_FINANCE_API_KEY;
 
     // 一度に処理する銘柄数の上限（APIの制限に合わせる）
     const BATCH_SIZE = 20;

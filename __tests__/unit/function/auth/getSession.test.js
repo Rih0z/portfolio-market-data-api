@@ -155,11 +155,20 @@ describe('Get Session Handler', () => {
     // ヘッダーなしのイベント
     const event = {};
     
+    // ヘッダーがない場合、空のオブジェクトを返すようにモック
+    cookieParser.parseCookies.mockReturnValue({});
+    
     // テスト対象の関数を実行
     await handler(event);
     
     // responseUtils.formatErrorResponseが呼び出されたことを検証
-    expect(responseUtils.formatErrorResponse).toHaveBeenCalled();
+    expect(responseUtils.formatErrorResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statusCode: 401,
+        code: 'NO_SESSION',
+        message: expect.stringContaining('認証')
+      })
+    );
   });
   
   test('セッション取得時にエラーが発生した場合、エラーレスポンスを返す', async () => {
@@ -179,7 +188,6 @@ describe('Get Session Handler', () => {
     await handler(event);
     
     // responseUtils.formatErrorResponseが呼び出されたことを検証
-    // 修正: 実際のエラーコードとステータスコードに合わせる
     expect(responseUtils.formatErrorResponse).toHaveBeenCalledWith(
       expect.objectContaining({
         statusCode: 500,
@@ -197,18 +205,13 @@ describe('Get Session Handler', () => {
       }
     };
     
-    // 期限切れセッションをモック
-    const expiredSession = {
-      ...mockSessionData,
-      expiresAt: new Date(Date.now() - 1000).toISOString() // 過去の日時
-    };
-    googleAuthService.getSession.mockResolvedValue(expiredSession);
+    // 期限切れセッションは、getSessionがnullを返す形になる（内部処理の結果）
+    googleAuthService.getSession.mockResolvedValue(null);
     
     // テスト対象の関数を実行
     await handler(event);
     
     // responseUtils.formatErrorResponseが呼び出されたことを検証
-    // 修正: 実装では期限切れセッションがnullとして扱われるため、正しいコードに変更
     expect(responseUtils.formatErrorResponse).toHaveBeenCalledWith(
       expect.objectContaining({
         statusCode: 401,

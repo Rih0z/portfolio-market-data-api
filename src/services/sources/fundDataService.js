@@ -36,8 +36,8 @@ const RATE_LIMIT_DELAY = parseInt(process.env.DATA_RATE_LIMIT_DELAY || '500', 10
  * @returns {Promise<Object>} 投資信託データ
  */
 const getMutualFundData = async (code) => {
-  // 投資信託コードの正規化（末尾のCとTを取り除く）
-  let fundCode = code.replace(/\.T$/i, '').replace(/C$/i, '');
+  // 投資信託コードの正規化（末尾のTを取り除くが、Cは保持する）
+  let fundCode = code.replace(/\.T$/i, '');
   console.log(`Preparing to get mutual fund data for ${fundCode}`);
 
   // キャッシュキー構築
@@ -58,7 +58,7 @@ const getMutualFundData = async (code) => {
     {
       defaultPrice: 10000,
       currencyCode: 'JPY',
-      name: `投資信託 ${fundCode}C`,
+      name: `投資信託 ${fundCode}`,
       isStock: false,
       isMutualFund: true,
       priceLabel: '基準価額'
@@ -86,7 +86,7 @@ const getMutualFundData = async (code) => {
       
       // 完全なデータオブジェクトを構築
       const resultData = {
-        ticker: `${fundCode}C`,
+        ticker: fundCode,
         ...data,
         source: 'Morningstar CSV',
         isStock: false,
@@ -140,7 +140,7 @@ const getMorningstarCsvData = async (fundCode) => {
   console.log(`Getting CSV data from Morningstar for ${fundCode}`);
   
   try {
-    // モーニングスター用のURLを構築
+    // モーニングスター用のURLを構築 - fundCodeをそのまま使用
     const url = `https://www.morningstar.co.jp/FundData/DownloadStandardPriceData.do?fnc=${fundCode}`;
     
     // ランダムなユーザーエージェントを使用
@@ -268,11 +268,11 @@ const getMutualFundsParallel = async (codes) => {
   // ブラックリスト銘柄にはデフォルト値を設定
   for (const code of blacklistedCodes) {
     results[code] = {
-      ticker: `${code}C`,
+      ticker: code,
       price: 10000, // フォールバック基準価額
       change: 0,
       changePercent: 0,
-      name: `投資信託 ${code}C`,
+      name: `投資信託 ${code}`,
       currency: 'JPY',
       lastUpdated: new Date().toISOString(),
       source: 'Blacklisted Fallback',
@@ -340,11 +340,11 @@ const getMutualFundsParallel = async (codes) => {
         
         // エラーでも最低限の情報を返す
         results[code] = {
-          ticker: `${code}C`,
+          ticker: code,
           price: null,
           change: null,
           changePercent: null,
-          name: `投資信託 ${code}C`,
+          name: `投資信託 ${code}`,
           currency: 'JPY',
           lastUpdated: new Date().toISOString(),
           source: 'Error',

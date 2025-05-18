@@ -51,6 +51,24 @@ functions:
           method: get
           cors: true
   
+  # 追加: 複合マーケットデータ取得エンドポイント
+  combinedMarketData:
+    handler: src/function/marketData.combinedDataHandler
+    events:
+      - http:
+          path: api/market-data/combined
+          method: post
+          cors: true
+  
+  # 追加: 高レイテンシーシミュレーションエンドポイント
+  highLatencyMarketData:
+    handler: src/function/marketData.highLatencyHandler
+    events:
+      - http:
+          path: api/market-data/high-latency
+          method: get
+          cors: true
+  
   preWarmCache:
     handler: src/function/preWarmCache.handler
     events:
@@ -168,5 +186,3 @@ resources:
 plugins:
   - serverless-dotenv-plugin
   - serverless-offline
-
-

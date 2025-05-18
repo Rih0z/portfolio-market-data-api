@@ -7,6 +7,7 @@
  * @updated 2025-05-13 新規追加: 基本的なログイン処理実装
  * @updated 2025-05-15 バグ修正: Cookie設定を強化
  * @updated 2025-05-16 バグ修正: テスト互換性を向上
+ * @updated 2025-05-17 バグ修正: formatResponseの呼び出し修正
  */
 'use strict';
 
@@ -89,10 +90,11 @@ module.exports.handler = async (event) => {
       }, { 'Set-Cookie': sessionCookie });
     }
     
-    // レスポンスを整形 - テストが期待する形式に合わせる
+    // レスポンスを整形 - formatResponseが期待する形式に合わせる
+    // 修正: 'body' -> 'data' に変更して、formatResponseの期待する形式に合わせる
     return formatResponse({
       statusCode: 200,
-      body: {
+      data: {
         success: true,
         isAuthenticated: true,
         user: {
@@ -127,4 +129,3 @@ module.exports.handler = async (event) => {
     });
   }
 };
-

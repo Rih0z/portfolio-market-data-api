@@ -15,10 +15,15 @@ const uuid = require('uuid');
 const { addItem, getItem, deleteItem, updateItem } = require('../../../src/utils/dynamoDbService');
 const tokenManager = require('../../../src/utils/tokenManager');
 
-// モジュールのモック化
+// モックのセットアップ
 jest.mock('uuid');
 jest.mock('../../../src/utils/dynamoDbService');
-jest.mock('../../../src/utils/tokenManager');
+jest.mock('../../../src/utils/tokenManager', () => ({
+  exchangeCodeForTokens: jest.fn(),
+  verifyIdToken: jest.fn(),
+  validateAndRefreshToken: jest.fn(),
+  refreshAccessToken: jest.fn()
+}));
 
 describe('GoogleAuthService', () => {
   // テスト用のモックデータ
@@ -52,7 +57,7 @@ describe('GoogleAuthService', () => {
     jest.clearAllMocks();
     
     // モック関数の実装を再設定
-    uuid.v4 = jest.fn().mockReturnValue(mockSessionId);
+    uuid.v4.mockReturnValue(mockSessionId);
     
     // DynamoDBサービスのモック
     addItem.mockResolvedValue({});
@@ -61,7 +66,6 @@ describe('GoogleAuthService', () => {
     updateItem.mockResolvedValue({});
     
     // tokenManagerのモック関数を明示的に実装
-    // 直接プロパティに値を割り当てる代わりに、モックメソッドを呼び出す
     tokenManager.exchangeCodeForTokens.mockResolvedValue(mockTokens);
     tokenManager.verifyIdToken.mockResolvedValue(mockIdTokenPayload);
     tokenManager.validateAndRefreshToken.mockResolvedValue({

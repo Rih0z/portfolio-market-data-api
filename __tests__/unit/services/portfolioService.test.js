@@ -6,10 +6,9 @@
  * 
  * @author Portfolio Manager Team
  * @created 2025-05-15
+ * @updated 2025-05-17
  */
 
-// 以下のインポートファイルが見つかりません
-// 実装ファイルを確認してパスを修正、または実装ファイルを作成する必要があります
 const portfolioService = require('../../../src/services/portfolioService');
 const googleDriveService = require('../../../src/services/googleDriveService');
 const { withRetry } = require('../../../src/utils/retry');
@@ -66,6 +65,7 @@ describe('Portfolio Service', () => {
       JSON.stringify(mockPortfolio)
     );
     
+    // listFiles関数のモック（新しいインターフェースに対応）
     googleDriveService.listFiles.mockResolvedValue(mockFilesList);
     
     googleDriveService.deleteFile.mockResolvedValue(true);
@@ -88,7 +88,8 @@ describe('Portfolio Service', () => {
         expect.stringContaining(mockPortfolio.name),
         expect.any(String), // JSONシリアライズされたデータ
         'application/json',
-        mockAccessToken
+        mockAccessToken,
+        null // fileIdはnull
       );
       
       // 保存されたJSONデータにユーザーIDが含まれていることを検証
@@ -235,10 +236,11 @@ describe('Portfolio Service', () => {
       const result = await portfolioService.listPortfolios(mockAccessToken);
       
       // Google Driveサービスが正しく呼び出されたか検証
+      // 新しいインターフェースに対応したテスト
       expect(googleDriveService.listFiles).toHaveBeenCalledWith(
-        expect.stringContaining('portfolio'),
-        'application/json',
-        mockAccessToken
+        'portfolio', // nameFilter
+        'application/json', // mimeType
+        mockAccessToken // accessToken
       );
       
       // 結果の検証
@@ -264,9 +266,9 @@ describe('Portfolio Service', () => {
         'custom-portfolio'
       );
       
-      // フィルター文字列が含まれていることを検証
+      // 正しくフィルターが適用されていることを検証
       expect(googleDriveService.listFiles).toHaveBeenCalledWith(
-        expect.stringContaining('custom-portfolio'),
+        'custom-portfolio', // カスタムフィルター
         'application/json',
         mockAccessToken
       );
@@ -373,6 +375,9 @@ describe('Portfolio Service', () => {
       // symbolがない要素は削除されるか、デフォルト値が設定される
       if (validatedData.holdings.length > 1) {
         expect(validatedData.holdings[1]).toHaveProperty('symbol');
+      } else {
+        // symbolがない要素は削除される実装の場合
+        expect(validatedData.holdings.length).toBe(1);
       }
     });
   });

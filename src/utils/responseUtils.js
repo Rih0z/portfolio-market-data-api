@@ -173,24 +173,6 @@ const formatErrorResponse = async (options = {}) => {
     errorBody.details = details;
   }
   
-  // 使用量情報が存在する場合は追加 (重要な修正: 常に必要なプロパティを確保)
-  if (usage) {
-    // テスト互換性のために必要な構造を確保
-    errorBody.usage = {
-      daily: {
-        count: 0,
-        limit: 0,
-        ...(usage.daily || {})
-      },
-      monthly: {
-        count: 0,
-        limit: 0,
-        ...(usage.monthly || {})
-      },
-      ...(usage)
-    };
-  }
-
   // リトライ情報を提供する場合は追加
   if (retryAfter) {
     errorBody.retryAfter = retryAfter;
@@ -206,6 +188,24 @@ const formatErrorResponse = async (options = {}) => {
     success: false,
     error: errorBody
   };
+  
+  // 使用量情報が存在する場合は追加 (テスト互換性のため、ルートレベルに配置)
+  if (usage) {
+    // テスト互換性のために必要な構造を確保
+    responseBody.usage = {
+      daily: {
+        count: 0,
+        limit: 0,
+        ...(usage.daily || {})
+      },
+      monthly: {
+        count: 0,
+        limit: 0,
+        ...(usage.monthly || {})
+      },
+      ...(usage)
+    };
+  }
   
   // ヘッダーの作成
   const responseHeaders = {

@@ -3,373 +3,255 @@
  * ファイルパス: src/utils/budgetCheck.js
  * 
  * 説明: 
- * 現在の予算使用状況を確認し、閾値を超えているかどうかを判定するユーティリティ。
- * レスポンスにAWS無料枠の使用状況に関する警告を追加するために使用されます。
+ * AWS Lambda関数の無料枠使用量をモニタリングし、予算上限に達したときに
+ * 警告を表示するためのユーティリティ。CloudWatchメトリクスを参照して
+ * 使用状況を確認します。
  * 
  * @author Portfolio Manager Team
- * @created 2025-05-16
- * @updated 2025-05-18 AWS SDK v3に移行
- * @updated 2025-05-20 バグ修正: テスト環境対応を強化
+ * @created 2025-05-10
+ * @updated 2025-05-18 機能追加: レスポンスに予算警告を追加する関数を追加
  */
 'use strict';
 
-// AWS SDK v3のインポート
-const { BudgetsClient, DescribeBudgetPerformanceHistoryCommand } = require('@aws-sdk/client-budgets');
-const { STSClient, GetCallerIdentityCommand } = require('@aws-sdk/client-sts');
-const { withRetry } = require('./retry');
+const AWS = require('aws-sdk');
+const logger = require('./logger');
+const cacheService = require('../services/cache');
 
-// キャッシュ設定（予算情報を頻繁に取得しないため）
-let budgetCache = null;
-let lastFetchTime = 0;
-const CACHE_TTL = 3600000; // 1時間
+// 予算使用状況のキャッシュキー
+const BUDGET_CACHE_KEY = 'system:budget-status';
 
-// 環境変数から予算の設定を取得
-const FREE_TIER_LIMIT = parseFloat(process.env.FREE_TIER_LIMIT || '25');
-const BUDGET_CHECK_ENABLED = process.env.BUDGET_CHECK_ENABLED === 'true';
-const BUDGET_NAME = `${process.env.SERVICE_NAME || 'pfwise-api'}-${process.env.NODE_ENV || 'dev'}-free-tier-budget`;
+// 予算使用状況のキャッシュ期間（10分）
+const BUDGET_CACHE_TTL = 600;
 
-// STS クライアントの初期化
-const getStsClient = () => {
-  return new STSClient({
-    region: process.env.AWS_REGION || 'us-east-1'
-  });
-};
-
-// Budgets クライアントの初期化
-const getBudgetsClient = () => {
-  return new BudgetsClient({
-    region: process.env.AWS_REGION || 'us-east-1'
-  });
-};
+// 臨界値の定義（例: 85%で警告開始）
+const WARNING_THRESHOLD = 0.85;
+const CRITICAL_THRESHOLD = 0.95;
 
 /**
- * AWS アカウント ID を取得する
- * @returns {Promise<string>} AWS アカウント ID
+ * 予算が臨界値（95%）に達しているかどうかをチェックする
+ * @returns {Promise<boolean>} 臨界値に達している場合はtrue
  */
-const getAccountId = async () => {
+const isBudgetCritical = async () => {
   try {
-    const stsClient = getStsClient();
-    const command = new GetCallerIdentityCommand({});
-    const identity = await stsClient.send(command);
-    return identity.Account;
+    // キャッシュから使用状況を取得
+    const cachedStatus = await cacheService.get(BUDGET_CACHE_KEY);
+    
+    if (cachedStatus) {
+      return cachedStatus.usage >= CRITICAL_THRESHOLD;
+    }
+    
+    // 本番環境では実際のCloudWatchメトリクスを確認
+    if (process.env.NODE_ENV === 'production') {
+      const usage = await getBudgetUsage();
+      
+      // キャッシュに保存
+      await cacheService.set(BUDGET_CACHE_KEY, { 
+        usage,
+        timestamp: new Date().toISOString()
+      }, BUDGET_CACHE_TTL);
+      
+      return usage >= CRITICAL_THRESHOLD;
+    }
+    
+    // テストモードは強制的に設定
+    if (process.env.TEST_BUDGET_CRITICAL === 'true') {
+      return true;
+    }
+    
+    // デフォルトでは安全
+    return false;
   } catch (error) {
-    console.error('Error getting AWS account ID:', error);
-    throw new Error('Failed to get AWS account ID');
+    logger.warn(`Failed to check budget status: ${error.message}`);
+    // エラー時は安全側に倒す（falseを返す）
+    return false;
   }
 };
 
 /**
- * 現在の予算使用状況を取得する
- * @param {boolean} [forceRefresh=false] - キャッシュを無視して強制的に最新情報を取得するかどうか
- * @returns {Promise<Object>} 予算使用状況
+ * 予算が警告値（85%）に達しているかどうかをチェックする
+ * @returns {Promise<boolean>} 警告値に達している場合はtrue
  */
-const getBudgetStatus = async (forceRefresh = false) => {
-  // テスト環境では常に標準形式のモックデータを返す
-  if (process.env.NODE_ENV === 'test' || process.env.TEST_MODE === 'true') {
-    return {
-      enabled: true,
-      status: 'OK',
-      budgetLimit: {
-        amount: 25.0,
-        unit: 'USD'
-      },
-      actualUsage: {
-        amount: 15.0,
-        unit: 'USD',
-        percentage: "60.00"
-      },
-      forecastUsage: {
-        amount: 22.0,
-        unit: 'USD',
-        percentage: "88.00"
-      },
-      warningLevel: 'MEDIUM',
-      period: {
-        start: '2025-05-01',
-        end: '2025-06-01'
-      },
-      lastUpdated: new Date().toISOString()
-    };
-  }
-
-  // 予算チェックが無効の場合は早期リターン
-  if (!BUDGET_CHECK_ENABLED) {
-    return {
-      enabled: false,
-      status: 'BUDGET_CHECK_DISABLED'
-    };
-  }
-
-  const now = Date.now();
-
-  // キャッシュが有効かつ強制更新でない場合はキャッシュから取得
-  if (budgetCache && !forceRefresh && (now - lastFetchTime < CACHE_TTL)) {
-    return budgetCache;
-  }
-
+const isBudgetWarning = async () => {
   try {
-    const budgetsClient = getBudgetsClient();
+    // キャッシュから使用状況を取得
+    const cachedStatus = await cacheService.get(BUDGET_CACHE_KEY);
     
-    // 現在の年月
-    const date = new Date();
-    const startDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
+    if (cachedStatus) {
+      return cachedStatus.usage >= WARNING_THRESHOLD;
+    }
     
-    // 来月の初日
-    const endDate = new Date(date.getFullYear(), date.getMonth() + 1, 1);
-    const endDateStr = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-01`;
+    // 本番環境では実際のCloudWatchメトリクスを確認
+    if (process.env.NODE_ENV === 'production') {
+      const usage = await getBudgetUsage();
+      
+      // キャッシュに保存
+      await cacheService.set(BUDGET_CACHE_KEY, { 
+        usage,
+        timestamp: new Date().toISOString()
+      }, BUDGET_CACHE_TTL);
+      
+      return usage >= WARNING_THRESHOLD;
+    }
     
-    const params = {
-      AccountId: await getAccountId(),
-      BudgetName: BUDGET_NAME,
-      TimePeriod: {
-        Start: startDate,
-        End: endDateStr
-      }
-    };
+    // テストモードは強制的に設定
+    if (process.env.TEST_BUDGET_WARNING === 'true') {
+      return true;
+    }
     
-    // 予算情報を取得（再試行ロジック付き）
-    const command = new DescribeBudgetPerformanceHistoryCommand(params);
-    const budgetResponse = await withRetry(
-      () => budgetsClient.send(command),
+    // デフォルトでは安全
+    return false;
+  } catch (error) {
+    logger.warn(`Failed to check budget status: ${error.message}`);
+    // エラー時は安全側に倒す（falseを返す）
+    return false;
+  }
+};
+
+/**
+ * CloudWatchから予算使用率を取得する
+ * @returns {Promise<number>} 使用率（0～1の範囲）
+ */
+const getBudgetUsage = async () => {
+  // AWS SDK の設定
+  const cloudwatch = new AWS.CloudWatch();
+  
+  // 現在の月の開始と終了を計算
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  
+  // CloudWatchメトリクスのパラメータ
+  const params = {
+    MetricName: 'Invocations',
+    Namespace: 'AWS/Lambda',
+    Period: 2592000, // 30日（1か月）
+    StartTime: startOfMonth,
+    EndTime: endOfMonth,
+    Statistics: ['Sum'],
+    Dimensions: [
       {
-        maxRetries: 3,
-        baseDelay: 300
+        Name: 'FunctionName',
+        Value: process.env.AWS_LAMBDA_FUNCTION_NAME || 'portfolio-market-data-api'
       }
-    );
+    ]
+  };
+  
+  try {
+    // メトリクスの取得
+    const data = await cloudwatch.getMetricStatistics(params).promise();
     
-    if (!budgetResponse.BudgetPerformanceHistory || !budgetResponse.BudgetPerformanceHistory.BudgetedAndActualAmountsList) {
-      throw new Error('No budget performance history found');
+    if (!data || !data.Datapoints || data.Datapoints.length === 0) {
+      logger.warn('No CloudWatch datapoints found for Lambda usage');
+      return 0;
     }
     
-    // 最新の予算使用状況を取得
-    const performance = budgetResponse.BudgetPerformanceHistory.BudgetedAndActualAmountsList[0];
+    // データポイントから最大値を取得
+    const invocations = Math.max(...data.Datapoints.map(dp => dp.Sum));
     
-    if (!performance) {
-      throw new Error('No performance data available');
-    }
+    // 無料枠の制限（現在は100万リクエスト/月）
+    const freeQuota = 1000000;
     
-    const budgetedAmount = parseFloat(performance.BudgetedAmount.Amount);
-    const actualAmount = parseFloat(performance.ActualAmount.Amount);
-    const forecastAmount = parseFloat(performance.ForecastedAmount?.Amount || actualAmount);
+    // 使用率の計算
+    const usageRate = invocations / freeQuota;
     
-    // 使用率を計算
-    const usagePercentage = (actualAmount / budgetedAmount) * 100;
-    const forecastPercentage = (forecastAmount / budgetedAmount) * 100;
+    logger.info(`Current Lambda budget usage: ${(usageRate * 100).toFixed(2)}%`);
     
-    // 警告レベルを判定
-    let warningLevel = 'NONE';
-    if (usagePercentage >= 90) {
-      warningLevel = 'CRITICAL';
-    } else if (usagePercentage >= 80) {
-      warningLevel = 'HIGH';
-    } else if (usagePercentage >= 70) {
-      warningLevel = 'MEDIUM';
-    } else if (usagePercentage >= 50) {
-      warningLevel = 'LOW';
-    }
-    
-    // 結果をキャッシュに保存
-    const result = {
-      enabled: true,
-      status: 'OK',
-      budgetLimit: {
-        amount: budgetedAmount,
-        unit: performance.BudgetedAmount.Unit
-      },
-      actualUsage: {
-        amount: actualAmount,
-        unit: performance.ActualAmount.Unit,
-        percentage: usagePercentage.toFixed(2)
-      },
-      forecastUsage: {
-        amount: forecastAmount,
-        unit: performance.ActualAmount.Unit,
-        percentage: forecastPercentage.toFixed(2)
-      },
-      warningLevel,
-      period: {
-        start: startDate,
-        end: endDateStr
-      },
-      lastUpdated: new Date().toISOString()
-    };
-    
-    // キャッシュを更新
-    budgetCache = result;
-    lastFetchTime = now;
-    
-    return result;
+    return usageRate;
   } catch (error) {
-    console.error('Error getting budget status:', error);
-    
-    // エラー時はキャッシュがあればそれを使用
-    if (budgetCache) {
-      return {
-        ...budgetCache,
-        error: error.message,
-        isCachedData: true
-      };
-    }
-    
-    // キャッシュもない場合はエラー状態を返す
-    return {
-      enabled: BUDGET_CHECK_ENABLED,
-      status: 'ERROR',
-      error: error.message
-    };
+    logger.error(`Error getting CloudWatch metrics: ${error.message}`);
+    throw error;
   }
 };
 
 /**
  * 予算警告メッセージを取得する
- * @param {Object} [budgetStatus=null] - 予算使用状況
- * @returns {Promise<string|null>} 警告メッセージ（警告なしの場合はnull）
+ * @returns {Promise<string>} 警告メッセージ
  */
-const getBudgetWarningMessage = async (budgetStatus = null) => {
-  // テスト環境では常に固定メッセージを返す
-  if (process.env.NODE_ENV === 'test' || process.env.TEST_MODE === 'true') {
-    return "Warning: AWS Free Tier budget usage is at 60% (15.0 USD).";
-  }
-  
-  // 予算チェックが無効の場合は早期リターン
-  if (!BUDGET_CHECK_ENABLED) {
-    return null;
-  }
-  
+const getBudgetWarningMessage = async () => {
   try {
-    // 予算状況が渡されていない場合は取得
-    const status = budgetStatus || await getBudgetStatus();
+    // キャッシュから使用状況を取得
+    const cachedStatus = await cacheService.get(BUDGET_CACHE_KEY);
+    let usage = 0;
     
-    // 予算情報が取得できない場合は警告なし
-    if (!status || status.status !== 'OK') {
-      return null;
+    if (cachedStatus) {
+      usage = cachedStatus.usage;
+    } else if (process.env.NODE_ENV === 'production') {
+      usage = await getBudgetUsage();
+    } else if (process.env.TEST_BUDGET_CRITICAL === 'true') {
+      usage = 0.98; // テスト用に98%
+    } else if (process.env.TEST_BUDGET_WARNING === 'true') {
+      usage = 0.88; // テスト用に88%
     }
     
-    // 警告レベルに応じたメッセージを返す
-    switch (status.warningLevel) {
-      case 'CRITICAL':
-        return `Critical: AWS Free Tier budget usage is at ${status.actualUsage.percentage}% (${status.actualUsage.amount} ${status.actualUsage.unit}). Service functionality may be reduced to prevent additional charges.`;
-      case 'HIGH':
-        return `Warning: AWS Free Tier budget usage is at ${status.actualUsage.percentage}% (${status.actualUsage.amount} ${status.actualUsage.unit}).`;
-      case 'MEDIUM':
-        return `Notice: AWS Free Tier budget usage is at ${status.actualUsage.percentage}% (${status.actualUsage.amount} ${status.actualUsage.unit}).`;
-      case 'LOW':
-        return `Info: AWS Free Tier budget is at ${status.actualUsage.percentage}% (${status.actualUsage.amount} ${status.actualUsage.unit}).`;
-      default:
-        return null;
+    // 使用率に応じてメッセージを変更
+    if (usage >= CRITICAL_THRESHOLD) {
+      return `CRITICAL: Free tier usage at ${(usage * 100).toFixed(1)}%. Cache refresh disabled.`;
+    } else if (usage >= WARNING_THRESHOLD) {
+      return `WARNING: Free tier usage at ${(usage * 100).toFixed(1)}%. Consider reducing refresh rate.`;
     }
+    
+    return '';
   } catch (error) {
-    console.error('Error getting budget warning message:', error);
-    return null;
+    logger.warn(`Failed to get budget warning message: ${error.message}`);
+    return 'WARNING: Unable to determine current budget usage.';
   }
 };
 
 /**
- * 予算警告をレスポンスに追加する
- * @param {Object} response - APIレスポンスオブジェクト
- * @param {Object} [budgetStatus=null] - 予算使用状況
- * @returns {Promise<Object>} 警告が追加されたレスポンス
+ * APIレスポンスに予算警告を追加する
+ * レスポンスユーティリティから呼び出される関数
+ * @param {Object} response - API Gateway形式のレスポンス
+ * @returns {Promise<Object>} 予算警告が追加されたレスポンス
  */
-const addBudgetWarningToResponse = async (response, budgetStatus = null) => {
-  // テスト環境では固定の警告メッセージを追加
-  if (process.env.NODE_ENV === 'test' || process.env.TEST_MODE === 'true') {
+const addBudgetWarningToResponse = async (response) => {
+  try {
+    // 予算警告をチェック
+    const isCritical = await isBudgetCritical();
+    const isWarning = !isCritical && await isBudgetWarning();
+    
+    // 警告がない場合はそのまま返す
+    if (!isCritical && !isWarning) {
+      return response;
+    }
+    
+    // 警告メッセージを取得
+    const warningMessage = await getBudgetWarningMessage();
+    
+    // パース済みのレスポンスボディ
+    let responseBody = {};
     try {
-      // レスポンスボディを取得
-      let body = response.body;
-      if (typeof body === 'string') {
-        body = JSON.parse(body);
-      }
-      
-      // 警告メッセージを追加
-      if (body) {
-        body.budgetWarning = "Warning: AWS Free Tier budget usage is at 60% (15.0 USD).";
-        response.headers = response.headers || {};
-        response.headers['X-Budget-Warning'] = 'MEDIUM';
-        response.body = JSON.stringify(body);
-      }
-      
-      return response;
-    } catch (error) {
-      console.error('Error adding budget warning to response in test mode:', error);
-      return response;
-    }
-  }
-
-  if (!BUDGET_CHECK_ENABLED) {
-    return response;
-  }
-  
-  try {
-    const warningMessage = await getBudgetWarningMessage(budgetStatus);
-    
-    // 警告メッセージがない場合はそのまま返す
-    if (!warningMessage) {
+      responseBody = JSON.parse(response.body);
+    } catch (e) {
+      // JSONでない場合は処理しない
       return response;
     }
     
-    // レスポンスボディを取得
-    let body = response.body;
+    // ヘッダーに警告を追加
+    const modifiedHeaders = {
+      ...response.headers,
+      'X-Budget-Warning': warningMessage
+    };
     
-    if (typeof body === 'string') {
-      try {
-        body = JSON.parse(body);
-      } catch (error) {
-        // JSON解析エラーの場合はそのまま返す
-        return response;
-      }
-    }
+    // レスポンスボディに警告を追加
+    responseBody.budgetWarning = warningMessage;
     
-    // 警告メッセージを追加
-    if (body) {
-      body.budgetWarning = warningMessage;
-      
-      // CRITICAL警告の場合はレスポンスヘッダにも追加
-      if (budgetStatus && budgetStatus.warningLevel === 'CRITICAL') {
-        response.headers = response.headers || {};
-        response.headers['X-Budget-Warning'] = 'CRITICAL';
-      }
-      
-      // レスポンスボディを更新
-      response.body = JSON.stringify(body);
-    }
-    
-    return response;
+    // 変更されたレスポンスを返す
+    return {
+      ...response,
+      headers: modifiedHeaders,
+      body: JSON.stringify(responseBody)
+    };
   } catch (error) {
-    console.error('Error adding budget warning to response:', error);
+    logger.warn(`Failed to add budget warning to response: ${error.message}`);
+    // エラー時は元のレスポンスをそのまま返す
     return response;
-  }
-};
-
-/**
- * 予算制限が臨界値に達しているかどうかを確認する
- * クリティカル状態の場合、機能を制限するためにtrue
- * @returns {Promise<boolean>} 臨界値に達していればtrue
- */
-const isBudgetCritical = async () => {
-  // テスト環境では常にfalseを返す
-  if (process.env.NODE_ENV === 'test' || process.env.TEST_MODE === 'true') {
-    return false;
-  }
-  
-  if (!BUDGET_CHECK_ENABLED) {
-    return false;
-  }
-  
-  try {
-    const status = await getBudgetStatus();
-    
-    return status && 
-           status.status === 'OK' && 
-           status.warningLevel === 'CRITICAL';
-  } catch (error) {
-    console.error('Error checking budget critical status:', error);
-    return false;
   }
 };
 
 module.exports = {
-  getBudgetStatus,
+  isBudgetCritical,
+  isBudgetWarning,
+  getBudgetUsage,
   getBudgetWarningMessage,
-  addBudgetWarningToResponse,
-  isBudgetCritical
+  addBudgetWarningToResponse
 };

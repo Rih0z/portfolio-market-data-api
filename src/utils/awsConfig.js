@@ -10,6 +10,7 @@
  * @author Portfolio Manager Team
  * @updated 2025-05-17
  * @updated 2025-05-18 AWS SDK v3に移行
+ * @updated 2025-05-21 テスト互換性の改善
  */
 'use strict';
 
@@ -19,8 +20,26 @@ const { DynamoDBDocumentClient } = require('@aws-sdk/lib-dynamodb');
 const { SNSClient } = require('@aws-sdk/client-sns');
 const { STSClient } = require('@aws-sdk/client-sts');
 
-const { ENV, isDevelopment } = require('../config/envConfig');
 const logger = require('./logger');
+
+// 環境変数からの値取得またはデフォルト値
+const getEnvVar = (name, defaultValue) => process.env[name] || defaultValue;
+
+// 環境設定
+const ENV = {
+  NODE_ENV: getEnvVar('NODE_ENV', 'development'),
+  REGION: getEnvVar('AWS_REGION', 'ap-northeast-1'),
+  DYNAMODB_ENDPOINT: getEnvVar('DYNAMODB_ENDPOINT', undefined),
+  SNS_ENDPOINT: getEnvVar('SNS_ENDPOINT', undefined),
+  STS_ENDPOINT: getEnvVar('STS_ENDPOINT', undefined),
+  AWS_ENDPOINT: getEnvVar('AWS_ENDPOINT', undefined),
+  LOG_LEVEL: getEnvVar('LOG_LEVEL', 'info')
+};
+
+// 環境フラグ
+const isDevelopment = ENV.NODE_ENV === 'development';
+const isTest = ENV.NODE_ENV === 'test';
+const isProduction = ENV.NODE_ENV === 'production';
 
 // AWS SDKクライアントのキャッシュ
 const clients = {
@@ -42,8 +61,8 @@ const getAWSOptions = (additionalOptions = {}) => {
     ...additionalOptions
   };
   
-  // ローカル開発モードの場合の設定
-  if (isDevelopment) {
+  // ローカル開発モードまたはテストモードの場合の設定
+  if (isDevelopment || isTest) {
     // 各サービスの開発エンドポイント設定
     if (additionalOptions.service === 'dynamodb' && ENV.DYNAMODB_ENDPOINT) {
       options.endpoint = ENV.DYNAMODB_ENDPOINT;
@@ -160,5 +179,11 @@ module.exports = {
   getDynamoDb,
   getSNS,
   getSTS,
-  resetAWSConfig
+  resetAWSConfig,
+  // テスト用に追加
+  getDynamoDbClient,
+  ENV,
+  isDevelopment,
+  isTest,
+  isProduction
 };

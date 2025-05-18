@@ -10,14 +10,23 @@
  * @author Portfolio Manager Team
  * @created 2025-05-10
  * @updated 2025-05-19 バグ修正: テスト期待値に対応
+ * @updated 2025-05-21 AWS SDK v3対応の改善
  */
 'use strict';
 
-const { CACHE_TIMES } = require('../config/constants');
 const { PutCommand, GetCommand, DeleteCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
 const { getDynamoDb } = require('../utils/awsConfig');
 const { withRetry } = require('../utils/retry');
 const logger = require('../utils/logger');
+
+// キャッシュ設定
+const CACHE_TIMES = {
+  US_STOCK: 3600,           // 米国株の価格データ (1時間)
+  JP_STOCK: 3600,           // 日本株の価格データ (1時間)
+  EXCHANGE_RATE: 1800,      // 為替レート (30分)
+  MUTUAL_FUND: 7200,        // 投資信託価格 (2時間)
+  HISTORICAL_DATA: 86400    // 過去のデータ (24時間)
+};
 
 // キャッシュテーブル名（環境変数またはデフォルト値）
 const CACHE_TABLE = process.env.CACHE_TABLE || 'pfwise-api-cache';
@@ -159,9 +168,9 @@ const getWithPrefix = async (prefix) => {
     const now = Math.floor(Date.now() / 1000);
     
     // 有効なアイテムのみフィルタリング（期限切れでないもの）
-    const validItems = result.Items.filter(item => {
+    const validItems = result.Items ? result.Items.filter(item => {
       return !item.ttl || item.ttl > now;
-    });
+    }) : [];
     
     // データをJSONからパースして返す
     return validItems.map(item => ({
@@ -254,5 +263,8 @@ module.exports = {
   delete: delete_,  // テスト対応用にdeleteとしてエクスポート
   getWithPrefix,
   clearCache,
-  getCacheStats
+  getCacheStats,
+  // テスト用に定数をエクスポート
+  CACHE_TIMES,
+  CACHE_TABLE
 };

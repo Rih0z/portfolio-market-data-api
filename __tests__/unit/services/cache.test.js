@@ -26,6 +26,28 @@ const mockQueryCommand = jest.fn();
 // DynamoDBのモック応答
 const mockSend = jest.fn();
 
+// AWS SDK lib-dynamodbのモック
+jest.mock('@aws-sdk/lib-dynamodb', () => {
+  return {
+    PutCommand: jest.fn().mockImplementation((params) => {
+      mockPutCommand(params);
+      return { params };
+    }),
+    GetCommand: jest.fn().mockImplementation((params) => {
+      mockGetCommand(params);
+      return { params };
+    }),
+    DeleteCommand: jest.fn().mockImplementation((params) => {
+      mockDeleteCommand(params);
+      return { params };
+    }),
+    QueryCommand: jest.fn().mockImplementation((params) => {
+      mockQueryCommand(params);
+      return { params };
+    })
+  };
+});
+
 describe('Cache Service', () => {
   // テスト用データ
   const mockItem = {
@@ -52,26 +74,6 @@ describe('Cache Service', () => {
     
     // withRetryのモック実装 - 引数の関数をそのまま実行
     withRetry.mockImplementation((fn) => fn());
-    
-    // DynamoDBコマンドのモック設定
-    jest.mock('@aws-sdk/lib-dynamodb', () => ({
-      PutCommand: jest.fn().mockImplementation((params) => {
-        mockPutCommand(params);
-        return { params };
-      }),
-      GetCommand: jest.fn().mockImplementation((params) => {
-        mockGetCommand(params);
-        return { params };
-      }),
-      DeleteCommand: jest.fn().mockImplementation((params) => {
-        mockDeleteCommand(params);
-        return { params };
-      }),
-      QueryCommand: jest.fn().mockImplementation((params) => {
-        mockQueryCommand(params);
-        return { params };
-      })
-    }));
   });
 
   describe('set', () => {

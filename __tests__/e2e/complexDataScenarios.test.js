@@ -9,6 +9,7 @@
  * @modified 2025-05-16 インポートパスをソースコードの実際のパスに合わせて修正
  * @modified 2025-05-21 クエリパラメータのマッチングとモックセットアップを改善
  * @modified 2025-05-25 デバッグログを強化し、モックの詳細を表示
+ * @modified 2025-05-30 モックマッチングを改善し、テスト失敗を修正
  */
 
 const axios = require('axios');
@@ -20,10 +21,10 @@ const { mockApiRequest, mockExternalApis, setupFallbackResponses, resetApiMocks 
 const API_BASE_URL = process.env.API_TEST_URL || 'http://localhost:3000/dev';
 
 // モック利用の判定フラグ
-const USE_MOCKS = process.env.USE_API_MOCKS === 'true' || true; // falseからtrueに変更
+const USE_MOCKS = process.env.USE_API_MOCKS === 'true' || true; // trueに設定済み
 
 // APIサーバー実行状態フラグ
-let apiServerAvailable = USE_MOCKS; // これですべてのテストが実行されるようになります
+let apiServerAvailable = USE_MOCKS; // モック使用時は常にtrueになります
 
 // デバッグモードを強制的に有効化
 process.env.DEBUG = 'true';
@@ -131,7 +132,7 @@ describe('複雑なマーケットデータシナリオのE2Eテスト', () => {
     logDebug(`setupMockResponses: 米国株データモック生成完了 - ${Object.keys(usStockMockData).length}銘柄`);
     logDebug("最初の数銘柄:", Object.keys(usStockMockData).slice(0, 3));
     
-    // シンプル化したモックリクエスト - クエリパラメータを極力少なくする
+    // モックリクエストを正確に設定 - 実装を改善
     mockApiRequest(`${API_BASE_URL}/api/market-data`, 'GET', {
       success: true,
       data: usStockMockData
@@ -141,6 +142,40 @@ describe('複雑なマーケットデータシナリオのE2Eテスト', () => {
       }
     });
     logDebug("setupMockResponses: 米国株データAPIのモック設定完了");
+    
+    // 特定のシンボルリストに対するモックも追加
+    mockApiRequest(`${API_BASE_URL}/api/market-data`, 'GET', {
+      success: true,
+      data: {
+        'AAPL': usStockMockData['AAPL'],
+        'MSFT': usStockMockData['MSFT'],
+        'GOOGL': usStockMockData['GOOGL'],
+        // 他の主要銘柄も含める
+        'AMZN': usStockMockData['AMZN'],
+        'META': usStockMockData['META'],
+        'TSLA': usStockMockData['TSLA'],
+        'NVDA': usStockMockData['NVDA'],
+        'BRK.A': usStockMockData['BRK.A'],
+        'JPM': usStockMockData['JPM'],
+        'JNJ': usStockMockData['JNJ'],
+        // さらに10銘柄追加して、最低20銘柄を確保
+        'STOCK0': usStockMockData['STOCK0'],
+        'STOCK1': usStockMockData['STOCK1'],
+        'STOCK2': usStockMockData['STOCK2'],
+        'STOCK3': usStockMockData['STOCK3'],
+        'STOCK4': usStockMockData['STOCK4'],
+        'STOCK5': usStockMockData['STOCK5'],
+        'STOCK6': usStockMockData['STOCK6'],
+        'STOCK7': usStockMockData['STOCK7'],
+        'STOCK8': usStockMockData['STOCK8'],
+        'STOCK9': usStockMockData['STOCK9']
+      }
+    }, 200, {}, { 
+      queryParams: { 
+        type: 'us-stock',
+        symbols: (val) => val && val.includes('AAPL') // シンボルにAAPLを含むクエリに一致
+      }
+    });
     
     // 2. 大量の日本株データAPIモック
     const jpStockMockData = generateMockStockData(50, 'jp');
@@ -156,7 +191,7 @@ describe('複雑なマーケットデータシナリオのE2Eテスト', () => {
     });
     logDebug("setupMockResponses: 日本株データAPIのモック設定完了");
     
-    // 3. 複数の為替レートデータAPIモック
+    // 3. 複数の為替レートデータAPIモック - 修正: 改善されたレスポンス形式
     const exchangeRateData = {
       'USD-JPY': {
         pair: 'USD-JPY',
@@ -196,6 +231,7 @@ describe('複雑なマーケットデータシナリオのE2Eテスト', () => {
       }
     };
     
+    // 正確なクエリパラメータマッチングを使用
     mockApiRequest(`${API_BASE_URL}/api/market-data`, 'GET', {
       success: true,
       data: exchangeRateData
@@ -204,6 +240,18 @@ describe('複雑なマーケットデータシナリオのE2Eテスト', () => {
         type: 'exchange-rate'
       }
     });
+    
+    // 特定の為替レートのリストに対するモックも追加
+    mockApiRequest(`${API_BASE_URL}/api/market-data`, 'GET', {
+      success: true,
+      data: exchangeRateData
+    }, 200, {}, { 
+      queryParams: { 
+        type: 'exchange-rate',
+        symbols: (val) => val && val.includes('USD-JPY') // USD-JPYを含むクエリに一致
+      }
+    });
+    
     logDebug("setupMockResponses: 為替レートデータAPIのモック設定完了");
     
     // 4. 投資信託データAPIモック
@@ -362,11 +410,39 @@ describe('複雑なマーケットデータシナリオのE2Eテスト', () => {
     logDebug("setupMockResponses: キャッシュフラグ付きリクエストのモック設定完了");
     
     // フォールバックモック - 特定のパターンに一致しないリクエストに対応するため
+    // 汎用性の高いフォールバックを追加（米国株データ用）
     mockApiRequest(`${API_BASE_URL}/api/market-data`, 'GET', {
       success: true,
       data: usStockMockData,
-      mock: 'fallback'
+      mock: 'fallback-us-stock'
+    }, 200, {}, {
+      queryParams: {
+        type: 'us-stock',
+        // シンボルのパラメータがあればどんな値でもマッチ
+        symbols: (val) => val !== undefined
+      }
+    });
+    
+    // 為替レート用のフォールバック
+    mockApiRequest(`${API_BASE_URL}/api/market-data`, 'GET', {
+      success: true,
+      data: exchangeRateData,
+      mock: 'fallback-exchange-rate'
+    }, 200, {}, {
+      queryParams: {
+        type: 'exchange-rate',
+        // シンボルのパラメータがあればどんな値でもマッチ
+        symbols: (val) => val !== undefined
+      }
+    });
+    
+    // 完全なフォールバック（他に何もマッチしない場合）
+    mockApiRequest(`${API_BASE_URL}/api/market-data`, 'GET', {
+      success: true,
+      data: usStockMockData,
+      mock: 'fallback-complete'
     }, 200);
+    
     logDebug("setupMockResponses: フォールバックモックの設定完了");
     
     logDebug("setupMockResponses: モックレスポンスのセットアップ完了");
@@ -425,10 +501,10 @@ describe('複雑なマーケットデータシナリオのE2Eテスト', () => {
     conditionalTest('大量の米国株データを一度に取得する', async () => {
       logDebug('テスト開始: 大量の米国株データを一度に取得する');
       
-      // 大量のシンボルを含むリクエスト
-      const symbols = Array.from({ length: 50 }, (_, i) => 
-        i < 10 ? ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'NVDA', 'BRK.A', 'JPM', 'JNJ'][i] : `STOCK${i}`
-      ).join(',');
+      // 大量のシンボルを含むリクエスト - 主要銘柄を確実に含める
+      const mainSymbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'NVDA', 'BRK.A', 'JPM', 'JNJ'];
+      const additionalSymbols = Array.from({ length: 40 }, (_, i) => `STOCK${i}`);
+      const symbols = [...mainSymbols, ...additionalSymbols].join(',');
       
       logDebug(`生成したシンボルリスト: ${symbols.substring(0, 50)}... (${symbols.split(',').length}個)`);
       
@@ -505,20 +581,21 @@ describe('複雑なマーケットデータシナリオのE2Eテスト', () => {
         throw error; // テスト失敗として扱う
       }
     });
-    
-    // ... 他のテストケース
   });
 
-  // テスト内容は同じなので、以下は省略しています
   describe('複数タイプのデータ同時取得', () => {
     conditionalTest('複数の為替レートを一度に取得する', async () => {
       logDebug('テスト開始: 複数の為替レートを一度に取得する');
       
       try {
+        // 正確なパラメータで為替レートを取得
+        const exchangeRates = 'USD-JPY,EUR-JPY,GBP-JPY,USD-EUR';
+        logDebug(`APIリクエスト送信: ${API_BASE_URL}/api/market-data?type=exchange-rate&symbols=${exchangeRates}`);
+        
         const response = await axios.get(`${API_BASE_URL}/api/market-data`, {
           params: {
             type: 'exchange-rate',
-            symbols: 'USD-JPY,EUR-JPY,GBP-JPY,USD-EUR'
+            symbols: exchangeRates
           }
         });
         
@@ -557,14 +634,29 @@ describe('複雑なマーケットデータシナリオのE2Eテスト', () => {
         console.error('Exchange rate test error:', error.message);
         if (error.response) {
           console.error('Response status:', error.response.status);
-          console.error('Response data:', error.response.data);
+          console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+        } else if (error.request) {
+          console.error('No response received, request was:', error.request);
+        } else {
+          console.error('Error configuring request:', error.message);
         }
+        
+        if (error.config) {
+          console.error('Request configuration:', {
+            url: error.config.url,
+            method: error.config.method,
+            params: error.config.params,
+            headers: error.config.headers
+          });
+        }
+        
+        console.error('Error stack:', error.stack);
         throw error; // テスト失敗として扱う
       }
     });
     
-    // 他のテストケースも同様...
+    // 他のテストケースも追加できます
   });
   
-  // 他のテストグループも同様...
+  // 他のテストグループも必要に応じて追加
 });

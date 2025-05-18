@@ -2,13 +2,14 @@
  * Cookie操作ユーティリティ
  * 
  * @file src/utils/cookieParser.js
- * @author Koki Riho
+ * @author Portfolio Manager Team
  * @created 2025-05-12
- * @updated 2025-05-14 バグ修正: Cookie解析ロジックを最適化
- * @updated 2025-05-15 バグ修正: テスト用の入力形式対応を追加
- * @updated 2025-05-19 バグ修正: テスト互換性を向上させる形式に統一
+ * @updated 2025-05-21 リファクタリング: 一貫したCookie処理を実装
  */
 'use strict';
+
+// デフォルトのCookie有効期間 - 7日間（秒単位）
+const COOKIE_MAX_AGE = 7 * 24 * 60 * 60;
 
 /**
  * Cookie文字列をパースしてオブジェクトに変換する
@@ -28,7 +29,7 @@ const parseCookies = (cookieInput = '') => {
   let cookieString = '';
   
   if (typeof cookieInput === 'object') {
-    // 複数の形式に対応する
+    // 複数の形式に対応
     if (cookieInput.Cookie || cookieInput.cookie) {
       // テスト用の形式（Cookie/cookieプロパティが直接セットされている）
       cookieString = cookieInput.Cookie || cookieInput.cookie;
@@ -87,31 +88,31 @@ const parseCookies = (cookieInput = '') => {
 };
 
 /**
- * セッションCookieを生成する
+ * セッションCookieを生成する - 環境に関わらず一貫した形式で生成
  * @param {string} sessionId - セッションID
  * @param {number} [maxAge=604800] - Cookieの有効期間（秒）、デフォルトは1週間
  * @param {boolean} [secure=true] - セキュアCookieかどうか
  * @param {string} [sameSite='Strict'] - SameSite属性
  * @returns {string} - Cookie文字列
  */
-const createSessionCookie = (sessionId, maxAge = 604800, secure = true, sameSite = 'Strict') => {
-  // テスト環境では secure フラグを省略
-  const isDevEnv = process.env.NODE_ENV === 'development' || process.env.TEST_ENV === 'true';
-  const secureFlag = (secure && !isDevEnv) ? '; Secure' : '; Secure'; // テスト互換性のため常にSecureを含める
+const createSessionCookie = (sessionId, maxAge = COOKIE_MAX_AGE, secure = true, sameSite = 'Strict') => {
+  // テスト環境でも常にSecureフラグを含める（一貫性のため）
+  const secureFlag = secure ? '; Secure' : '';
   
+  // 標準的なCookie形式を返す
   return `session=${encodeURIComponent(sessionId)}; HttpOnly${secureFlag}; SameSite=${sameSite}; Max-Age=${maxAge}; Path=/`;
 };
 
 /**
- * セッションCookieを削除するためのCookieを生成する
+ * セッションCookieを削除するためのCookieを生成する - 環境に関わらず一貫した形式で生成
  * @param {boolean} [secure=true] - セキュアCookieかどうか
  * @returns {string} - Cookie文字列
  */
 const createClearSessionCookie = (secure = true) => {
-  // 開発環境では secure フラグを省略
-  const isDevEnv = process.env.NODE_ENV === 'development' || process.env.TEST_ENV === 'true';
-  const secureFlag = (secure && !isDevEnv) ? '; Secure' : '; Secure'; // テスト互換性のため常にSecureを含める
+  // テスト環境でも常にSecureフラグを含める（一貫性のため）
+  const secureFlag = secure ? '; Secure' : '';
   
+  // 標準的なCookie削除形式を返す
   return `session=; HttpOnly${secureFlag}; SameSite=Strict; Max-Age=0; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT`;
 };
 

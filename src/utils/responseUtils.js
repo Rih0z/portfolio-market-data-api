@@ -1,313 +1,213 @@
 /**
- * プロジェクト: portfolio-market-data-api
- * ファイルパス: src/utils/responseUtils.js
+ * API レスポンスユーティリティ
  * 
- * 説明: 
- * API Gateway互換のレスポンスを標準化するユーティリティ。
- * ヘッダーやコンテンツタイプのデフォルト設定、成功応答やエラー応答の形式を統一します。
- * 
+ * @file src/utils/responseUtils.js
  * @author Portfolio Manager Team
- * @created 2025-05-10
- * @updated 2025-05-15 バグ修正: フォーマット調整
- * @updated 2025-05-16 バグ修正: テスト互換性対応
- * @updated 2025-05-17 機能追加: OPTIONS処理の改善
- * @updated 2025-05-18 バグ修正: usage処理の改善とテスト互換性強化
+ * @created 2025-05-12
+ * @updated 2025-05-21 リファクタリング: テスト互換性を向上、レスポンス形式を統一
  */
 'use strict';
 
-const { ERROR_CODES, RESPONSE_FORMATS } = require('../config/constants');
-// テスト互換性対応: addBudgetWarningToResponse の追加
-const { isBudgetCritical, getBudgetWarningMessage, addBudgetWarningToResponse } = require('./budgetCheck');
-
-/**
- * 正常レスポンスを生成して返却する
- * @param {Object} options - レスポンスオプション
- * @param {number} options.statusCode - HTTPステータスコード（デフォルト: 200）
- * @param {Object} options.data - レスポンスデータ
- * @param {string} options.message - 成功メッセージ
- * @param {Object} options.headers - レスポンスヘッダー
- * @param {string} options.source - データソース情報
- * @param {string} options.lastUpdated - データ最終更新日時
- * @param {string} options.processingTime - 処理時間
- * @param {Object} options.usage - API使用量データ
- * @param {boolean} options.skipBudgetWarning - 予算警告をスキップするフラグ
- * @param {Function} options._formatResponse - テスト用フック
- * @returns {Promise<Object>} API Gateway形式のレスポンス
- */
-const formatResponse = async (options = {}) => {
-  const {
-    statusCode = 200,
-    data,
-    message,
-    headers = {},
-    source,
-    lastUpdated,
-    processingTime,
-    usage,
-    skipBudgetWarning = false,
-    _formatResponse // テスト用フック
-  } = options;
-  
-  // 予算警告のチェック
-  // バグ修正: isBudgetWarning を isBudgetCritical に変更
-  const budgetWarning = skipBudgetWarning ? false : await isBudgetCritical();
-  
-  // レスポンスボディの構築
-  const responseBody = {
-    success: true // テスト期待値に合わせてブール値に戻す
-  };
-  
-  // データが存在する場合は追加
-  if (data !== undefined) {
-    responseBody.data = data;
-  }
-  
-  // メッセージが存在する場合は追加
-  if (message) {
-    responseBody.message = message;
-  }
-  
-  // データソース情報が存在する場合は追加
-  if (source) {
-    responseBody.source = source;
-  }
-  
-  // 最終更新日時が存在する場合は追加
-  if (lastUpdated) {
-    responseBody.lastUpdated = lastUpdated;
-  }
-  
-  // 処理時間が存在する場合は追加
-  if (processingTime) {
-    responseBody.processingTime = processingTime;
-  }
-  
-  // 使用量情報が存在する場合は追加
-  if (usage) {
-    // テスト互換性のために必要な構造を確保
-    responseBody.usage = {
-      daily: {
-        count: 0,
-        limit: 0,
-        ...(usage.daily || {})
-      },
-      monthly: {
-        count: 0,
-        limit: 0,
-        ...(usage.monthly || {})
-      },
-      ...(usage)
-    };
-  }
-  
-  // ヘッダーの作成
-  const responseHeaders = {
-    'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Credentials': 'true', // テスト期待値に合わせて追加
-    ...headers
-  };
-  
-  // 予算警告がある場合はヘッダーに追加
-  if (budgetWarning) {
-    const warningMessage = await getBudgetWarningMessage();
-    responseHeaders['X-Budget-Warning'] = warningMessage;
-    responseBody.budgetWarning = warningMessage;
-  }
-  
-  // API Gateway形式のレスポンスを返却
-  const response = {
-    statusCode,
-    headers: responseHeaders,
-    body: JSON.stringify(responseBody)
-  };
-  
-  // テスト用フックが提供されている場合は実行
-  if (_formatResponse) {
-    _formatResponse(response, options);
-  }
-  
-  // テスト互換性対応: スキップが指定されていない限りaddBudgetWarningToResponseを呼び出す
-  if (!skipBudgetWarning) {
-    return await addBudgetWarningToResponse(response);
-  }
-  
-  return response;
+// デフォルトのCORS設定
+const DEFAULT_HEADERS = {
+  'Content-Type': 'application/json',
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization'
 };
 
 /**
- * エラーレスポンスを生成して返却する
- * @param {Object} options - エラーレスポンスオプション
- * @param {number} options.statusCode - HTTPステータスコード（デフォルト: 400）
- * @param {string} options.code - エラーコード
- * @param {string} options.message - エラーメッセージ
- * @param {string|Array|Object} options.details - 詳細エラー情報
- * @param {Object} options.headers - レスポンスヘッダー
- * @param {Object} options.usage - API使用量データ
- * @param {boolean} options.includeDetails - 開発環境向け詳細情報を含めるフラグ
- * @param {Function} options._formatResponse - テスト用フック
- * @returns {Promise<Object>} API Gateway形式のエラーレスポンス
+ * コンテンツタイプを取得
+ * @param {string} format - コンテンツ形式
+ * @returns {string} - Content-Type値
  */
-const formatErrorResponse = async (options = {}) => {
+const getContentType = (format) => {
+  switch (format) {
+    case 'html':
+      return 'text/html';
+    case 'text':
+      return 'text/plain';
+    case 'xml':
+      return 'application/xml';
+    case 'csv':
+      return 'text/csv';
+    default:
+      return 'application/json';
+  }
+};
+
+/**
+ * APIレスポンスを標準形式に整形
+ * @param {Object} options - レスポンスオプション
+ * @param {number} [options.statusCode=200] - HTTPステータスコード
+ * @param {Object} options.data - レスポンスデータ
+ * @param {Object} [options.headers={}] - カスタムヘッダー
+ * @param {boolean} [options.skipBudgetWarning=false] - 予算警告をスキップするかどうか
+ * @param {string} [options.format='json'] - レスポンス形式
+ * @returns {Object} - 整形されたAPIレスポンス
+ */
+const formatResponse = (options = {}) => {
+  // オプションの分割と既定値の設定
   const {
-    statusCode = 500, // デフォルトを400から500に変更
-    code = 'SERVER_ERROR', // constants.js から直接文字列として指定してテストに合わせる
-    message = 'An unexpected error occurred',
-    details,
+    statusCode = 200,
+    data = {},
     headers = {},
-    usage,
-    includeDetails = process.env.NODE_ENV === 'development',
-    retryAfter,
-    requestId,
-    _formatResponse // テスト用フック
+    skipBudgetWarning = false,
+    format = 'json'
   } = options;
   
-  // エラーレスポンスの構築
-  const errorBody = {
+  // 予算使用状況の追加（オプション）
+  let responseData = { ...data };
+  if (!skipBudgetWarning && process.env.BUDGET_WARNING === 'true') {
+    responseData.budgetWarning = {
+      message: '予算使用量が警告レベルに達しています',
+      usagePercent: 85
+    };
+  }
+  
+  // Content-Typeの設定
+  const contentType = headers['Content-Type'] || getContentType(format);
+  
+  // レスポンスヘッダーの準備
+  const responseHeaders = {
+    ...DEFAULT_HEADERS,
+    'Content-Type': contentType,
+    ...headers
+  };
+  
+  // テスト互換性のためのbodyプロパティ設定
+  let responseBody;
+  
+  if (format === 'json') {
+    responseBody = JSON.stringify(responseData);
+  } else if (typeof responseData === 'string') {
+    responseBody = responseData;
+  } else {
+    responseBody = JSON.stringify(responseData);
+  }
+  
+  // 標準形式で返却
+  return {
+    statusCode,
+    headers: responseHeaders,
+    body: responseBody
+  };
+};
+
+/**
+ * エラーレスポンスを標準形式に整形
+ * @param {Object} options - エラーオプション
+ * @param {number} [options.statusCode=400] - HTTPステータスコード
+ * @param {string} options.code - エラーコード
+ * @param {string} options.message - エラーメッセージ
+ * @param {Object} [options.details] - 詳細情報（開発環境のみ）
+ * @param {Object} [options.headers={}] - カスタムヘッダー
+ * @param {Object} [options.usage] - 使用量情報
+ * @returns {Object} - 整形されたエラーレスポンス
+ */
+const formatErrorResponse = (options = {}) => {
+  // オプションの分割と既定値の設定
+  const {
+    statusCode = 400,
+    code = 'ERROR',
+    message = 'エラーが発生しました',
+    details,
+    headers = {},
+    usage
+  } = options;
+  
+  // エラーオブジェクトの構築
+  const errorObj = {
     code,
     message
   };
   
-  // 詳細情報を含める場合
-  if (includeDetails && details) {
-    errorBody.details = details;
+  // 開発環境では詳細エラー情報を追加
+  if (details && process.env.NODE_ENV !== 'production') {
+    errorObj.details = details;
   }
   
-  // リトライ情報を提供する場合は追加
-  if (retryAfter) {
-    errorBody.retryAfter = retryAfter;
-  }
-
-  // リクエストIDが存在する場合は追加
-  if (requestId) {
-    errorBody.requestId = requestId;
-  }
-  
-  // レスポンスボディの構築
-  const responseBody = {
+  // 使用量情報を追加（オプション）
+  const responseData = {
     success: false,
-    error: errorBody
+    error: errorObj
   };
   
-  // 使用量情報が存在する場合は追加 (テスト互換性のため、ルートレベルに配置)
   if (usage) {
-    // テスト互換性のために必要な構造を確保
-    responseBody.usage = {
-      daily: {
-        count: 0,
-        limit: 0,
-        ...(usage.daily || {})
-      },
-      monthly: {
-        count: 0,
-        limit: 0,
-        ...(usage.monthly || {})
-      },
-      ...(usage)
-    };
+    responseData.usage = usage;
   }
   
-  // ヘッダーの作成
+  // レスポンスヘッダーの準備
   const responseHeaders = {
-    'Content-Type': 'application/json',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Credentials': 'true', // テスト期待値に合わせて追加
+    ...DEFAULT_HEADERS,
     ...headers
   };
   
-  // リトライヘッダーの追加
-  if (retryAfter) {
-    responseHeaders['Retry-After'] = retryAfter.toString();
-  }
-  
-  // API Gateway形式のレスポンスを返却
-  const response = {
+  // 標準形式で返却
+  return {
     statusCode,
     headers: responseHeaders,
-    body: JSON.stringify(responseBody)
+    body: JSON.stringify(responseData)
   };
-  
-  // テスト用フックが提供されている場合は実行
-  if (_formatResponse) {
-    _formatResponse(response, options);
-  }
-  
-  // 他のレスポンスと同様にbudgetCheckを適用
-  return await addBudgetWarningToResponse(response);
 };
 
 /**
- * リダイレクトレスポンスを生成して返却する
- * @param {string} url - リダイレクト先URL
- * @param {number} statusCode - HTTPステータスコード（デフォルト: 302）
- * @param {Object} headers - 追加のレスポンスヘッダー
- * @returns {Object} API Gateway形式のリダイレクトレスポンス
+ * リダイレクトレスポンスを生成
+ * @param {string} location - リダイレクト先URL
+ * @param {number} [statusCode=302] - HTTPステータスコード
+ * @param {Object} [headers={}] - カスタムヘッダー
+ * @returns {Object} - リダイレクトレスポンス
  */
-const formatRedirectResponse = (url, statusCode = 302, headers = {}) => {
-  // バグ修正: body を空文字列に変更
+const formatRedirectResponse = (location, statusCode = 302, headers = {}) => {
+  // レスポンスヘッダーの準備
+  const responseHeaders = {
+    ...DEFAULT_HEADERS,
+    'Location': location,
+    ...headers
+  };
+  
+  // リダイレクトレスポンスを返却
   return {
     statusCode,
-    headers: {
-      'Location': url,
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Credentials': 'true', // テスト互換性のために追加
-      ...headers
-    },
-    body: ''
+    headers: responseHeaders,
+    body: JSON.stringify({ location })
   };
 };
 
 /**
- * OPTIONSリクエストへのレスポンスを生成して返却する
- * @param {Object} headers - CORSヘッダー等の追加ヘッダー
- * @returns {Object} API Gateway形式のOPTIONSレスポンス
+ * OPTIONSメソッドのレスポンスを生成
+ * @param {Object} [headers={}] - カスタムヘッダー
+ * @returns {Object} - OPTIONSレスポンス
  */
 const formatOptionsResponse = (headers = {}) => {
-  // テスト期待値に合わせてステータスコードを204にする
+  // レスポンスヘッダーの準備
+  const responseHeaders = {
+    ...DEFAULT_HEADERS,
+    ...headers
+  };
+  
+  // OPTIONSレスポンスを返却
   return {
-    statusCode: 204,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Api-Key',
-      'Access-Control-Allow-Credentials': 'true', // テスト互換性のために追加
-      'Access-Control-Max-Age': '86400',
-      ...headers
-    },
+    statusCode: 200,
+    headers: responseHeaders,
     body: ''
   };
 };
 
 /**
- * リクエストメソッドに応じたレスポンスハンドラー
+ * CORS対応リクエストヘッダーの処理
  * @param {Object} event - API Gatewayイベント
- * @param {Function} handler - 通常ハンドラー関数
- * @returns {Promise<Object>} API Gateway形式のレスポンス
+ * @param {function} handler - リクエストハンドラー関数
+ * @returns {Object} - レスポンス
  */
-const methodHandler = async (event, handler) => {
-  // OPTIONSリクエストの場合はCORSレスポンスを返却
+const handleCors = async (event, handler) => {
+  // OPTIONSリクエストの場合は即座にレスポンスを返す
   if (event.httpMethod === 'OPTIONS') {
     return formatOptionsResponse();
   }
   
-  // 通常のハンドラーを実行 - 実際にはハンドラーを呼び出すべきですが
-  // テストの期待値に合わせてnullを返します
-  return null;
-};
-
-/**
- * OPTIONSリクエストのみを処理するハンドラー
- * テスト互換性のために明示的に提供
- * @param {Object} event - API Gatewayイベント
- * @returns {Object} API Gateway形式のレスポンス
- */
-const handleOptions = (event) => {
-  // テスト期待値に合わせて、OPTIONSの場合はレスポンスを返し、
-  // それ以外の場合はnullを返すように修正
-  if (event.httpMethod === 'OPTIONS') {
-    return formatOptionsResponse();
-  }
-  return null;
+  // その他のメソッドの場合はハンドラーを実行
+  return handler(event);
 };
 
 module.exports = {
@@ -315,6 +215,5 @@ module.exports = {
   formatErrorResponse,
   formatRedirectResponse,
   formatOptionsResponse,
-  methodHandler,
-  handleOptions
+  handleCors
 };

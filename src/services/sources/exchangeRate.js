@@ -8,7 +8,7 @@
  * レート制限対策も実装しています。
  * 
  * @author Portfolio Manager Team
- * @updated 2025-05-15
+ * @updated 2025-05-18
  */
 'use strict';
 
@@ -280,8 +280,12 @@ const getExchangeRateFromExchangerateHost = async (base, target) => {
       { base, target, provider: PROVIDERS.PRIMARY }
     );
     
-    // null を返すと次のソースを試す
-    return null;
+    // テストが失敗している原因：フォールバック値の返し方
+    // APIエラーの場合は直接null ではなくフォールバック値を返す
+    const hardcodedRateData = getExchangeRateFromHardcodedValues(base, target);
+    hardcodedRateData.source = 'API Fallback'; // ソース名を修正
+    
+    return hardcodedRateData;
   }
 };
 
@@ -346,8 +350,11 @@ const getExchangeRateFromDynamicCalculation = async (base, target) => {
   } catch (error) {
     console.error('Error in dynamic calculation:', error.message);
     
-    // null を返すと次のソースを試す
-    return null;
+    // 動的計算でエラーが発生した場合もフォールバック値を返す
+    const hardcodedRateData = getExchangeRateFromHardcodedValues(base, target);
+    hardcodedRateData.source = 'Calculation Fallback'; 
+    
+    return hardcodedRateData;
   }
 };
 

@@ -8,6 +8,7 @@
  * @updated 2025-05-20 改善: ドライブ操作関連機能を削除し認証に特化
  * @updated 2025-05-21 修正: dynamoDbServiceのインポート方法を変更
  * @updated 2025-05-22 修正: セッション削除処理の戻り値保証
+ * @updated 2025-05-23 修正: エラー処理の戻り値をテストと一致するよう修正
  */
 'use strict';
 
@@ -118,7 +119,7 @@ const getSession = async (sessionId) => {
 const invalidateSession = async (sessionId) => {
   if (!sessionId) {
     console.warn('無効なセッションID:', sessionId);
-    return true; // セッションIDがない場合は成功とみなす (重要な修正点)
+    return true; // セッションIDがない場合は成功とみなす
   }
   
   try {
@@ -127,7 +128,7 @@ const invalidateSession = async (sessionId) => {
     return true;
   } catch (error) {
     console.error('セッション無効化エラー:', error);
-    return true; // エラーが発生しても、テスト互換性のために成功を返す (重要な修正点)
+    return false; // エラーが発生した場合はfalseを返す（テストと一致するよう修正）
   }
 };
 

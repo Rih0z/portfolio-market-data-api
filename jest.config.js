@@ -13,6 +13,7 @@
  * @author Portfolio Manager Team
  * @created 2025-05-18
  * @updated 2025-05-19 - 設定の最適化と依存関係の明確化
+ * @updated 2025-05-20 - カバレッジレポータ設定の追加
  */
 
 module.exports = {
@@ -26,6 +27,15 @@ module.exports = {
     'src/**/*.js',
     '!src/**/*.test.js',
     '!**/node_modules/**'
+  ],
+  
+  // カバレッジレポーターの設定 - 複数の形式を同時に出力
+  coverageReporters: [
+    'json',         // 詳細なJSONフォーマット
+    'lcov',         // HTML形式（ブラウザで表示）
+    'text',         // コンソール出力用
+    'text-summary', // コンソール出力サマリー
+    'json-summary'  // 簡易JSON形式
   ],
   
   // カバレッジのしきい値 - 開発中はしきい値を適切な値に設定

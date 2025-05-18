@@ -7,6 +7,7 @@
  * @author Portfolio Manager Team
  * @created 2025-05-12
  * @updated 2025-05-17 - カバレッジデータをファイルから直接読み込む機能を追加
+ * @updated 2025-05-20 - 行カバレッジの収集と表示を修正
  */
 
 const fs = require('fs');
@@ -311,9 +312,44 @@ class CustomReporter {
       const functionTotal = Object.keys(fileData.f || {}).length;
       const functionPct = functionTotal ? (functionCovered / functionTotal) * 100 : 0;
       
-      // 行
-      const lineCovered = Object.values(fileData.l || {}).filter(v => v > 0).length;
-      const lineTotal = Object.keys(fileData.l || {}).length;
+      // 行（修正版: 行カバレッジデータの取得方法を改善）
+      let lineCovered = 0;
+      let lineTotal = 0;
+      
+      // Jestのカバレッジデータには行情報が異なる形式で保存されることがある
+      if (fileData.l) {
+        // 標準的なIstanbulカバレッジ形式
+        lineCovered = Object.values(fileData.l).filter(v => v > 0).length;
+        lineTotal = Object.keys(fileData.l).length;
+      } else if (fileData.statementMap && fileData.s) {
+        // 行情報がない場合はステートメントから推測
+        // ステートメントの行情報を使用して行カバレッジを計算
+        const lineMap = new Map();
+        
+        Object.entries(fileData.statementMap).forEach(([stmtId, location]) => {
+          if (location && location.start && location.start.line) {
+            const line = location.start.line;
+            const covered = fileData.s[stmtId] > 0;
+            
+            if (!lineMap.has(line)) {
+              lineMap.set(line, covered);
+            } else if (covered) {
+              lineMap.set(line, true);
+            }
+          }
+        });
+        
+        lineTotal = lineMap.size;
+        lineCovered = Array.from(lineMap.values()).filter(v => v).length;
+      }
+      
+      // 行カバレッジが0でも、ステートメントカバレッジがある場合はステートメントに基づいて推定
+      if (lineTotal === 0 && statementTotal > 0) {
+        console.log(`⚠ ${filePath} の行カバレッジデータがないため、ステートメントから推定します`);
+        lineTotal = statementTotal;
+        lineCovered = statementCovered;
+      }
+      
       const linePct = lineTotal ? (lineCovered / lineTotal) * 100 : 0;
       
       // ファイル情報を追加
@@ -350,6 +386,23 @@ class CustomReporter {
       console.warn('⚠ 有効なカバレッジデータが見つかりませんでした。デモデータを生成します。');
       this.createDemoCoverageMap();
       return;
+    }
+    
+    // 行カバレッジが0の場合は特別な警告
+    if (totalLines.total === 0 && totalStatements.total > 0) {
+      console.warn('⚠ 行カバレッジデータが見つかりません。ステートメントのデータを使用します。');
+      totalLines.covered = totalStatements.covered;
+      totalLines.total = totalStatements.total;
+      totalLines.pct = totalStatements.pct;
+      
+      // 各ファイルの行カバレッジも修正
+      fileCoverageInfo.forEach(file => {
+        if (file.lines.total === 0) {
+          file.lines.covered = file.statements.covered;
+          file.lines.total = file.statements.total;
+          file.lines.pct = file.statements.pct;
+        }
+      });
     }
     
     // カバレッジマップを設定
@@ -389,9 +442,20 @@ class CustomReporter {
     // totalデータを取得
     const total = summaryData.total || {};
     
+    // 行カバレッジがない場合はステートメントデータで代用
+    if (!total.lines || (total.lines.total === 0 && total.statements && total.statements.total > 0)) {
+      console.warn('⚠ 行カバレッジデータがありません。ステートメントデータで代用します。');
+      total.lines = { ...total.statements };
+    }
+    
     // ファイルデータを処理
     for (const [filePath, fileData] of Object.entries(summaryData)) {
       if (filePath === 'total') continue;
+      
+      // 行カバレッジがないファイルはステートメントデータで代用
+      if (!fileData.lines || (fileData.lines.total === 0 && fileData.statements && fileData.statements.total > 0)) {
+        fileData.lines = { ...fileData.statements };
+      }
       
       fileCoverageInfo.push({
         filename: filePath,
@@ -546,6 +610,16 @@ class CustomReporter {
           if (isNaN(total.branches.pct)) total.branches.pct = 0;
           if (isNaN(total.functions.pct)) total.functions.pct = 0;
           if (isNaN(total.lines.pct)) total.lines.pct = 0;
+          
+          // 行カバレッジが0の場合はステートメントで代用（チャート表示用）
+          if (total.lines.total === 0 && total.statements.total > 0) {
+            console.warn('⚠ 行カバレッジがゼロのため、ステートメントのデータで代用します。');
+            total.lines = {
+              covered: total.statements.covered,
+              total: total.statements.total,
+              pct: total.statements.pct
+            };
+          }
           
           coverageData = [
             { name: 'ステートメント', value: total.statements.pct, target: targetThresholds.statements },

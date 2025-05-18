@@ -569,17 +569,17 @@ if [ $DEBUG_MODE -eq 1 ] || [ $VERBOSE_COVERAGE -eq 1 ]; then
   echo ""
 fi
 
-# テストの実行
+# テストの実行 - Test Suites行をフィルタリング
 if [ -n "$ENV_VARS" ]; then
   # JESTのカバレッジ設定を強制的に有効化（.env.localの設定より優先）
-  eval "npx cross-env JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true ENABLE_COVERAGE=true $ENV_VARS $JEST_CMD"
+  eval "npx cross-env JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true ENABLE_COVERAGE=true $ENV_VARS $JEST_CMD" | grep -v "Test Suites:"
 else
   # JESTのカバレッジ設定を強制的に有効化
-  eval "npx cross-env JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true ENABLE_COVERAGE=true $JEST_CMD"
+  eval "npx cross-env JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true ENABLE_COVERAGE=true $JEST_CMD" | grep -v "Test Suites:"
 fi
 
-# テスト結果
-TEST_RESULT=$?
+# テスト結果をパイプした場合は$?が変わるため、PIPESTATUS（または$?）を使用
+TEST_RESULT=${PIPESTATUS[0]}
 
 # カバレッジ関連ファイルのチェック
 if [ $NO_COVERAGE -ne 1 ] || [ $FORCE_COVERAGE -eq 1 ]; then

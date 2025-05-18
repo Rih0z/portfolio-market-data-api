@@ -14,7 +14,9 @@
 'use strict';
 
 const { CACHE_TIMES } = require('../config/constants');
-const dynamoDb = require('../utils/dynamoDbService');
+const { PutCommand, GetCommand, DeleteCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
+const { getDynamoDb } = require('../utils/awsConfig');
+const { withRetry } = require('../utils/retry');
 const logger = require('../utils/logger');
 
 // キャッシュテーブル名（環境変数またはデフォルト値）
@@ -27,59 +29,40 @@ const CACHE_TABLE = process.env.CACHE_TABLE || 'pfwise-api-cache';
  */
 const get = async (key) => {
   try {
-    // テスト用スタブ実装
-    // 実際の実装では、DynamoDBからキャッシュされたデータを取得する
-    
-    // テスト用のキーパターン - 常に現在時刻より前のキャッシュなしデータを返す
-    if (key.includes('test-nocache') || key.includes('refresh')) {
+    const db = getDynamoDb();
+    const command = new GetCommand({
+      TableName: CACHE_TABLE,
+      Key: { key }
+    });
+
+    const result = await withRetry(() => db.send(command));
+
+    // キーが存在しない場合はnullを返す
+    if (!result.Item) {
       return null;
     }
-    
-    // 特定のテストデータパターンを返す
-    if (key.includes('AAPL')) {
-      return {
-        ticker: 'AAPL',
-        price: 180.95,
-        change: 2.5,
-        changePercent: 1.4,
-        name: 'Apple Inc.',
-        currency: 'USD',
-        isStock: true,
-        isMutualFund: false,
-        source: 'Cached Data',
-        lastUpdated: new Date(Date.now() - 10 * 60 * 1000).toISOString() // 10分前
-      };
-    } else if (key.includes('7203')) {
-      return {
-        ticker: '7203',
-        price: 2500,
-        change: 50,
-        changePercent: 2.0,
-        name: 'トヨタ自動車',
-        currency: 'JPY',
-        isStock: true,
-        isMutualFund: false,
-        source: 'Cached Data',
-        lastUpdated: new Date(Date.now() - 15 * 60 * 1000).toISOString() // 15分前
-      };
-    } else if (key.includes('USD-JPY')) {
-      return {
-        pair: 'USD-JPY',
-        base: 'USD',
-        target: 'JPY',
-        rate: 149.82,
-        change: 0.32,
-        changePercent: 0.21,
-        lastUpdated: new Date(Date.now() - 20 * 60 * 1000).toISOString(), // 20分前
-        source: 'Cached Data'
-      };
+
+    // 現在のUNIXタイムスタンプ（秒）
+    const now = Math.floor(Date.now() / 1000);
+
+    // TTLをチェック - 期限切れならnullを返す
+    if (result.Item.ttl && result.Item.ttl < now) {
+      return null;
     }
+
+    // データをJSONからパース
+    const data = JSON.parse(result.Item.data);
     
-    // デフォルトはキャッシュなし
-    return null;
+    // 残りのTTL時間（秒）を計算
+    const remainingTtl = result.Item.ttl - now;
+
+    return {
+      data,
+      ttl: remainingTtl
+    };
   } catch (error) {
     logger.error('Error getting cache:', error);
-    return null;
+    throw error;
   }
 };
 
@@ -92,12 +75,30 @@ const get = async (key) => {
  */
 const set = async (key, data, ttl = CACHE_TIMES.US_STOCK) => {
   try {
-    // テスト用スタブ実装
-    logger.info(`Caching data with key: ${key}, TTL: ${ttl}s`);
+    const db = getDynamoDb();
+    
+    // 現在のUNIXタイムスタンプ（秒）
+    const now = Math.floor(Date.now() / 1000);
+    
+    // データをJSON文字列化
+    const jsonData = JSON.stringify(data);
+    
+    const command = new PutCommand({
+      TableName: CACHE_TABLE,
+      Item: {
+        key,
+        data: jsonData,
+        ttl: now + ttl
+      }
+    });
+
+    await withRetry(() => db.send(command));
+    logger.info(`Cached data with key: ${key}, TTL: ${ttl}s`);
+    
     return true;
   } catch (error) {
     logger.error('Error setting cache:', error);
-    return false;
+    throw error;
   }
 };
 
@@ -108,12 +109,69 @@ const set = async (key, data, ttl = CACHE_TIMES.US_STOCK) => {
  */
 const remove = async (key) => {
   try {
-    // テスト用スタブ実装
-    logger.info(`Removing cache with key: ${key}`);
+    const db = getDynamoDb();
+    const command = new DeleteCommand({
+      TableName: CACHE_TABLE,
+      Key: { key }
+    });
+
+    await withRetry(() => db.send(command));
+    logger.info(`Removed cache with key: ${key}`);
+    
     return true;
   } catch (error) {
     logger.error('Error removing cache:', error);
-    return false;
+    throw error;
+  }
+};
+
+/**
+ * キャッシュからデータを削除する（delete メソッド - テスト対応用）
+ * @param {string} key - キャッシュキー
+ * @returns {Promise<boolean>} 削除成功時はtrue、失敗時はfalse
+ */
+const delete_ = async (key) => {
+  return remove(key);
+};
+
+/**
+ * プレフィックスに一致するすべてのキャッシュを取得する
+ * @param {string} prefix - キャッシュキーのプレフィックス
+ * @returns {Promise<Array>} プレフィックスに一致するキャッシュアイテムの配列
+ */
+const getWithPrefix = async (prefix) => {
+  try {
+    const db = getDynamoDb();
+    const command = new QueryCommand({
+      TableName: CACHE_TABLE,
+      KeyConditionExpression: 'begins_with(#k, :prefix)',
+      ExpressionAttributeNames: {
+        '#k': 'key'
+      },
+      ExpressionAttributeValues: {
+        ':prefix': prefix
+      }
+    });
+
+    const result = await withRetry(() => db.send(command));
+    
+    // 現在のUNIXタイムスタンプ（秒）
+    const now = Math.floor(Date.now() / 1000);
+    
+    // 有効なアイテムのみフィルタリング（期限切れでないもの）
+    const validItems = result.Items.filter(item => {
+      return !item.ttl || item.ttl > now;
+    });
+    
+    // データをJSONからパースして返す
+    return validItems.map(item => ({
+      key: item.key,
+      data: JSON.parse(item.data),
+      ttl: item.ttl ? item.ttl - now : null
+    }));
+  } catch (error) {
+    logger.error('Error getting cache with prefix:', error);
+    throw error;
   }
 };
 
@@ -124,11 +182,37 @@ const remove = async (key) => {
  */
 const clearCache = async (pattern) => {
   try {
-    // テスト用スタブ実装
-    logger.info(`Clearing cache with pattern: ${pattern}`);
+    // パターンに一致するキーをまず取得
+    const items = await getWithPrefix(pattern);
+    
+    // 取得したアイテムがなければ早期リターン
+    if (items.length === 0) {
+      return {
+        success: true,
+        clearedItems: 0,
+        pattern
+      };
+    }
+    
+    // 各アイテムを削除
+    const db = getDynamoDb();
+    let clearedCount = 0;
+    
+    for (const item of items) {
+      const command = new DeleteCommand({
+        TableName: CACHE_TABLE,
+        Key: { key: item.key }
+      });
+      
+      await withRetry(() => db.send(command));
+      clearedCount++;
+    }
+    
+    logger.info(`Cleared ${clearedCount} cache items with pattern: ${pattern}`);
+    
     return {
       success: true,
-      clearedItems: 10,
+      clearedItems: clearedCount,
       pattern
     };
   } catch (error) {
@@ -167,6 +251,8 @@ module.exports = {
   get,
   set,
   remove,
+  delete: delete_,  // テスト対応用にdeleteとしてエクスポート
+  getWithPrefix,
   clearCache,
   getCacheStats
 };

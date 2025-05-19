@@ -294,3 +294,4 @@ describe('ユーザー体験テスト', () => {
 - Jest ドキュメント: https://jestjs.io/docs/
 - JavaScript テスティングのベストプラクティス: https://github.com/goldbergyoni/javascript-testing-best-practices
 - AWS SDK JavaScript v3 テスト: https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/testing-mocking.html
+

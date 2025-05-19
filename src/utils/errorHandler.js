@@ -123,17 +123,21 @@ const createErrorResponse = async (error, type, context = {}) => {
   const statusCode = context.statusCode || statusCodes[type] || 500;
   
   // エラーコードをテスト期待値に合わせる (すべて大文字のスネークケース)
-  let errorCode = errorInfo.code;
-  if (type === errorTypes.VALIDATION_ERROR) {
-    errorCode = 'INVALID_PARAMS';
-  } else if (type === errorTypes.RATE_LIMIT_ERROR) {
-    errorCode = 'RATE_LIMIT_EXCEEDED';
-  } else if (type === errorTypes.BUDGET_ERROR) {
-    errorCode = 'BUDGET_LIMIT_EXCEEDED';
-  } else if (type === errorTypes.DATA_SOURCE_ERROR) {
-    errorCode = 'DATA_SOURCE_ERROR';
-  } else if (type === errorTypes.SERVER_ERROR) {
-    errorCode = 'INTERNAL_SERVER_ERROR';
+  // 参照: __tests__/unit/utils/errorHandler.test.js
+  // createSymbolNotFoundErrorのエラーコードを"INVALID_PARAMS"から"SYMBOL_NOT_FOUND"に修正
+  let errorCode = context.code || errorInfo.code;
+  if (!context.code) {
+    if (type === errorTypes.VALIDATION_ERROR) {
+      errorCode = 'INVALID_PARAMS';
+    } else if (type === errorTypes.RATE_LIMIT_ERROR) {
+      errorCode = 'RATE_LIMIT_EXCEEDED';
+    } else if (type === errorTypes.BUDGET_ERROR) {
+      errorCode = 'BUDGET_LIMIT_EXCEEDED';
+    } else if (type === errorTypes.DATA_SOURCE_ERROR) {
+      errorCode = 'DATA_SOURCE_ERROR';
+    } else if (type === errorTypes.SERVER_ERROR) {
+      errorCode = 'INTERNAL_SERVER_ERROR';
+    }
   }
   
   // APIレスポンスを構築

@@ -641,7 +641,7 @@ gather_failed_tests() {
 }
 
 # Jestの出力を解析
-ANALYSIS_RESULT=$(analyze_jest_output "$OUTPUT_LOG_FILE")
+ANALYSIS_RESULT=$(analyze_failure_reason)
 FAILURE_TYPE=${ANALYSIS_RESULT%%:*}
 FAILURE_MESSAGE=${ANALYSIS_RESULT#*:}
 
@@ -715,10 +715,73 @@ if [ $VISUAL -eq 1 ]; then
   fi
 fi
 
-# Jestの出力から失敗したテストの情報を取得
-FAILED_TESTS_INFO=$(gather_failed_tests "$OUTPUT_LOG_FILE")
+# Jestの出力にある実際のテスト結果概要を表示する関数
+print_test_summary() {
+  local output_file="$1"
+  
+  if grep -q "Test Suites:" "$output_file"; then
+    echo "テスト実行結果概要:"
+    echo "--------------------"
+    grep "Test Suites:" "$output_file" | tail -n1
+    grep "Tests:" "$output_file" | tail -n1
+    grep "Snapshots:" "$output_file" | tail -n1
+    grep "Time:" "$output_file" | tail -n1
+    echo "--------------------"
+  fi
+}
 
-# 結果の表示
+# module not foundエラーを検出する関数
+extract_module_not_found_errors() {
+  local output_file="$1"
+  local errors=()
+  local capture=0
+  local current_error=""
+  local count=0
+  
+  while IFS= read -r line; do
+    if [[ "$line" =~ FAIL ]]; then
+      if [ $capture -eq 1 ] && [ -n "$current_error" ]; then
+        errors+=("$current_error")
+      fi
+      capture=1
+      current_error="$line\n"
+    elif [ $capture -eq 1 ]; then
+      if [[ "$line" =~ "Cannot find module" ]]; then
+        current_error+="$line\n"
+      elif [[ "$line" =~ "at ".*"require" ]]; then
+        current_error+="$line\n"
+        
+        # モジュールが見つからないエラーを完全に取得したらカウント
+        errors+=("$current_error")
+        current_error=""
+        capture=0
+        ((count++))
+      elif [[ "$line" =~ Test\ Suites: ]]; then
+        # テスト概要行に達したら終了
+        if [ -n "$current_error" ]; then
+          errors+=("$current_error")
+        fi
+        break
+      fi
+    fi
+  done < "$output_file"
+  
+  # 最大3つのエラーを表示
+  local num_to_show=$(( count > 3 ? 3 : count ))
+  
+  if [ $count -gt 0 ]; then
+    echo -e "${YELLOW}モジュール読み込みエラー (${count}件):${NC}"
+    for (( i=0; i<num_to_show; i++ )); do
+      echo -e "${errors[$i]}"
+    done
+    
+    if [ $count -gt 3 ]; then
+      echo -e "${YELLOW}...他にも ${count - 3} 件のエラーがあります${NC}"
+    fi
+  fi
+}
+
+  # 結果の表示
 if [ "$FAILURE_TYPE" = "success" ]; then
   print_header "テスト実行が成功しました! 🎉"
   
@@ -801,49 +864,47 @@ else
   print_header "テスト実行が失敗しました 😢"
   print_info "失敗の詳細分析:"
   
+  # テスト結果の概要を表示
+  print_test_summary "$OUTPUT_LOG_FILE"
+  
   case $FAILURE_TYPE in
-    test_failure)
-      print_error "テスト実行エラー: $FAILURE_MESSAGE"
-      echo -e "${RED}テストコードに問題があります。アサーションに失敗しています。${NC}"
-      if [ "$FAILED_TESTS_INFO" != "詳細な失敗情報はありません" ]; then
-        echo -e "\n${YELLOW}失敗したテスト:${NC}"
-        echo -e "$FAILED_TESTS_INFO"
-      fi
+    module_not_found)
+      print_error "モジュール参照エラー: $FAILURE_MESSAGE"
+      
+      # モジュールが見つからないエラーを詳細に表示
+      extract_module_not_found_errors "$OUTPUT_LOG_FILE"
       
       # 次のアクション
       echo -e "\n${BLUE}次のアクション:${NC}"
-      echo -e "1. ${GREEN}失敗したテストを確認する:${NC}"
-      echo "   cat ./test-results/test-log.md"
-      echo -e "2. ${GREEN}ビジュアルレポートで詳細を確認する:${NC}"
-      echo "   ./scripts/run-tests.sh -v $TEST_TYPE"
-      echo -e "3. ${GREEN}特定のテストだけを実行して調査する:${NC}"
-      echo "   ./scripts/run-tests.sh -s \"パターン\" specific"
+      echo -e "1. ${GREEN}必要なモジュールファイルを作成する:${NC}"
+      echo "   - src/utils/dynamoDbClient.js を作成する"
+      echo "   - testUtils/environment.js を作成する"
+      echo -e "2. ${GREEN}テストファイルの参照パスを修正する:${NC}"
+      echo "   - 不足しているモジュールを確認: ${RED}モジュールが見つかりません${NC}"
+      echo -e "3. ${GREEN}必要なテストをスキップする:${NC}"
+      echo "   - テストファイルの先頭で describe.skip または test.skip を使用"
       ;;
       
     suite_failure)
       print_error "テストスイート失敗: $FAILURE_MESSAGE"
-      echo -e "${RED}テストスイートの実行中にエラーが発生しました。${NC}"
       
-      # コマンドラインからテストスイートの情報を取得
-      if grep -q "Test Suites:" "$OUTPUT_LOG_FILE"; then
-        echo -e "\n${YELLOW}テストスイートの状態:${NC}"
-        grep "Test Suites:" "$OUTPUT_LOG_FILE" | tail -n1
-      fi
+      # テスト概要を表示
+      print_test_summary "$OUTPUT_LOG_FILE"
       
-      # 失敗したテストスイートを特定
-      if [ "$FAILED_TESTS_INFO" != "詳細な失敗情報はありません" ]; then
-        echo -e "\n${YELLOW}失敗したテストスイート:${NC}"
-        echo -e "$FAILED_TESTS_INFO"
-      fi
+      # モジュールが見つからないエラーを抽出
+      extract_module_not_found_errors "$OUTPUT_LOG_FILE"
       
       # 次のアクション
       echo -e "\n${BLUE}次のアクション:${NC}"
-      echo -e "1. ${GREEN}デバッグモードで詳細を確認する:${NC}"
-      echo "   ./scripts/run-tests.sh -d $TEST_TYPE"
-      echo -e "2. ${GREEN}テスト環境をクリーンアップしてから再実行する:${NC}"
-      echo "   ./scripts/run-tests.sh -c $TEST_TYPE"
-      echo -e "3. ${GREEN}特定のテストスイートのみを実行する:${NC}"
-      echo "   ./scripts/run-tests.sh -s \"失敗したスイート名\" specific"
+      echo -e "1. ${GREEN}失敗しているテストスイートを修正する:${NC}"
+      echo "   - FAIL __tests__/unit/utils/dynamoDbClient.test.js"
+      echo "   - FAIL __tests__/e2e/authenticatedDataAccess.test.js"
+      echo "   - FAIL __tests__/unit/utils/budgetCheck.test.js"
+      echo "   - FAIL __tests__/unit/function/marketData.test.js"
+      echo -e "2. ${GREEN}必要なモジュールをモック化する:${NC}"
+      echo "   - jest.mock('../../../src/utils/dynamoDbClient', () => ({}))"
+      echo -e "3. ${GREEN}実行可能なテストのみ実行する:${NC}"
+      echo "   ./scripts/run-tests.sh -s \"e2e\" -i $TEST_TYPE"
       ;;
       
     coverage_issue)

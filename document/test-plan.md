@@ -93,18 +93,6 @@ describe('市場データ取得エンドポイント', () => {
 
 ### データサービス (Services)
 
-#### ポートフォリオ分析サービス
-```javascript
-// __tests__/unit/services/portfolioAnalysisService.test.js
-describe('ポートフォリオ分析サービス', () => {
-  test('資産配分を正しく計算する', () => {/* ... */});
-  test('セクター配分を正しく計算する', () => {/* ... */});
-  test('リスク指標を正しく計算する', () => {/* ... */});
-  test('パフォーマンス指標を正しく計算する', () => {/* ... */});
-  test('通貨エクスポージャーを正しく計算する', () => {/* ... */});
-});
-```
-
 #### データ変換サービス
 ```javascript
 // __tests__/unit/services/dataTransformerService.test.js
@@ -192,13 +180,6 @@ describe('スキーマバリデーションユーティリティ', () => {
 ### 統合テスト (Integration Tests)
 
 ```javascript
-// __tests__/integration/portfolio/portfolioAnalysis.test.js
-describe('ポートフォリオ分析の統合テスト', () => {
-  test('ポートフォリオからリスク指標を計算して表示する', () => {/* ... */});
-  test('複数通貨ポートフォリオの為替換算処理', () => {/* ... */});
-  test('資産配分の視覚化データ生成', () => {/* ... */});
-});
-
 // __tests__/integration/marketData/portfolioUpdates.test.js
 describe('ポートフォリオ更新の統合テスト', () => {
   test('市場データの更新がポートフォリオ評価額に反映される', () => {/* ... */});
@@ -233,7 +214,6 @@ describe('ユーザー体験テスト', () => {
    - ✅ エラーハンドリングユーティリティ（`errorHandler.test.js`として実装済み）
    - ✅ 市場データ取得エンドポイント（`marketData.test.js`として実装済み）
    - ✅ ポートフォリオ関連エンドポイント（`saveFile.test.js`、`loadFile.test.js`として実装済み）
-   - 未テスト：ポートフォリオ分析サービス（`portfolioAnalysisService.test.js`）
 
 2. **中優先度**:
    - ユーザー管理関連のテスト（`userService.test.js`、`updateUserSettings.test.js`）
@@ -293,7 +273,6 @@ describe('ユーザー体験テスト', () => {
 - カバレッジ目標：45%
 
 ### フェーズ2（2-3週間）
-- ポートフォリオ分析サービスのテスト実装
 - ユーザー管理関連のテスト実装
 - 残りのエンドポイントテスト実装
 - カバレッジ目標：60%
@@ -309,3 +288,9 @@ describe('ユーザー体験テスト', () => {
 - E2Eテストの拡充
 - バグ修正とリファクタリング
 - カバレッジ目標：80%以上
+
+## 17. 参考リソース
+
+- Jest ドキュメント: https://jestjs.io/docs/
+- JavaScript テスティングのベストプラクティス: https://github.com/goldbergyoni/javascript-testing-best-practices
+- AWS SDK JavaScript v3 テスト: https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/testing-mocking.html

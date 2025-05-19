@@ -2,7 +2,7 @@
 
 ## 1. 現在のテスト実装状況
 
-現在のテストカバレッジは約31.2%です。下記に実装済みのテストファイルを示します。
+現在のテストカバレッジは約33.5%です。下記に実装済みのテストファイルを示します。
 
 ### 単体テスト (Unit Tests)
 
@@ -24,6 +24,9 @@
 - `__tests__/unit/services/sources/exchangeRate.test.js`
 - `__tests__/unit/services/sources/fundDataService.test.js`
 - `__tests__/unit/services/sources/yahooFinance.test.js`
+
+#### マーケットデータ関連
+- `__tests__/unit/function/marketData.test.js` // 実装済み
 
 #### キャッシュ関連
 - `__tests__/unit/services/cache.test.js`
@@ -75,7 +78,7 @@ describe('CORSミドルウェア', () => {
 
 #### 市場データ関連
 ```javascript
-// __tests__/unit/function/marketData/getMarketData.test.js
+// __tests__/unit/function/marketData.test.js - 実装済み
 describe('市場データ取得エンドポイント', () => {
   test('正常系：米国株データを取得して返す', () => {/* ... */});
   test('正常系：日本株データを取得して返す', () => {/* ... */});
@@ -251,7 +254,7 @@ describe('ユーザー体験テスト', () => {
    - ✅ ミドルウェアテスト（ロギング）- 実装済み
    - ミドルウェアテスト（CORS）- 未実装
    - ✅ エラーハンドリングユーティリティ（`errorHandler.test.js`として実装済み）
-   - 未テスト：市場データ取得エンドポイント（`getMarketData.test.js`）- 次の実装候補
+   - ✅ 市場データ取得エンドポイント（`marketData.test.js`として実装済み）
    - 未テスト：ポートフォリオ関連エンドポイント（`savePortfolio.test.js`、`getPortfolio.test.js`）
    - 未テスト：ポートフォリオ分析サービス（`portfolioAnalysisService.test.js`）
 
@@ -307,7 +310,8 @@ describe('ユーザー体験テスト', () => {
 ### フェーズ1（1-2週間）
 - ✅ ミドルウェアテストの実装（ロギング）
 - ✅ エラーハンドリングユーティリティテストの実装（完了）
-- 主要エンドポイントのテスト実装（`getMarketData.test.js`、`savePortfolio.test.js`）
+- ✅ 市場データ取得エンドポイントのテスト実装（`marketData.test.js`として完了）
+- 未実装：ミドルウェアテスト（CORS）
 - カバレッジ目標：40%
 
 ### フェーズ2（2-3週間）

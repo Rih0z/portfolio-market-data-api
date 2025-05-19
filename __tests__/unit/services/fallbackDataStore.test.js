@@ -57,7 +57,7 @@ describe('Fallback Data Store Service', () => {
   // 各テスト前の準備
   beforeEach(() => {
     // モックをリセット
-    jest.clearAllMocks();
+    jest.resetAllMocks();
     
     // DynamoDBモックを設定
     awsConfig.getDynamoDb.mockReturnValue(mockDynamoDb);
@@ -81,7 +81,9 @@ describe('Fallback Data Store Service', () => {
     test('キャッシュが有効な場合はキャッシュからデータを返す', async () => {
       // キャッシュデータを設定
       const mockCacheData = {
-        stocks: { [TEST_SYMBOL]: { price: 150 } },
+        stocks: { 
+          [TEST_SYMBOL]: { price: 150 } 
+        },
         etfs: {},
         mutualFunds: {},
         exchangeRates: {}
@@ -123,7 +125,9 @@ describe('Fallback Data Store Service', () => {
     test('GitHub APIエラー時はキャッシュを使用する', async () => {
       // キャッシュデータを設定
       const mockCacheData = {
-        stocks: { [TEST_SYMBOL]: { price: 150 } },
+        stocks: { 
+          [TEST_SYMBOL]: { price: 150 }
+        },
         etfs: {},
         mutualFunds: {},
         exchangeRates: {}
@@ -180,6 +184,38 @@ describe('Fallback Data Store Service', () => {
       expect(result.lastUpdated).toBeDefined();
       // ソースが設定されていることを確認
       expect(result.source).toBeDefined();
+    });
+    
+    test('非推奨のデータタイプを使用した場合、警告を表示して正しく動作する', async () => {
+      // GitHubからの応答をモック
+      axios.get.mockImplementation((url) => {
+        if (url.includes('fallback-stocks.json')) {
+          return Promise.resolve({
+            data: {
+              [TEST_SYMBOL]: {
+                price: 150,
+                change: 1.5,
+                name: 'Apple Inc.'
+              }
+            }
+          });
+        }
+        return Promise.resolve({ data: {} });
+      });
+      
+      // 関数実行（非推奨データタイプ 'stock' を使用）
+      const result = await fallbackDataStore.getFallbackForSymbol(TEST_SYMBOL, 'stock');
+      
+      // 検証
+      expect(result).toBeDefined();
+      expect(result.ticker).toBe(TEST_SYMBOL);
+      expect(result.price).toBe(150);
+      
+      // 警告が出たことを確認
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("DEPRECATED: 'データタイプ 'stock'' は非推奨です"),
+        expect.any(String)
+      );
     });
     
     test('存在しない銘柄の場合はnullを返す', async () => {
@@ -365,25 +401,19 @@ describe('Fallback Data Store Service', () => {
     beforeEach(() => {
       // GitHub関連の環境変数をモック
       process.env.GITHUB_TOKEN = GITHUB_TOKEN;
-    });
-    
-    afterEach(() => {
-      // 環境変数をリセット
-      delete process.env.GITHUB_TOKEN;
-    });
-    
-    test('現在のフォールバックデータをGitHubに書き出す', async () => {
-      // 失敗した銘柄のモック
-      mockDynamoDb.query.mockReturnValue({
+      
+      // 失敗した銘柄のモックデータを用意
+      mockDynamoDb.query.mockImplementation(() => ({
         promise: jest.fn().mockResolvedValue({
           Items: [
             {
               id: `failure:${TEST_SYMBOL}:us-stock`,
-              type: 'us-stock'
+              type: 'us-stock',
+              symbol: TEST_SYMBOL
             }
           ]
         })
-      });
+      }));
       
       // キャッシュからのデータ取得をモック
       cacheService.get.mockResolvedValue({
@@ -394,13 +424,14 @@ describe('Fallback Data Store Service', () => {
         lastUpdated: MOCK_DATE
       });
       
-      // GitHub APIのモック
+      // GitHubのファイル情報取得APIをモック
       axios.get.mockResolvedValue({
         data: {
           sha: 'test-sha'
         }
       });
       
+      // GitHubのファイル更新APIをモック
       axios.put.mockResolvedValue({
         data: {
           content: {
@@ -408,7 +439,14 @@ describe('Fallback Data Store Service', () => {
           }
         }
       });
-      
+    });
+    
+    afterEach(() => {
+      // 環境変数をリセット
+      delete process.env.GITHUB_TOKEN;
+    });
+    
+    test('現在のフォールバックデータをGitHubに書き出す', async () => {
       // 関数実行
       const result = await fallbackDataStore.exportCurrentFallbacksToGitHub();
       
@@ -444,6 +482,102 @@ describe('Fallback Data Store Service', () => {
       // 検証
       expect(result).toBe(false);
       expect(logger.error).toHaveBeenCalledWith('GitHub token not provided');
+    });
+  });
+  
+  describe('非推奨機能', () => {
+    test('getSymbolFallbackData は警告を表示して正しく動作する', async () => {
+      // GitHubからの応答をモック
+      axios.get.mockImplementation((url) => {
+        if (url.includes('fallback-stocks.json')) {
+          return Promise.resolve({
+            data: {
+              [TEST_SYMBOL]: {
+                price: 150,
+                change: 1.5,
+                name: 'Apple Inc.'
+              }
+            }
+          });
+        }
+        return Promise.resolve({ data: {} });
+      });
+      
+      // 関数実行（非推奨関数を使用）
+      const result = await fallbackDataStore.getSymbolFallbackData(TEST_SYMBOL, TEST_TYPE);
+      
+      // 検証
+      expect(result).toBeDefined();
+      expect(result.ticker).toBe(TEST_SYMBOL);
+      
+      // 警告が出たことを確認
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("DEPRECATED: 'getSymbolFallbackData' は非推奨です"),
+        expect.any(String)
+      );
+    });
+    
+    test('exportFallbacks は警告を表示して正しく動作する', async () => {
+      // 関数実行（非推奨関数を使用）
+      const result = await fallbackDataStore.exportFallbacks();
+      
+      // 検証
+      expect(result).toBe(true);
+      
+      // 警告が出たことを確認
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("DEPRECATED: 'exportFallbacks' は非推奨です"),
+        expect.any(String)
+      );
+    });
+    
+    test('getStats は警告を表示して正しく動作する', async () => {
+      // 日付の応答をモック
+      mockDynamoDb.query.mockReturnValueOnce({
+        promise: jest.fn().mockResolvedValueOnce({
+          Items: [
+            {
+              id: `count:2025-05-18:us-stock`,
+              count: 5,
+              symbols: [TEST_SYMBOL, 'MSFT']
+            }
+          ]
+        })
+      });
+      
+      // 関数実行（非推奨関数を使用）
+      const result = await fallbackDataStore.getStats(1);
+      
+      // 検証
+      expect(result).toBeDefined();
+      
+      // 警告が出たことを確認
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("DEPRECATED: 'getStats' は非推奨です"),
+        expect.any(String)
+      );
+    });
+    
+    test('cache プロパティにアクセスすると警告を表示する', () => {
+      // 非推奨プロパティにアクセス
+      const cache = fallbackDataStore.cache;
+      
+      // 警告が出たことを確認
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("DEPRECATED: 'cache プロパティの直接参照' は非推奨です"),
+        expect.any(String)
+      );
+    });
+    
+    test('cache プロパティに値を設定すると警告を表示する', () => {
+      // 非推奨プロパティに設定
+      fallbackDataStore.cache = { test: true };
+      
+      // 警告が出たことを確認
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("DEPRECATED: 'cache プロパティの直接設定' は非推奨です"),
+        expect.any(String)
+      );
     });
   });
 });

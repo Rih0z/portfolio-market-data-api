@@ -22,6 +22,7 @@ const alertService = require('./alerts');
 const { withRetry, isRetryableApiError } = require('../utils/retry');
 const { ENV } = require('../config/envConfig');
 const logger = require('../utils/logger');
+const { warnDeprecation } = require('../utils/deprecation');
 
 // 設定値
 const FALLBACK_TABLE = process.env.FALLBACK_DATA_TABLE || `${process.env.DYNAMODB_TABLE_PREFIX || 'portfolio-market-data-'}-fallback-data`;
@@ -29,6 +30,14 @@ const FALLBACK_DATA_REFRESH_INTERVAL = parseInt(process.env.FALLBACK_DATA_REFRES
 const GITHUB_REPO_OWNER = process.env.GITHUB_REPO_OWNER || 'portfolio-manager-team';
 const GITHUB_REPO_NAME = process.env.GITHUB_REPO_NAME || 'market-data-fallbacks';
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
+
+// 非推奨となったデータタイプマッピング
+const DEPRECATED_TYPE_MAP = {
+  'stock': 'us-stock',
+  'jpstock': 'jp-stock',
+  'fund': 'mutual-fund',
+  'exchange': 'exchange-rate'
+};
 
 // キャッシュ
 let fallbackDataCache = {
@@ -143,10 +152,21 @@ const getFallbackData = async (forceRefresh = false) => {
  * @returns {Promise<Object|null>} フォールバックデータ
  */
 const getFallbackForSymbol = async (symbol, type) => {
+  // 非推奨タイプのチェックと変換
+  let dataType = type;
+  if (DEPRECATED_TYPE_MAP[type]) {
+    warnDeprecation(
+      `データタイプ '${type}'`, 
+      `'${DEPRECATED_TYPE_MAP[type]}'`,
+      { version: '2.0.0', removalVersion: '3.0.0' }
+    );
+    dataType = DEPRECATED_TYPE_MAP[type];
+  }
+  
   const fallbackData = await getFallbackData();
   
   let dataCategory;
-  switch (type) {
+  switch (dataType) {
     case 'jp-stock':
     case 'us-stock':
       dataCategory = 'stocks';
@@ -171,22 +191,25 @@ const getFallbackForSymbol = async (symbol, type) => {
     return null;
   }
   
+  // 結果オブジェクトをクローン（元のオブジェクトを変更しないため）
+  const result = { ...symbolData };
+  
   // 必要な場合はtickerプロパティを追加
-  if (!symbolData.ticker) {
-    symbolData.ticker = symbol;
+  if (!result.ticker) {
+    result.ticker = symbol;
   }
   
   // 最終更新日時を設定
-  if (!symbolData.lastUpdated) {
-    symbolData.lastUpdated = new Date().toISOString();
+  if (!result.lastUpdated) {
+    result.lastUpdated = new Date().toISOString();
   }
   
   // ソースを設定
-  if (!symbolData.source) {
-    symbolData.source = 'GitHub Fallback';
+  if (!result.source) {
+    result.source = 'GitHub Fallback';
   }
   
-  return symbolData;
+  return result;
 };
 
 /**
@@ -198,6 +221,17 @@ const getFallbackForSymbol = async (symbol, type) => {
  */
 const recordFailedFetch = async (symbol, type, errorInfo) => {
   try {
+    // 非推奨タイプのチェックと変換
+    let dataType = type;
+    if (DEPRECATED_TYPE_MAP[type]) {
+      warnDeprecation(
+        `データタイプ '${type}'`, 
+        `'${DEPRECATED_TYPE_MAP[type]}'`,
+        { version: '2.0.0', removalVersion: '3.0.0' }
+      );
+      dataType = DEPRECATED_TYPE_MAP[type];
+    }
+    
     const dynamoDb = getDynamoDb();
     
     const now = new Date();
@@ -213,9 +247,9 @@ const recordFailedFetch = async (symbol, type, errorInfo) => {
     const params = {
       TableName: FALLBACK_TABLE,
       Item: {
-        id: `failure:${symbol}:${type}`,
+        id: `failure:${symbol}:${dataType}`,
         symbol,
-        type,
+        type: dataType,
         reason,
         timestamp: now.toISOString(),
         dateKey
@@ -225,7 +259,7 @@ const recordFailedFetch = async (symbol, type, errorInfo) => {
     await dynamoDb.put(params).promise();
     
     // 集計カウンターの更新
-    const countKey = `count:${dateKey}:${type}`;
+    const countKey = `count:${dateKey}:${dataType}`;
     const countParams = {
       TableName: FALLBACK_TABLE,
       Key: { id: countKey },
@@ -259,6 +293,17 @@ const recordFailedFetch = async (symbol, type, errorInfo) => {
  */
 const getFailedSymbols = async (dateKey, type) => {
   try {
+    // 非推奨タイプのチェックと変換
+    let dataType = type;
+    if (type && DEPRECATED_TYPE_MAP[type]) {
+      warnDeprecation(
+        `データタイプ '${type}'`, 
+        `'${DEPRECATED_TYPE_MAP[type]}'`,
+        { version: '2.0.0', removalVersion: '3.0.0' }
+      );
+      dataType = DEPRECATED_TYPE_MAP[type];
+    }
+    
     const dynamoDb = getDynamoDb();
     
     // 日付キーのデフォルト値は当日
@@ -267,8 +312,8 @@ const getFailedSymbols = async (dateKey, type) => {
     }
     
     // タイプが指定されている場合
-    if (type) {
-      const countKey = `count:${dateKey}:${type}`;
+    if (dataType) {
+      const countKey = `count:${dateKey}:${dataType}`;
       const params = {
         TableName: FALLBACK_TABLE,
         Key: { id: countKey }
@@ -569,7 +614,30 @@ const getFailureStatistics = async (days = 7) => {
   }
 };
 
-// テスト用にキャッシュをエクスポート
+/**
+ * @deprecated v2.0.0から非推奨です。getFallbackForSymbol を使用してください。
+ */
+const getSymbolFallbackData = async (symbol, type) => {
+  warnDeprecation('getSymbolFallbackData', 'getFallbackForSymbol');
+  return getFallbackForSymbol(symbol, type);
+};
+
+/**
+ * @deprecated v2.0.0から非推奨です。exportCurrentFallbacksToGitHub を使用してください。
+ */
+const exportFallbacks = async () => {
+  warnDeprecation('exportFallbacks', 'exportCurrentFallbacksToGitHub');
+  return exportCurrentFallbacksToGitHub();
+};
+
+/**
+ * @deprecated v2.0.0から非推奨です。getFailureStatistics を使用してください。
+ */
+const getStats = async (days) => {
+  warnDeprecation('getStats', 'getFailureStatistics');
+  return getFailureStatistics(days);
+};
+
 module.exports = {
   getFallbackData,
   getFallbackForSymbol,
@@ -577,5 +645,20 @@ module.exports = {
   getFailedSymbols,
   exportCurrentFallbacksToGitHub,
   getFailureStatistics,
+  
+  // 非推奨機能（下位互換性のため残す）
+  getSymbolFallbackData,
+  exportFallbacks,
+  getStats,
+  
+  // テスト用にキャッシュをエクスポート
+  get cache() {
+    warnDeprecation('cache プロパティの直接参照', 'getFallbackData() メソッド');
+    return fallbackDataCache;
+  },
+  set cache(value) {
+    warnDeprecation('cache プロパティの直接設定', 'getFallbackData() メソッド');
+    fallbackDataCache = value;
+  },
   fallbackDataCache
 };

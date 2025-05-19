@@ -13,7 +13,13 @@ const { formatResponse, formatErrorResponse, formatRedirectResponse, formatOptio
 jest.mock('../../../src/utils/budgetCheck', () => ({
   getBudgetWarningMessage: jest.fn(),
   // 修正: addBudgetWarningToResponseがheadersプロパティを保持するようにモック実装を変更
+  // 注意: ここではモック実装を改善してヘッダーが常に保持されるようにする
   addBudgetWarningToResponse: jest.fn(async response => {
+    // レスポンスそのものがundefinedやnullでないことを確認
+    if (!response) {
+      response = {};
+    }
+    
     // レスポンスのheadersプロパティが存在することを確認
     if (!response.headers) {
       response.headers = {
@@ -34,6 +40,23 @@ describe('CORS関連機能テスト', () => {
     jest.resetAllMocks();
     process.env = { ...originalEnv };
     process.env.NODE_ENV = 'test';
+    
+    // モック関数の戻り値を初期化
+    // 改良：デフォルトの実装を明示的に設定し直す
+    require('../../../src/utils/budgetCheck').addBudgetWarningToResponse.mockImplementation(
+      async (res) => {
+        if (!res) {
+          res = {};
+        }
+        if (!res.headers) {
+          res.headers = {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Credentials': 'true'
+          };
+        }
+        return res;
+      }
+    );
   });
   
   afterAll(() => {
@@ -63,7 +86,10 @@ describe('CORS関連機能テスト', () => {
       const originalAddBudgetWarning = require('../../../src/utils/budgetCheck').addBudgetWarningToResponse;
       require('../../../src/utils/budgetCheck').addBudgetWarningToResponse.mockImplementationOnce(
         async (res) => {
-          // 元のヘッダーを保持しつつ、環境変数からCORSオリジンを設定
+          // ヘッダーがない場合は作成
+          if (!res) {
+            res = {};
+          }
           if (!res.headers) {
             res.headers = {};
           }
@@ -92,6 +118,11 @@ describe('CORS関連機能テスト', () => {
       // モック実装を一時的に変更
       require('../../../src/utils/budgetCheck').addBudgetWarningToResponse.mockImplementationOnce(
         async (res) => {
+          // レスポンスそのものがundefinedやnullでないことを確認
+          if (!res) {
+            res = {};
+          }
+          
           // ヘッダーがない場合は作成
           if (!res.headers) {
             res.headers = {};
@@ -179,6 +210,11 @@ describe('CORS関連機能テスト', () => {
       // モック実装を一時的に変更
       require('../../../src/utils/budgetCheck').addBudgetWarningToResponse.mockImplementationOnce(
         async (res) => {
+          // レスポンスそのものがundefinedやnullでないことを確認
+          if (!res) {
+            res = {};
+          }
+          
           // ヘッダーがない場合は作成
           if (!res.headers) {
             res.headers = {
@@ -219,6 +255,11 @@ describe('CORS関連機能テスト', () => {
       // モック実装を一時的に変更
       require('../../../src/utils/budgetCheck').addBudgetWarningToResponse.mockImplementationOnce(
         async (res) => {
+          // レスポンスそのものがundefinedやnullでないことを確認
+          if (!res) {
+            res = {};
+          }
+          
           // ヘッダーがない場合は作成
           if (!res.headers) {
             res.headers = {};

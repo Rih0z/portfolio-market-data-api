@@ -11,6 +11,7 @@
 # @updated 2025-05-17 - カバレッジオプションが確実に有効になるように修正、強制カバレッジオプション追加
 # @updated 2025-05-19 - Jest設定ファイルを明示的に指定する機能追加、依存関係の明確化
 # @updated 2025-05-20 - カバレッジデータ生成の信頼性向上、デバッグオプション強化
+# @updated 2025-05-21 - カバレッジ率と目標カバレッジ率の表示を強化、非同期ハンドル問題の検出を追加
 #
 
 # 便利なサンプルコマンド
@@ -71,6 +72,7 @@ show_help() {
   echo "  --force-coverage            カバレッジ計測を強制的に有効化（--no-coverageより優先）"
   echo "  --config                    カスタムJest設定ファイルのパスを指定"
   echo "  --verbose-coverage          カバレッジデータ処理の詳細ログを出力"
+  echo "  --detect-open-handles       非同期ハンドルの検出を有効化"
   echo ""
   echo "テスト種別:"
   echo "  unit                単体テストのみ実行"
@@ -108,6 +110,7 @@ show_help() {
   echo "  $0 -t mid all       中間段階のカバレッジ目標を設定してすべてのテストを実行"
   echo "  $0 --config custom-jest.config.js unit  カスタム設定ファイルで単体テストを実行"
   echo "  $0 --verbose-coverage all    カバレッジデータ処理の詳細ログを確認"
+  echo "  $0 --detect-open-handles unit  非同期ハンドルの検出を有効化して単体テストを実行"
   echo ""
 }
 
@@ -131,6 +134,7 @@ TEST_TYPE=""
 COVERAGE_TARGET="initial"
 JEST_CONFIG_PATH="jest.config.js"
 VERBOSE_COVERAGE=0
+DETECT_OPEN_HANDLES=0
 
 # オプション解析
 while [[ $# -gt 0 ]]; do
@@ -209,6 +213,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --verbose-coverage)
       VERBOSE_COVERAGE=1
+      shift
+      ;;
+    --detect-open-handles)
+      DETECT_OPEN_HANDLES=1
       shift
       ;;
     unit|unit:services|unit:utils|unit:function|integration|integration:auth|integration:market|integration:drive|e2e|all|quick|specific)
@@ -449,6 +457,12 @@ JEST_ARGS=""
 
 # Jest設定ファイルを指定
 JEST_ARGS="--config=$JEST_CONFIG_PATH"
+
+# 非同期ハンドルの検出
+if [ $DETECT_OPEN_HANDLES -eq 1 ]; then
+  JEST_ARGS="$JEST_ARGS --detectOpenHandles"
+  print_info "非同期ハンドルの検出が有効です"
+fi
 
 # テスト種別に基づいてJestの引数を設定
 case $TEST_TYPE in
@@ -713,115 +727,179 @@ if [ $VISUAL -eq 1 ]; then
   fi
 fi
 
-# 結果の表示
+# テスト成功・失敗のヘッダーを表示
 if [ $TEST_RESULT -eq 0 ]; then
   print_header "テスト実行が成功しました! 🎉"
-  
-  # カバレッジ情報をログファイルから抽出して表示
-  if [ $NO_COVERAGE -ne 1 ] && [ -f "./test-results/detailed-results.json" ]; then
-    # 各カバレッジメトリクスを取得
-    STATEMENTS_COVERAGE=$(grep -o '"statements":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
-    BRANCHES_COVERAGE=$(grep -o '"branches":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
-    FUNCTIONS_COVERAGE=$(grep -o '"functions":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
-    LINES_COVERAGE=$(grep -o '"lines":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
-    
-    # カバレッジ目標段階とカバレッジ率の表示
-    echo -e "${BLUE}カバレッジ目標段階: ${YELLOW}$COVERAGE_TARGET${NC}"
-    
-    # 目標に応じてカバレッジ率を色分け表示
-    case $COVERAGE_TARGET in
-      initial)
-        # 20-30%目標
-        THRESHOLD_STATEMENTS=30
-        THRESHOLD_BRANCHES=20
-        THRESHOLD_FUNCTIONS=25
-        THRESHOLD_LINES=30
-        ;;
-      mid)
-        # 40-60%目標
-        THRESHOLD_STATEMENTS=60
-        THRESHOLD_BRANCHES=50
-        THRESHOLD_FUNCTIONS=60
-        THRESHOLD_LINES=60
-        ;;
-      final)
-        # 70-80%目標
-        THRESHOLD_STATEMENTS=80
-        THRESHOLD_BRANCHES=70
-        THRESHOLD_FUNCTIONS=80
-        THRESHOLD_LINES=80
-        ;;
-    esac
-    
-    # カバレッジ率の表示（目標達成状況に応じて色分け）
-    if (( $(echo "$STATEMENTS_COVERAGE >= $THRESHOLD_STATEMENTS" | bc -l) )); then
-      echo -e "Statements: ${GREEN}${STATEMENTS_COVERAGE}%${NC} (目標: ${THRESHOLD_STATEMENTS}%)"
-    else
-      echo -e "Statements: ${RED}${STATEMENTS_COVERAGE}%${NC} (目標: ${THRESHOLD_STATEMENTS}%)"
-    fi
-    
-    if (( $(echo "$BRANCHES_COVERAGE >= $THRESHOLD_BRANCHES" | bc -l) )); then
-      echo -e "Branches:   ${GREEN}${BRANCHES_COVERAGE}%${NC} (目標: ${THRESHOLD_BRANCHES}%)"
-    else
-      echo -e "Branches:   ${RED}${BRANCHES_COVERAGE}%${NC} (目標: ${THRESHOLD_BRANCHES}%)"
-    fi
-    
-    if (( $(echo "$FUNCTIONS_COVERAGE >= $THRESHOLD_FUNCTIONS" | bc -l) )); then
-      echo -e "Functions:  ${GREEN}${FUNCTIONS_COVERAGE}%${NC} (目標: ${THRESHOLD_FUNCTIONS}%)"
-    else
-      echo -e "Functions:  ${RED}${FUNCTIONS_COVERAGE}%${NC} (目標: ${THRESHOLD_FUNCTIONS}%)"
-    fi
-    
-    if (( $(echo "$LINES_COVERAGE >= $THRESHOLD_LINES" | bc -l) )); then
-      echo -e "Lines:      ${GREEN}${LINES_COVERAGE}%${NC} (目標: ${THRESHOLD_LINES}%)"
-    else
-      echo -e "Lines:      ${RED}${LINES_COVERAGE}%${NC} (目標: ${THRESHOLD_LINES}%)"
-    fi
-    
-    # 次の目標段階の提案
-    ALL_TARGETS_MET=1
-    
-    if (( $(echo "$STATEMENTS_COVERAGE < $THRESHOLD_STATEMENTS" | bc -l) || 
-           $(echo "$BRANCHES_COVERAGE < $THRESHOLD_BRANCHES" | bc -l) || 
-           $(echo "$FUNCTIONS_COVERAGE < $THRESHOLD_FUNCTIONS" | bc -l) || 
-           $(echo "$LINES_COVERAGE < $THRESHOLD_LINES" | bc -l) )); then
-      ALL_TARGETS_MET=0
-    fi
-    
-    if [ $ALL_TARGETS_MET -eq 1 ]; then
-      case $COVERAGE_TARGET in
-        initial)
-          print_success "初期段階の目標を達成しました！次は中間段階(-t mid)に挑戦しましょう"
-          ;;
-        mid)
-          print_success "中間段階の目標を達成しました！次は最終段階(-t final)に挑戦しましょう"
-          ;;
-        final)
-          print_success "最終段階の目標を達成しました！素晴らしい成果です 🎉"
-          ;;
-      esac
-    else
-      print_warning "現在の段階の目標をまだ達成していません。引き続きテスト実装を進めましょう"
-      
-      # 未達成の目標を表示
-      echo -e "${YELLOW}未達成の目標:${NC}"
-      if (( $(echo "$STATEMENTS_COVERAGE < $THRESHOLD_STATEMENTS" | bc -l) )); then
-        echo -e "- Statements: ${RED}${STATEMENTS_COVERAGE}%${NC} → ${YELLOW}${THRESHOLD_STATEMENTS}%${NC}"
-      fi
-      if (( $(echo "$BRANCHES_COVERAGE < $THRESHOLD_BRANCHES" | bc -l) )); then
-        echo -e "- Branches:   ${RED}${BRANCHES_COVERAGE}%${NC} → ${YELLOW}${THRESHOLD_BRANCHES}%${NC}"
-      fi
-      if (( $(echo "$FUNCTIONS_COVERAGE < $THRESHOLD_FUNCTIONS" | bc -l) )); then
-        echo -e "- Functions:  ${RED}${FUNCTIONS_COVERAGE}%${NC} → ${YELLOW}${THRESHOLD_FUNCTIONS}%${NC}"
-      fi
-      if (( $(echo "$LINES_COVERAGE < $THRESHOLD_LINES" | bc -l) )); then
-        echo -e "- Lines:      ${RED}${LINES_COVERAGE}%${NC} → ${YELLOW}${THRESHOLD_LINES}%${NC}"
-      fi
-    fi
-  fi
 else
   print_header "テスト実行が失敗しました... 😢"
   
+  # テスト自体は成功しているが、Jest終了コードが非ゼロの場合の特別なメッセージ
+  if grep -q "Test Suites: .* passed, .* total" ./test-results/test-log.md 2>/dev/null && 
+     ! grep -q "Test Suites: .* failed" ./test-results/test-log.md 2>/dev/null; then
+    print_warning "すべてのテストは成功していますが、Jest終了コードに問題があります"
+    print_info "非同期処理の完了を待機していない可能性があります（--detect-open-handles オプションを試してください）"
+  fi
+fi
+
+# カバレッジ情報の表示（テスト結果に関わらず表示）
+if [ -f "./test-results/detailed-results.json" ] && grep -q "coverageMap" ./test-results/detailed-results.json; then
+  # 各カバレッジメトリクスを取得（より堅牢な方法）
+  # json形式を考慮し、jqがあれば使用、なければgrepとawk
+  if command -v jq > /dev/null; then
+    if jq -e '.coverageMap.total.statements.pct' ./test-results/detailed-results.json > /dev/null 2>&1; then
+      STATEMENTS_COVERAGE=$(jq '.coverageMap.total.statements.pct' ./test-results/detailed-results.json)
+      BRANCHES_COVERAGE=$(jq '.coverageMap.total.branches.pct' ./test-results/detailed-results.json)
+      FUNCTIONS_COVERAGE=$(jq '.coverageMap.total.functions.pct' ./test-results/detailed-results.json)
+      LINES_COVERAGE=$(jq '.coverageMap.total.lines.pct' ./test-results/detailed-results.json)
+    else
+      # フォールバック - 数値を確実に取得
+      print_warning "jqでのカバレッジデータ取得に失敗しました。代替方法を使用します。"
+      STATEMENTS_COVERAGE=0
+      BRANCHES_COVERAGE=0
+      FUNCTIONS_COVERAGE=0
+      LINES_COVERAGE=0
+    fi
+  else
+    # 代替方法 - sedとgrepを使用
+    STATEMENTS_COVERAGE=$(grep -o '"statements":{[^}]*"pct":[0-9.]*' ./test-results/detailed-results.json | sed 's/.*"pct":\([0-9.]*\).*/\1/g')
+    BRANCHES_COVERAGE=$(grep -o '"branches":{[^}]*"pct":[0-9.]*' ./test-results/detailed-results.json | sed 's/.*"pct":\([0-9.]*\).*/\1/g')
+    FUNCTIONS_COVERAGE=$(grep -o '"functions":{[^}]*"pct":[0-9.]*' ./test-results/detailed-results.json | sed 's/.*"pct":\([0-9.]*\).*/\1/g')
+    LINES_COVERAGE=$(grep -o '"lines":{[^}]*"pct":[0-9.]*' ./test-results/detailed-results.json | sed 's/.*"pct":\([0-9.]*\).*/\1/g')
+    
+    # データが取得できなかった場合はデフォルト値を設定
+    [ -z "$STATEMENTS_COVERAGE" ] && STATEMENTS_COVERAGE=0
+    [ -z "$BRANCHES_COVERAGE" ] && BRANCHES_COVERAGE=0
+    [ -z "$FUNCTIONS_COVERAGE" ] && FUNCTIONS_COVERAGE=0
+    [ -z "$LINES_COVERAGE" ] && LINES_COVERAGE=0
+  fi
+  
+  # カバレッジ目標段階とカバレッジ率の表示
+  echo -e "${BLUE}カバレッジ目標段階: ${YELLOW}$COVERAGE_TARGET${NC}"
+  
+  # 目標に応じてカバレッジ率を色分け表示
+  case $COVERAGE_TARGET in
+    initial)
+      # 20-30%目標
+      THRESHOLD_STATEMENTS=30
+      THRESHOLD_BRANCHES=20
+      THRESHOLD_FUNCTIONS=25
+      THRESHOLD_LINES=30
+      ;;
+    mid)
+      # 40-60%目標
+      THRESHOLD_STATEMENTS=60
+      THRESHOLD_BRANCHES=50
+      THRESHOLD_FUNCTIONS=60
+      THRESHOLD_LINES=60
+      ;;
+    final)
+      # 70-80%目標
+      THRESHOLD_STATEMENTS=80
+      THRESHOLD_BRANCHES=70
+      THRESHOLD_FUNCTIONS=80
+      THRESHOLD_LINES=80
+      ;;
+  esac
+  
+  # カバレッジ率の表示（目標達成状況に応じて色分け）
+  # 数値比較のヘルパー関数
+  compare_for_display() {
+    local val1="$1"
+    local val2="$2"
+    if [ $(echo "$val1 >= $val2" | bc -l 2>/dev/null) -eq 1 ] 2>/dev/null; then
+      return 0  # true - 目標達成
+    else
+      return 1  # false - 目標未達
+    fi
+  }
+  
+  if compare_for_display "$STATEMENTS_COVERAGE" "$THRESHOLD_STATEMENTS"; then
+    echo -e "Statements: ${GREEN}${STATEMENTS_COVERAGE}%${NC} (目標: ${THRESHOLD_STATEMENTS}%)"
+  else
+    echo -e "Statements: ${RED}${STATEMENTS_COVERAGE}%${NC} (目標: ${THRESHOLD_STATEMENTS}%)"
+  fi
+  
+  if compare_for_display "$BRANCHES_COVERAGE" "$THRESHOLD_BRANCHES"; then
+    echo -e "Branches:   ${GREEN}${BRANCHES_COVERAGE}%${NC} (目標: ${THRESHOLD_BRANCHES}%)"
+  else
+    echo -e "Branches:   ${RED}${BRANCHES_COVERAGE}%${NC} (目標: ${THRESHOLD_BRANCHES}%)"
+  fi
+  
+  if compare_for_display "$FUNCTIONS_COVERAGE" "$THRESHOLD_FUNCTIONS"; then
+    echo -e "Functions:  ${GREEN}${FUNCTIONS_COVERAGE}%${NC} (目標: ${THRESHOLD_FUNCTIONS}%)"
+  else
+    echo -e "Functions:  ${RED}${FUNCTIONS_COVERAGE}%${NC} (目標: ${THRESHOLD_FUNCTIONS}%)"
+  fi
+  
+  if compare_for_display "$LINES_COVERAGE" "$THRESHOLD_LINES"; then
+    echo -e "Lines:      ${GREEN}${LINES_COVERAGE}%${NC} (目標: ${THRESHOLD_LINES}%)"
+  else
+    echo -e "Lines:      ${RED}${LINES_COVERAGE}%${NC} (目標: ${THRESHOLD_LINES}%)"
+  fi
+  
+  # 現在のカバレッジ率と目標カバレッジ率のサマリー表示
+  echo -e "\n${BLUE}現在のカバレッジ率サマリー:${NC}"
+  echo -e "Statements: ${STATEMENTS_COVERAGE}% | Branches: ${BRANCHES_COVERAGE}% | Functions: ${FUNCTIONS_COVERAGE}% | Lines: ${LINES_COVERAGE}%"
+  
+  echo -e "${BLUE}目標カバレッジ率:${NC}"
+  echo -e "Statements: ${THRESHOLD_STATEMENTS}% | Branches: ${THRESHOLD_BRANCHES}% | Functions: ${THRESHOLD_FUNCTIONS}% | Lines: ${THRESHOLD_LINES}%"
+  
+  # 次の目標段階の提案
+  ALL_TARGETS_MET=1
+  
+  # 数値比較の安全な実行
+  compare_values() {
+    local val1="$1"
+    local val2="$2"
+    if [ $(echo "$val1 < $val2" | bc -l 2>/dev/null) -eq 1 ] 2>/dev/null; then
+      return 0  # true
+    else
+      return 1  # false
+    fi
+  }
+  
+  # カバレッジが目標未達の場合
+  if compare_values "$STATEMENTS_COVERAGE" "$THRESHOLD_STATEMENTS" || \
+     compare_values "$BRANCHES_COVERAGE" "$THRESHOLD_BRANCHES" || \
+     compare_values "$FUNCTIONS_COVERAGE" "$THRESHOLD_FUNCTIONS" || \
+     compare_values "$LINES_COVERAGE" "$THRESHOLD_LINES"; then
+    ALL_TARGETS_MET=0
+  fi
+  
+  if [ $ALL_TARGETS_MET -eq 1 ]; then
+    case $COVERAGE_TARGET in
+      initial)
+        print_success "初期段階の目標を達成しました！次は中間段階(-t mid)に挑戦しましょう"
+        ;;
+      mid)
+        print_success "中間段階の目標を達成しました！次は最終段階(-t final)に挑戦しましょう"
+        ;;
+      final)
+        print_success "最終段階の目標を達成しました！素晴らしい成果です 🎉"
+        ;;
+    esac
+  else
+    print_warning "現在の段階の目標をまだ達成していません。引き続きテスト実装を進めましょう"
+    
+    # 未達成の目標を表示
+    echo -e "${YELLOW}未達成の目標:${NC}"
+    if compare_values "$STATEMENTS_COVERAGE" "$THRESHOLD_STATEMENTS"; then
+      echo -e "- Statements: ${RED}${STATEMENTS_COVERAGE}%${NC} → ${YELLOW}${THRESHOLD_STATEMENTS}%${NC}"
+    fi
+    if compare_values "$BRANCHES_COVERAGE" "$THRESHOLD_BRANCHES"; then
+      echo -e "- Branches:   ${RED}${BRANCHES_COVERAGE}%${NC} → ${YELLOW}${THRESHOLD_BRANCHES}%${NC}"
+    fi
+    if compare_values "$FUNCTIONS_COVERAGE" "$THRESHOLD_FUNCTIONS"; then
+      echo -e "- Functions:  ${RED}${FUNCTIONS_COVERAGE}%${NC} → ${YELLOW}${THRESHOLD_FUNCTIONS}%${NC}"
+    fi
+    if compare_values "$LINES_COVERAGE" "$THRESHOLD_LINES"; then
+      echo -e "- Lines:      ${RED}${LINES_COVERAGE}%${NC} → ${YELLOW}${THRESHOLD_LINES}%${NC}"
+    fi
+  fi
+fi
+
+# エラー処理（テスト失敗時のみ）
+if [ $TEST_RESULT -ne 0 ]; then
   # デバッグモードの場合、詳細情報を表示
   if [ $DEBUG_MODE -eq 1 ]; then
     print_info "テスト失敗の詳細情報:"
@@ -851,6 +929,7 @@ else
   echo "- カバレッジの問題が原因の場合は強制的に有効化: ./scripts/run-tests.sh --force-coverage $TEST_TYPE"
   echo "- デバッグモードで詳細情報を表示: ./scripts/run-tests.sh -d $TEST_TYPE"
   echo "- カバレッジデータ処理の詳細を確認: ./scripts/run-tests.sh --verbose-coverage $TEST_TYPE"
+  echo "- 非同期ハンドル問題を検出: ./scripts/run-tests.sh --detect-open-handles $TEST_TYPE"
 fi
 
 # テスト後のクリーンアップ提案

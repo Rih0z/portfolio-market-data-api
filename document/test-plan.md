@@ -2,7 +2,7 @@
 
 ## 1. 現在のテスト実装状況
 
-現在のテストカバレッジは約30.7%です。下記に実装済みのテストファイルを示します。
+現在のテストカバレッジは約31.2%です。下記に実装済みのテストファイルを示します。
 
 ### 単体テスト (Unit Tests)
 
@@ -30,8 +30,9 @@
 
 #### ユーティリティ関連 (Utils)
 - `__tests__/unit/utils/cookieParser.test.js`
-- `__tests__/unit/utils/responseUtils.test.js`
-- `__tests__/unit/utils/errorHandler.test.js` // 追加実装済み
+- `__tests__/unit/utils/responseUtils.test.js` 
+- `__tests__/unit/utils/errorHandler.test.js` // 実装済み
+- `__tests__/unit/utils/logger.test.js` // 実装済み
 
 ### 統合テスト (Integration Tests)
 
@@ -60,13 +61,6 @@ describe('エラーハンドリングミドルウェア', () => {
   test('バリデーションエラーを正しく処理する', () => {/* ... */});
   test('認証エラーを正しく処理する', () => {/* ... */});
   test('レート制限エラーを正しく処理する', () => {/* ... */});
-});
-
-// __tests__/unit/middleware/logger.test.js
-describe('ロギングミドルウェア', () => {
-  test('リクエスト情報を正しくログ出力する', () => {/* ... */});
-  test('エラー情報を正しくログ出力する', () => {/* ... */});
-  test('環境変数によってログレベルが変更される', () => {/* ... */});
 });
 
 // __tests__/unit/middleware/cors.test.js
@@ -254,9 +248,10 @@ describe('ユーザー体験テスト', () => {
 ### 優先順位
 
 1. **高優先度**:
-   - ミドルウェアテスト（ロギング、CORS）
+   - ✅ ミドルウェアテスト（ロギング）- 実装済み
+   - ミドルウェアテスト（CORS）- 未実装
    - ✅ エラーハンドリングユーティリティ（`errorHandler.test.js`として実装済み）
-   - 未テスト：市場データ取得エンドポイント（`getMarketData.test.js`）
+   - 未テスト：市場データ取得エンドポイント（`getMarketData.test.js`）- 次の実装候補
    - 未テスト：ポートフォリオ関連エンドポイント（`savePortfolio.test.js`、`getPortfolio.test.js`）
    - 未テスト：ポートフォリオ分析サービス（`portfolioAnalysisService.test.js`）
 
@@ -310,7 +305,7 @@ describe('ユーザー体験テスト', () => {
 ## 6. ロードマップ
 
 ### フェーズ1（1-2週間）
-- ミドルウェアテストの実装
+- ✅ ミドルウェアテストの実装（ロギング）
 - ✅ エラーハンドリングユーティリティテストの実装（完了）
 - 主要エンドポイントのテスト実装（`getMarketData.test.js`、`savePortfolio.test.js`）
 - カバレッジ目標：40%

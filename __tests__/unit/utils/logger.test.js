@@ -77,7 +77,7 @@ describe('Logger Utility', () => {
       reloadedLogger.error('エラーメッセージ');
       
       // debug は出力されない
-      expect(consoleLogSpy).toHaveBeenCalledTimes(2); // info と warn が出力される
+      expect(consoleLogSpy).toHaveBeenCalledTimes(1); // info のみが console.log を使用
       expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('[INFO] 情報メッセージ'));
       
       // warn は出力される

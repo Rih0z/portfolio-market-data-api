@@ -526,7 +526,6 @@ analyze_jest_output() {
     if [[ $tests_line =~ ([0-9]+)\ total ]]; then
       total_tests=${BASH_REMATCH[1]}
     fi
-  }
   fi
   
   # カバレッジエラーを検出

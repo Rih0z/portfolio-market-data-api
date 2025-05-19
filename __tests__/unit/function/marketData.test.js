@@ -13,27 +13,67 @@
 const { handler, combinedDataHandler, highLatencyHandler } = require('../../../src/function/marketData');
 
 // 依存モジュールのインポート
+const { DATA_TYPES, ERROR_CODES } = require('../../../src/config/constants');
+
+// モジュールのモック化 - 各メソッドを明示的に定義
+jest.mock('../../../src/services/sources/enhancedMarketDataService', () => ({
+  getUsStocksData: jest.fn(),
+  getJpStocksData: jest.fn(),
+  getExchangeRateData: jest.fn(),
+  getMutualFundsData: jest.fn()
+}));
+
+jest.mock('../../../src/services/fallbackDataStore', () => ({
+  recordFailedFetch: jest.fn(),
+  getFallbackForSymbol: jest.fn()
+}));
+
+jest.mock('../../../src/services/cache', () => ({
+  get: jest.fn(),
+  set: jest.fn()
+}));
+
+jest.mock('../../../src/services/usage', () => ({
+  checkAndUpdateUsage: jest.fn()
+}));
+
+jest.mock('../../../src/services/alerts', () => ({
+  notifyError: jest.fn()
+}));
+
+jest.mock('../../../src/utils/budgetCheck', () => ({
+  isBudgetCritical: jest.fn(),
+  getBudgetWarningMessage: jest.fn(),
+  addBudgetWarningToResponse: jest.fn()
+}));
+
+jest.mock('../../../src/utils/responseUtils', () => ({
+  formatResponse: jest.fn(),
+  formatErrorResponse: jest.fn(),
+  formatOptionsResponse: jest.fn(),
+  methodHandler: jest.fn()
+}));
+
+jest.mock('../../../src/utils/errorHandler', () => ({
+  handleError: jest.fn()
+}));
+
+jest.mock('../../../src/utils/logger', () => ({
+  info: jest.fn(),
+  error: jest.fn(),
+  warn: jest.fn()
+}));
+
+// モック化した依存モジュールのインポート
 const enhancedMarketDataService = require('../../../src/services/sources/enhancedMarketDataService');
 const fallbackDataStore = require('../../../src/services/fallbackDataStore');
 const cacheService = require('../../../src/services/cache');
 const usageService = require('../../../src/services/usage');
 const alertService = require('../../../src/services/alerts');
-const { DATA_TYPES, ERROR_CODES } = require('../../../src/config/constants');
 const budgetCheck = require('../../../src/utils/budgetCheck');
 const responseUtils = require('../../../src/utils/responseUtils');
 const errorHandler = require('../../../src/utils/errorHandler');
 const logger = require('../../../src/utils/logger');
-
-// モジュールのモック化
-jest.mock('../../../src/services/sources/enhancedMarketDataService');
-jest.mock('../../../src/services/fallbackDataStore');
-jest.mock('../../../src/services/cache');
-jest.mock('../../../src/services/usage');
-jest.mock('../../../src/services/alerts');
-jest.mock('../../../src/utils/budgetCheck');
-jest.mock('../../../src/utils/responseUtils');
-jest.mock('../../../src/utils/errorHandler');
-jest.mock('../../../src/utils/logger');
 
 describe('Market Data API Handler', () => {
   // テスト用データ

@@ -36,6 +36,7 @@
 - `__tests__/unit/utils/responseUtils.test.js` 
 - `__tests__/unit/utils/errorHandler.test.js` // 実装済み
 - `__tests__/unit/utils/logger.test.js` // 実装済み
+- `__tests__/unit/utils/cors.test.js` // 実装済み
 
 ### 統合テスト (Integration Tests)
 
@@ -64,13 +65,6 @@ describe('エラーハンドリングミドルウェア', () => {
   test('バリデーションエラーを正しく処理する', () => {/* ... */});
   test('認証エラーを正しく処理する', () => {/* ... */});
   test('レート制限エラーを正しく処理する', () => {/* ... */});
-});
-
-// __tests__/unit/middleware/cors.test.js
-describe('CORSミドルウェア', () => {
-  test('許可されたオリジンからのリクエストを受け付ける', () => {/* ... */});
-  test('許可されていないオリジンからのリクエストを拒否する', () => {/* ... */});
-  test('プリフライトリクエストに正しく応答する', () => {/* ... */});
 });
 ```
 
@@ -252,7 +246,7 @@ describe('ユーザー体験テスト', () => {
 
 1. **高優先度**:
    - ✅ ミドルウェアテスト（ロギング）- 実装済み
-   - ミドルウェアテスト（CORS）- 未実装
+   - ✅ ミドルウェアテスト（CORS）- 実装済み（`__tests__/unit/utils/cors.test.js`）
    - ✅ エラーハンドリングユーティリティ（`errorHandler.test.js`として実装済み）
    - ✅ 市場データ取得エンドポイント（`marketData.test.js`として実装済み）
    - 未テスト：ポートフォリオ関連エンドポイント（`savePortfolio.test.js`、`getPortfolio.test.js`）
@@ -311,7 +305,7 @@ describe('ユーザー体験テスト', () => {
 - ✅ ミドルウェアテストの実装（ロギング）
 - ✅ エラーハンドリングユーティリティテストの実装（完了）
 - ✅ 市場データ取得エンドポイントのテスト実装（`marketData.test.js`として完了）
-- 未実装：ミドルウェアテスト（CORS）
+- ✅ ミドルウェアテスト（CORS）（`cors.test.js`として完了）
 - カバレッジ目標：40%
 
 ### フェーズ2（2-3週間）

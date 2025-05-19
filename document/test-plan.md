@@ -2,7 +2,7 @@
 
 ## 1. 現在のテスト実装状況
 
-現在のテストカバレッジは約33.5%です。下記に実装済みのテストファイルを示します。
+現在のテストカバレッジは約37.5%です。下記に実装済みのテストファイルを示します。
 
 ### 単体テスト (Unit Tests)
 
@@ -15,6 +15,8 @@
 #### ドライブ関連 (Drive)
 - `__tests__/unit/function/drive/fileVersions.test.js`
 - `__tests__/unit/function/drive/listFiles.test.js`
+- `__tests__/unit/function/drive/saveFile.test.js` // 実装済み
+- `__tests__/unit/function/drive/loadFile.test.js` // 実装済み
 - `__tests__/unit/services/googleDriveService.test.js`
 
 #### ポートフォリオ関連
@@ -84,28 +86,9 @@ describe('市場データ取得エンドポイント', () => {
 
 #### ポートフォリオ関連
 ```javascript
-// __tests__/unit/function/portfolio/savePortfolio.test.js
-describe('ポートフォリオ保存エンドポイント', () => {
-  test('正常系：新規ポートフォリオを保存する', () => {/* ... */});
-  test('正常系：既存ポートフォリオを更新する', () => {/* ... */});
-  test('異常系：無効なデータ形式の場合はエラーを返す', () => {/* ... */});
-  test('異常系：認証がない場合はエラーを返す', () => {/* ... */});
-});
-
-// __tests__/unit/function/portfolio/getPortfolio.test.js
-describe('ポートフォリオ取得エンドポイント', () => {
-  test('正常系：指定されたIDのポートフォリオを取得する', () => {/* ... */});
-  test('正常系：ユーザーのすべてのポートフォリオを一覧取得する', () => {/* ... */});
-  test('異常系：存在しないIDの場合は404エラーを返す', () => {/* ... */});
-  test('異常系：認証がない場合はエラーを返す', () => {/* ... */});
-});
-
-// __tests__/unit/function/portfolio/deletePortfolio.test.js
-describe('ポートフォリオ削除エンドポイント', () => {
-  test('正常系：指定されたIDのポートフォリオを削除する', () => {/* ... */});
-  test('異常系：存在しないIDの場合は404エラーを返す', () => {/* ... */});
-  test('異常系：認証がない場合はエラーを返す', () => {/* ... */});
-});
+// ポートフォリオ関連のテストはDrive APIを通じて実装
+// __tests__/unit/function/drive/saveFile.test.js - 実装済み
+// __tests__/unit/function/drive/loadFile.test.js - 実装済み
 ```
 
 ### データサービス (Services)
@@ -249,7 +232,7 @@ describe('ユーザー体験テスト', () => {
    - ✅ ミドルウェアテスト（CORS）- 実装済み（`__tests__/unit/utils/cors.test.js`）
    - ✅ エラーハンドリングユーティリティ（`errorHandler.test.js`として実装済み）
    - ✅ 市場データ取得エンドポイント（`marketData.test.js`として実装済み）
-   - 未テスト：ポートフォリオ関連エンドポイント（`savePortfolio.test.js`、`getPortfolio.test.js`）
+   - ✅ ポートフォリオ関連エンドポイント（`saveFile.test.js`、`loadFile.test.js`として実装済み）
    - 未テスト：ポートフォリオ分析サービス（`portfolioAnalysisService.test.js`）
 
 2. **中優先度**:
@@ -306,22 +289,23 @@ describe('ユーザー体験テスト', () => {
 - ✅ エラーハンドリングユーティリティテストの実装（完了）
 - ✅ 市場データ取得エンドポイントのテスト実装（`marketData.test.js`として完了）
 - ✅ ミドルウェアテスト（CORS）（`cors.test.js`として完了）
-- カバレッジ目標：40%
+- ✅ ポートフォリオ関連エンドポイントのテスト実装（`saveFile.test.js`、`loadFile.test.js`として完了）
+- カバレッジ目標：45%
 
 ### フェーズ2（2-3週間）
 - ポートフォリオ分析サービスのテスト実装
 - ユーザー管理関連のテスト実装
 - 残りのエンドポイントテスト実装
-- カバレッジ目標：55%
+- カバレッジ目標：60%
 
 ### フェーズ3（3-4週間）
 - データ変換サービスのテスト実装
 - 外部APIインテグレーションテストの拡充
 - 統合テストの追加
-- カバレッジ目標：65%
+- カバレッジ目標：70%
 
 ### フェーズ4（4-6週間）
 - 残りのユーティリティテストの実装
 - E2Eテストの拡充
 - バグ修正とリファクタリング
-- カバレッジ目標：70%以上
+- カバレッジ目標：80%以上

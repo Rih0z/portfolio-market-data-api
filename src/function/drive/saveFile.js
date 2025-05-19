@@ -6,6 +6,7 @@
  * @created 2025-05-12
  * @updated 2025-05-13
  * @updated 2025-05-20 改善: エラーハンドリング強化と共通関数の活用
+ * @updated 2025-05-23 修正: テストケースに合わせてundefinedをnullに変換
  */
 'use strict';
 
@@ -102,7 +103,8 @@ module.exports.handler = async (event) => {
     };
     
     // Google Driveにデータを保存
-    const result = await savePortfolioToDrive(accessToken, enhancedPortfolioData, fileId, createBackup);
+    // fileIdがundefinedの場合はnullに変換して渡す（テストケースに合わせるため）
+    const result = await savePortfolioToDrive(accessToken, enhancedPortfolioData, fileId || null, createBackup);
     
     // レスポンスを整形
     return formatResponse({

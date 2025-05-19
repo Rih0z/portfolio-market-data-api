@@ -101,6 +101,7 @@ TEST_TYPE=""
 COVERAGE_TARGET="initial"
 JEST_CONFIG_PATH="jest.config.js"
 VERBOSE_COVERAGE=0
+OUTPUT_LOG_FILE="./test-results/run-output.log"
 
 # オプション解析
 while [[ $# -gt 0 ]]; do
@@ -442,138 +443,254 @@ if [ $DEBUG_MODE -eq 1 ] || [ $VERBOSE_COVERAGE -eq 1 ]; then
   echo ""
 fi
 
-# テストの実行
+# テスト結果出力を一時ファイルに保存するためのディレクトリを確保
+mkdir -p ./test-results
+
+# テストの実行（出力をファイルと標準出力の両方に送る）
 if [ -n "$ENV_VARS" ]; then
   # JESTのカバレッジ設定を強制的に有効化（.env.localの設定より優先）
-  eval "npx cross-env JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true ENABLE_COVERAGE=true $ENV_VARS $JEST_CMD"
+  eval "npx cross-env JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true ENABLE_COVERAGE=true $ENV_VARS $JEST_CMD" 2>&1 | tee "$OUTPUT_LOG_FILE"
 else
   # JESTのカバレッジ設定を強制的に有効化
-  eval "npx cross-env JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true ENABLE_COVERAGE=true $JEST_CMD"
+  eval "npx cross-env JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true ENABLE_COVERAGE=true $JEST_CMD" 2>&1 | tee "$OUTPUT_LOG_FILE"
 fi
 
 # テスト結果
-TEST_RESULT=$?
+TEST_RESULT=${PIPESTATUS[0]}
 
-# 失敗の詳細な理由を特定する関数
-analyze_failure_reason() {
-  local has_coverage_data=0
+# Jestの出力からテスト実行の詳細を解析する関数
+analyze_jest_output() {
+  local output_file="$1"
+  local total_suites=0
+  local failed_suites=0
+  local passed_suites=0
+  local skipped_suites=0
+  local total_tests=0
+  local failed_tests=0
+  local passed_tests=0
+  local skipped_tests=0
   local has_coverage_issue=0
-  local has_failed_tests=0
-  local has_config_issue=0
-  local failure_message=""
+  local failure_reason=""
   
-  # カバレッジデータの有無を確認
-  if [ -f "./test-results/detailed-results.json" ]; then
-    # 失敗したテストがあるか確認
-    FAILED_TESTS=$(grep -o '"numFailedTests":[0-9]*' ./test-results/detailed-results.json | cut -d':' -f2)
-    
-    if [ "$FAILED_TESTS" != "0" ]; then
-      has_failed_tests=1
-      failure_message="$FAILED_TESTS件のテストが失敗しています"
-    fi
-    
-    # カバレッジ情報があるか確認
-    if grep -q "coverageMap" ./test-results/detailed-results.json; then
-      has_coverage_data=1
-      
-      # カバレッジ閾値に達しているか確認
-      STATEMENTS_COVERAGE=$(grep -o '"statements":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
-      BRANCHES_COVERAGE=$(grep -o '"branches":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
-      FUNCTIONS_COVERAGE=$(grep -o '"functions":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
-      LINES_COVERAGE=$(grep -o '"lines":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
-      
-      # 目標に応じた閾値
-      case $COVERAGE_TARGET in
-        initial)
-          # 20-30%目標
-          THRESHOLD_STATEMENTS=30
-          THRESHOLD_BRANCHES=20
-          THRESHOLD_FUNCTIONS=25
-          THRESHOLD_LINES=30
-          ;;
-        mid)
-          # 40-60%目標
-          THRESHOLD_STATEMENTS=60
-          THRESHOLD_BRANCHES=50
-          THRESHOLD_FUNCTIONS=60
-          THRESHOLD_LINES=60
-          ;;
-        final)
-          # 70-80%目標
-          THRESHOLD_STATEMENTS=80
-          THRESHOLD_BRANCHES=70
-          THRESHOLD_FUNCTIONS=80
-          THRESHOLD_LINES=80
-          ;;
-      esac
-      
-      # カバレッジが閾値を下回っているか確認
-      if (( $(echo "$STATEMENTS_COVERAGE < $THRESHOLD_STATEMENTS" | bc -l) || 
-             $(echo "$BRANCHES_COVERAGE < $THRESHOLD_BRANCHES" | bc -l) || 
-             $(echo "$FUNCTIONS_COVERAGE < $THRESHOLD_FUNCTIONS" | bc -l) || 
-             $(echo "$LINES_COVERAGE < $THRESHOLD_LINES" | bc -l) )); then
-        has_coverage_issue=1
-        
-        if [ -z "$failure_message" ]; then
-          failure_message="コードカバレッジが要求レベルに達していません"
-        fi
-      fi
-    else
-      has_config_issue=1
-      failure_message="カバレッジデータが生成されていません"
-    fi
-  else
-    has_config_issue=1
-    failure_message="テスト結果ファイルが見つかりません"
+  # ファイルが存在することを確認
+  if [ ! -f "$output_file" ]; then
+    echo "unknown_error:テスト出力ファイルが見つかりません"
+    return
   fi
   
-  # 設定ファイルの問題を確認
-  if [ ! -f "$JEST_CONFIG_PATH" ]; then
-    has_config_issue=1
-    if [ -z "$failure_message" ]; then
-      failure_message="Jest設定ファイルが見つかりません: $JEST_CONFIG_PATH"
+  # テストスイートの結果を解析
+  if grep -q "Test Suites:" "$output_file"; then
+    local suites_line=$(grep "Test Suites:" "$output_file" | tail -n1)
+    
+    # 失敗したスイート数を抽出
+    if [[ $suites_line =~ ([0-9]+)\ failed ]]; then
+      failed_suites=${BASH_REMATCH[1]}
+    fi
+    
+    # 成功したスイート数を抽出
+    if [[ $suites_line =~ ([0-9]+)\ passed ]]; then
+      passed_suites=${BASH_REMATCH[1]}
+    fi
+    
+    # スキップされたスイート数を抽出
+    if [[ $suites_line =~ ([0-9]+)\ skipped ]]; then
+      skipped_suites=${BASH_REMATCH[1]}
+    fi
+    
+    # 合計スイート数を抽出
+    if [[ $suites_line =~ ([0-9]+)\ total ]]; then
+      total_suites=${BASH_REMATCH[1]}
     fi
   fi
   
-  # 最終的な分析
-  if [ $has_failed_tests -eq 1 ]; then
-    echo "test_failure:$failure_message"
+  # テストの結果を解析
+  if grep -q "Tests:" "$output_file"; then
+    local tests_line=$(grep "Tests:" "$output_file" | tail -n1)
+    
+    # 失敗したテスト数を抽出
+    if [[ $tests_line =~ ([0-9]+)\ failed ]]; then
+      failed_tests=${BASH_REMATCH[1]}
+    fi
+    
+    # 成功したテスト数を抽出
+    if [[ $tests_line =~ ([0-9]+)\ passed ]]; then
+      passed_tests=${BASH_REMATCH[1]}
+    fi
+    
+    # スキップされたテスト数を抽出
+    if [[ $tests_line =~ ([0-9]+)\ skipped ]]; then
+      skipped_tests=${BASH_REMATCH[1]}
+    fi
+    
+    # 合計テスト数を抽出
+    if [[ $tests_line =~ ([0-9]+)\ total ]]; then
+      total_tests=${BASH_REMATCH[1]}
+    fi
+  }
+  fi
+  
+  # カバレッジエラーを検出
+  if grep -q "Minimum required coverage" "$output_file" || grep -q "Your test coverage is" "$output_file" || grep -q "Coverage for" "$output_file"; then
+    has_coverage_issue=1
+  fi
+  
+  # 構文エラーの検出
+  if grep -q "Parse error" "$output_file" || grep -q "SyntaxError" "$output_file"; then
+    echo "syntax_error:構文エラーが検出されました"
+    return
+  fi
+  
+  # 実行エラーの検出
+  if grep -q "Command failed with exit code" "$output_file"; then
+    echo "execution_error:コマンド実行エラーが発生しました"
+    return
+  fi
+  
+  # 最終的な分析結果
+  # 1. テスト失敗がある場合
+  if [ "$failed_tests" -gt 0 ]; then
+    echo "test_failure:${failed_tests}個のテストが失敗しています"
+  # 2. テストは成功しているがテストスイート失敗の場合
+  elif [ "$failed_suites" -gt 0 ]; then
+    echo "suite_failure:${failed_suites}個のテストスイートが失敗しています"
+  # 3. カバレッジの問題の場合
   elif [ $has_coverage_issue -eq 1 ]; then
-    echo "coverage_issue:$failure_message"
-  elif [ $has_config_issue -eq 1 ]; then
-    echo "config_issue:$failure_message"
+    echo "coverage_issue:コードカバレッジが要求レベルに達していません"
+  # 4. JSONの不一致（detailed-results.jsonとJestの出力の不一致）
+  elif [ -f "./test-results/detailed-results.json" ]; then
+    local json_failed_tests=$(grep -o '"numFailedTests":[0-9]*' ./test-results/detailed-results.json | cut -d':' -f2)
+    
+    if [ "$json_failed_tests" != "$failed_tests" ]; then
+      echo "data_mismatch:Jestの出力とJSONデータの間に不一致があります"
+    else
+      # すべてのテストが成功していてもJestが非ゼロ終了コードを返した場合
+      if [ $TEST_RESULT -ne 0 ]; then
+        echo "coverage_issue:コードカバレッジが要求レベルに達していません"
+      else
+        echo "success:テストは正常に完了しました"
+      fi
+    fi
   else
-    echo "unknown:詳細不明のエラーが発生しました"
+    # detailed-results.jsonが見つからない場合
+    echo "data_missing:テスト結果のJSONデータが見つかりません"
+  fi
+}
+
+# 失敗したテストの詳細を収集する関数
+gather_failed_tests() {
+  local output_file="$1"
+  local results=()
+  local in_failure_section=0
+  local current_test=""
+  local current_failure=""
+  
+  while IFS= read -r line; do
+    # 失敗テストのセクション開始を検出
+    if [[ "$line" =~ FAIL|ERROR ]]; then
+      in_failure_section=1
+      current_test="$line"
+      current_failure=""
+    # 失敗テストのセクション内での失敗理由を収集
+    elif [ $in_failure_section -eq 1 ]; then
+      # 別のテスト結果や要約セクションの開始を検出
+      if [[ "$line" =~ ^(PASS|FAIL|ERROR|Test Suites:|Tests:) ]]; then
+        # 現在の失敗テストを結果に追加して次へ
+        if [ -n "$current_test" ]; then
+          results+=("$current_test: $current_failure")
+        fi
+        in_failure_section=0
+        current_test=""
+        current_failure=""
+        
+        # 新しい失敗テストの開始なら処理
+        if [[ "$line" =~ FAIL|ERROR ]]; then
+          in_failure_section=1
+          current_test="$line"
+        fi
+      else
+        # 失敗メッセージを追加
+        current_failure="${current_failure}${line}\n"
+      fi
+    fi
+  done < "$output_file"
+  
+  # 最後の失敗テストを追加
+  if [ $in_failure_section -eq 1 ] && [ -n "$current_test" ]; then
+    results+=("$current_test: $current_failure")
+  fi
+  
+  # 結果を返す
+  if [ ${#results[@]} -eq 0 ]; then
+    echo "詳細な失敗情報はありません"
+  else
+    # 最初の3件を表示（長すぎる場合は省略）
+    local count=0
+    for result in "${results[@]}"; do
+      if [ $count -lt 3 ]; then
+        # テスト名だけを抽出して表示
+        local test_name=$(echo "$result" | grep -oE "FAIL [^:]+|ERROR [^:]+" | sed 's/^FAIL //;s/^ERROR //')
+        echo "$test_name"
+      fi
+      ((count++))
+    done
+    
+    if [ ${#results[@]} -gt 3 ]; then
+      echo "...他 $((${#results[@]} - 3)) 件のテストが失敗しています"
+    fi
+  fi
+}
+
+# Jestの出力を解析
+ANALYSIS_RESULT=$(analyze_jest_output "$OUTPUT_LOG_FILE")
+FAILURE_TYPE=${ANALYSIS_RESULT%%:*}
+FAILURE_MESSAGE=${ANALYSIS_RESULT#*:}
+
+# カバレッジ情報を取得
+get_coverage_info() {
+  local thresholds
+  case $COVERAGE_TARGET in
+    initial)
+      # 20-30%目標
+      thresholds=("30" "20" "25" "30")
+      ;;
+    mid)
+      # 40-60%目標
+      thresholds=("60" "50" "60" "60")
+      ;;
+    final)
+      # 70-80%目標
+      thresholds=("80" "70" "80" "80")
+      ;;
+  esac
+  
+  if [ -f "./test-results/detailed-results.json" ]; then
+    local statements_coverage=$(grep -o '"statements":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
+    local branches_coverage=$(grep -o '"branches":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
+    local functions_coverage=$(grep -o '"functions":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
+    local lines_coverage=$(grep -o '"lines":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
+    
+    # 調整されたカバレッジ（端数が切り捨てられる場合がある）
+    statements_coverage=$(printf "%.1f" "$statements_coverage" 2>/dev/null || echo "$statements_coverage")
+    branches_coverage=$(printf "%.1f" "$branches_coverage" 2>/dev/null || echo "$branches_coverage")
+    functions_coverage=$(printf "%.1f" "$functions_coverage" 2>/dev/null || echo "$functions_coverage")
+    lines_coverage=$(printf "%.1f" "$lines_coverage" 2>/dev/null || echo "$lines_coverage")
+    
+    # 結果を配列で返す
+    echo "$statements_coverage $branches_coverage $functions_coverage $lines_coverage ${thresholds[0]} ${thresholds[1]} ${thresholds[2]} ${thresholds[3]}"
+  else
+    echo "0 0 0 0 ${thresholds[0]} ${thresholds[1]} ${thresholds[2]} ${thresholds[3]}"
   fi
 }
 
 # カバレッジエラーを無視するモードが有効な場合
-if [ $IGNORE_COVERAGE_ERRORS -eq 1 ] && [ -f "./test-results/detailed-results.json" ]; then
-  # JSON結果ファイルを読み込んでテスト自体の成功/失敗を確認
-  FAILED_TESTS=$(grep -o '"numFailedTests":[0-9]*' ./test-results/detailed-results.json | cut -d':' -f2)
-  
-  if [ "$FAILED_TESTS" = "0" ]; then
-    print_info "テスト自体は成功していますが、カバレッジ要件を満たしていない可能性があります"
-    print_info "カバレッジエラーを無視するモードが有効なため、テスト成功として扱います"
-    TEST_RESULT=0
-  fi
+if [ $IGNORE_COVERAGE_ERRORS -eq 1 ] && [ "$FAILURE_TYPE" = "coverage_issue" ]; then
+  print_info "カバレッジエラーを無視するモードが有効です。テストは成功とみなします。"
+  TEST_RESULT=0
+  FAILURE_TYPE="success"
+  FAILURE_MESSAGE="テストは正常に完了しました（カバレッジエラーは無視）"
 fi
 
-# カバレッジチャート生成
-if [ $GENERATE_CHART -eq 1 ] && [ $NO_COVERAGE -ne 1 ] && [ -f "./test-results/detailed-results.json" ]; then
-  print_info "カバレッジチャートを生成しています..."
-  
-  # チャート生成スクリプトを実行
-  npx cross-env NODE_ENV=production node ./scripts/generate-coverage-chart.js
-  
-  if [ $? -eq 0 ]; then
-    print_success "カバレッジチャートが生成されました"
-  else
-    print_warning "カバレッジチャートの生成に失敗しました"
-  fi
-fi
-
-# 視覚的レポートが指定された場合
+# ビジュアルレポートが指定された場合
 if [ $VISUAL -eq 1 ]; then
   print_info "テスト結果をビジュアルレポートで表示します..."
   if [ -f "./test-results/visual-report.html" ]; then
@@ -598,78 +715,53 @@ if [ $VISUAL -eq 1 ]; then
   fi
 fi
 
+# Jestの出力から失敗したテストの情報を取得
+FAILED_TESTS_INFO=$(gather_failed_tests "$OUTPUT_LOG_FILE")
+
 # 結果の表示
-if [ $TEST_RESULT -eq 0 ]; then
+if [ "$FAILURE_TYPE" = "success" ]; then
   print_header "テスト実行が成功しました! 🎉"
   
   # カバレッジ情報をログファイルから抽出して表示
   if [ $NO_COVERAGE -ne 1 ] && [ -f "./test-results/detailed-results.json" ]; then
-    # 各カバレッジメトリクスを取得
-    STATEMENTS_COVERAGE=$(grep -o '"statements":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
-    BRANCHES_COVERAGE=$(grep -o '"branches":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
-    FUNCTIONS_COVERAGE=$(grep -o '"functions":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
-    LINES_COVERAGE=$(grep -o '"lines":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
+    # カバレッジ情報を取得
+    coverage_info=($(get_coverage_info))
     
     # カバレッジ目標段階とカバレッジ率の表示
     echo -e "${BLUE}カバレッジ目標段階: ${YELLOW}$COVERAGE_TARGET${NC}"
     
-    # 目標に応じてカバレッジ率を色分け表示
-    case $COVERAGE_TARGET in
-      initial)
-        # 20-30%目標
-        THRESHOLD_STATEMENTS=30
-        THRESHOLD_BRANCHES=20
-        THRESHOLD_FUNCTIONS=25
-        THRESHOLD_LINES=30
-        ;;
-      mid)
-        # 40-60%目標
-        THRESHOLD_STATEMENTS=60
-        THRESHOLD_BRANCHES=50
-        THRESHOLD_FUNCTIONS=60
-        THRESHOLD_LINES=60
-        ;;
-      final)
-        # 70-80%目標
-        THRESHOLD_STATEMENTS=80
-        THRESHOLD_BRANCHES=70
-        THRESHOLD_FUNCTIONS=80
-        THRESHOLD_LINES=80
-        ;;
-    esac
-    
     # カバレッジ率の表示（目標達成状況に応じて色分け）
-    if (( $(echo "$STATEMENTS_COVERAGE >= $THRESHOLD_STATEMENTS" | bc -l) )); then
-      echo -e "Statements: ${GREEN}${STATEMENTS_COVERAGE}%${NC} (目標: ${THRESHOLD_STATEMENTS}%)"
+    if (( $(echo "${coverage_info[0]} >= ${coverage_info[4]}" | bc -l) )); then
+      echo -e "Statements: ${GREEN}${coverage_info[0]}%${NC} (目標: ${coverage_info[4]}%)"
     else
-      echo -e "Statements: ${RED}${STATEMENTS_COVERAGE}%${NC} (目標: ${THRESHOLD_STATEMENTS}%)"
+      echo -e "Statements: ${RED}${coverage_info[0]}%${NC} (目標: ${coverage_info[4]}%)"
     fi
     
-    if (( $(echo "$BRANCHES_COVERAGE >= $THRESHOLD_BRANCHES" | bc -l) )); then
-      echo -e "Branches:   ${GREEN}${BRANCHES_COVERAGE}%${NC} (目標: ${THRESHOLD_BRANCHES}%)"
+    if (( $(echo "${coverage_info[1]} >= ${coverage_info[5]}" | bc -l) )); then
+      echo -e "Branches:   ${GREEN}${coverage_info[1]}%${NC} (目標: ${coverage_info[5]}%)"
     else
-      echo -e "Branches:   ${RED}${BRANCHES_COVERAGE}%${NC} (目標: ${THRESHOLD_BRANCHES}%)"
+      echo -e "Branches:   ${RED}${coverage_info[1]}%${NC} (目標: ${coverage_info[5]}%)"
     fi
     
-    if (( $(echo "$FUNCTIONS_COVERAGE >= $THRESHOLD_FUNCTIONS" | bc -l) )); then
-      echo -e "Functions:  ${GREEN}${FUNCTIONS_COVERAGE}%${NC} (目標: ${THRESHOLD_FUNCTIONS}%)"
+    if (( $(echo "${coverage_info[2]} >= ${coverage_info[6]}" | bc -l) )); then
+      echo -e "Functions:  ${GREEN}${coverage_info[2]}%${NC} (目標: ${coverage_info[6]}%)"
     else
-      echo -e "Functions:  ${RED}${FUNCTIONS_COVERAGE}%${NC} (目標: ${THRESHOLD_FUNCTIONS}%)"
+      echo -e "Functions:  ${RED}${coverage_info[2]}%${NC} (目標: ${coverage_info[6]}%)"
     fi
     
-    if (( $(echo "$LINES_COVERAGE >= $THRESHOLD_LINES" | bc -l) )); then
-      echo -e "Lines:      ${GREEN}${LINES_COVERAGE}%${NC} (目標: ${THRESHOLD_LINES}%)"
+    if (( $(echo "${coverage_info[3]} >= ${coverage_info[7]}" | bc -l) )); then
+      echo -e "Lines:      ${GREEN}${coverage_info[3]}%${NC} (目標: ${coverage_info[7]}%)"
     else
-      echo -e "Lines:      ${RED}${LINES_COVERAGE}%${NC} (目標: ${THRESHOLD_LINES}%)"
+      echo -e "Lines:      ${RED}${coverage_info[3]}%${NC} (目標: ${coverage_info[7]}%)"
     fi
     
     # 次の目標段階の提案
     ALL_TARGETS_MET=1
     
-    if (( $(echo "$STATEMENTS_COVERAGE < $THRESHOLD_STATEMENTS" | bc -l) || 
-           $(echo "$BRANCHES_COVERAGE < $THRESHOLD_BRANCHES" | bc -l) || 
-           $(echo "$FUNCTIONS_COVERAGE < $THRESHOLD_FUNCTIONS" | bc -l) || 
-           $(echo "$LINES_COVERAGE < $THRESHOLD_LINES" | bc -l) )); then
+    if (( $(echo "${coverage_info[0]} < ${coverage_info[4]}" | bc -l) || 
+           $(echo "${coverage_info[1]} < ${coverage_info[5]}" | bc -l) || 
+           $(echo "${coverage_info[2]} < ${coverage_info[6]}" | bc -l) || 
+           $(echo "${coverage_info[3]} < ${coverage_info[7]}" | bc -l) )); then
       ALL_TARGETS_MET=0
     fi
     
@@ -690,26 +782,21 @@ if [ $TEST_RESULT -eq 0 ]; then
       
       # 未達成の目標を表示
       echo -e "${YELLOW}未達成の目標:${NC}"
-      if (( $(echo "$STATEMENTS_COVERAGE < $THRESHOLD_STATEMENTS" | bc -l) )); then
-        echo -e "- Statements: ${RED}${STATEMENTS_COVERAGE}%${NC} → ${YELLOW}${THRESHOLD_STATEMENTS}%${NC}"
+      if (( $(echo "${coverage_info[0]} < ${coverage_info[4]}" | bc -l) )); then
+        echo -e "- Statements: ${RED}${coverage_info[0]}%${NC} → ${YELLOW}${coverage_info[4]}%${NC}"
       fi
-      if (( $(echo "$BRANCHES_COVERAGE < $THRESHOLD_BRANCHES" | bc -l) )); then
-        echo -e "- Branches:   ${RED}${BRANCHES_COVERAGE}%${NC} → ${YELLOW}${THRESHOLD_BRANCHES}%${NC}"
+      if (( $(echo "${coverage_info[1]} < ${coverage_info[5]}" | bc -l) )); then
+        echo -e "- Branches:   ${RED}${coverage_info[1]}%${NC} → ${YELLOW}${coverage_info[5]}%${NC}"
       fi
-      if (( $(echo "$FUNCTIONS_COVERAGE < $THRESHOLD_FUNCTIONS" | bc -l) )); then
-        echo -e "- Functions:  ${RED}${FUNCTIONS_COVERAGE}%${NC} → ${YELLOW}${THRESHOLD_FUNCTIONS}%${NC}"
+      if (( $(echo "${coverage_info[2]} < ${coverage_info[6]}" | bc -l) )); then
+        echo -e "- Functions:  ${RED}${coverage_info[2]}%${NC} → ${YELLOW}${coverage_info[6]}%${NC}"
       fi
-      if (( $(echo "$LINES_COVERAGE < $THRESHOLD_LINES" | bc -l) )); then
-        echo -e "- Lines:      ${RED}${LINES_COVERAGE}%${NC} → ${YELLOW}${THRESHOLD_LINES}%${NC}"
+      if (( $(echo "${coverage_info[3]} < ${coverage_info[7]}" | bc -l) )); then
+        echo -e "- Lines:      ${RED}${coverage_info[3]}%${NC} → ${YELLOW}${coverage_info[7]}%${NC}"
       fi
     fi
   fi
 else
-  # 失敗原因の分析
-  FAILURE_ANALYSIS=$(analyze_failure_reason)
-  FAILURE_TYPE=${FAILURE_ANALYSIS%%:*}
-  FAILURE_MESSAGE=${FAILURE_ANALYSIS#*:}
-  
   # 失敗原因に応じたメッセージを表示
   print_header "テスト実行が失敗しました 😢"
   print_info "失敗の詳細分析:"
@@ -718,10 +805,9 @@ else
     test_failure)
       print_error "テスト実行エラー: $FAILURE_MESSAGE"
       echo -e "${RED}テストコードに問題があります。アサーションに失敗しています。${NC}"
-      if [ -f "./test-results/test-log.md" ]; then
-        echo -e "\n${YELLOW}失敗したテストの詳細:${NC}"
-        grep -A 3 "## エラーサマリー" ./test-results/test-log.md | head -10
-        echo -e "${YELLOW}...(省略)...${NC}"
+      if [ "$FAILED_TESTS_INFO" != "詳細な失敗情報はありません" ]; then
+        echo -e "\n${YELLOW}失敗したテスト:${NC}"
+        echo -e "$FAILED_TESTS_INFO"
       fi
       
       # 次のアクション
@@ -734,66 +820,54 @@ else
       echo "   ./scripts/run-tests.sh -s \"パターン\" specific"
       ;;
       
+    suite_failure)
+      print_error "テストスイート失敗: $FAILURE_MESSAGE"
+      echo -e "${RED}テストスイートの実行中にエラーが発生しました。${NC}"
+      
+      # コマンドラインからテストスイートの情報を取得
+      if grep -q "Test Suites:" "$OUTPUT_LOG_FILE"; then
+        echo -e "\n${YELLOW}テストスイートの状態:${NC}"
+        grep "Test Suites:" "$OUTPUT_LOG_FILE" | tail -n1
+      fi
+      
+      # 失敗したテストスイートを特定
+      if [ "$FAILED_TESTS_INFO" != "詳細な失敗情報はありません" ]; then
+        echo -e "\n${YELLOW}失敗したテストスイート:${NC}"
+        echo -e "$FAILED_TESTS_INFO"
+      fi
+      
+      # 次のアクション
+      echo -e "\n${BLUE}次のアクション:${NC}"
+      echo -e "1. ${GREEN}デバッグモードで詳細を確認する:${NC}"
+      echo "   ./scripts/run-tests.sh -d $TEST_TYPE"
+      echo -e "2. ${GREEN}テスト環境をクリーンアップしてから再実行する:${NC}"
+      echo "   ./scripts/run-tests.sh -c $TEST_TYPE"
+      echo -e "3. ${GREEN}特定のテストスイートのみを実行する:${NC}"
+      echo "   ./scripts/run-tests.sh -s \"失敗したスイート名\" specific"
+      ;;
+      
     coverage_issue)
       print_error "カバレッジ不足: $FAILURE_MESSAGE"
       
       # カバレッジ情報を表示
       if [ -f "./test-results/detailed-results.json" ]; then
-        # 各カバレッジメトリクスを取得
-        STATEMENTS_COVERAGE=$(grep -o '"statements":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
-        BRANCHES_COVERAGE=$(grep -o '"branches":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
-        FUNCTIONS_COVERAGE=$(grep -o '"functions":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
-        LINES_COVERAGE=$(grep -o '"lines":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
+        # カバレッジ情報を取得
+        coverage_info=($(get_coverage_info))
         
         # 現在のカバレッジ状況
         echo -e "${YELLOW}現在のカバレッジ状況:${NC}"
-        echo -e "- Statements: ${RED}${STATEMENTS_COVERAGE}%${NC}"
-        echo -e "- Branches:   ${RED}${BRANCHES_COVERAGE}%${NC}"
-        echo -e "- Functions:  ${RED}${FUNCTIONS_COVERAGE}%${NC}"
-        echo -e "- Lines:      ${RED}${LINES_COVERAGE}%${NC}"
-        
-        # 目標に応じた閾値
-        case $COVERAGE_TARGET in
-          initial)
-            # 20-30%目標
-            THRESHOLD_STATEMENTS=30
-            THRESHOLD_BRANCHES=20
-            THRESHOLD_FUNCTIONS=25
-            THRESHOLD_LINES=30
-            
-            echo -e "\n${YELLOW}初期段階の目標:${NC}"
-            echo -e "- Statements: ${THRESHOLD_STATEMENTS}%"
-            echo -e "- Branches:   ${THRESHOLD_BRANCHES}%"
-            echo -e "- Functions:  ${THRESHOLD_FUNCTIONS}%"
-            echo -e "- Lines:      ${THRESHOLD_LINES}%"
-            ;;
-          mid)
-            # 40-60%目標
-            THRESHOLD_STATEMENTS=60
-            THRESHOLD_BRANCHES=50
-            THRESHOLD_FUNCTIONS=60
-            THRESHOLD_LINES=60
-            
-            echo -e "\n${YELLOW}中間段階の目標:${NC}"
-            echo -e "- Statements: ${THRESHOLD_STATEMENTS}%"
-            echo -e "- Branches:   ${THRESHOLD_BRANCHES}%"
-            echo -e "- Functions:  ${THRESHOLD_FUNCTIONS}%"
-            echo -e "- Lines:      ${THRESHOLD_LINES}%"
-            ;;
-          final)
-            # 70-80%目標
-            THRESHOLD_STATEMENTS=80
-            THRESHOLD_BRANCHES=70
-            THRESHOLD_FUNCTIONS=80
-            THRESHOLD_LINES=80
-            
-            echo -e "\n${YELLOW}最終段階の目標:${NC}"
-            echo -e "- Statements: ${THRESHOLD_STATEMENTS}%"
-            echo -e "- Branches:   ${THRESHOLD_BRANCHES}%"
-            echo -e "- Functions:  ${THRESHOLD_FUNCTIONS}%"
-            echo -e "- Lines:      ${THRESHOLD_LINES}%"
-            ;;
-        esac
+        echo -e "- Statements: ${RED}${coverage_info[0]}%${NC} (目標: ${coverage_info[4]}%)"
+        echo -e "- Branches:   ${RED}${coverage_info[1]}%${NC} (目標: ${coverage_info[5]}%)"
+        echo -e "- Functions:  ${RED}${coverage_info[2]}%${NC} (目標: ${coverage_info[6]}%)"
+        echo -e "- Lines:      ${RED}${coverage_info[3]}%${NC} (目標: ${coverage_info[7]}%)"
+      else
+        echo -e "${YELLOW}カバレッジ情報が利用できません。${NC}"
+      fi
+      
+      # Jest設定ファイルの内容を表示
+      if [ -f "$JEST_CONFIG_PATH" ]; then
+        echo -e "\n${YELLOW}Jest設定ファイルのカバレッジ閾値:${NC}"
+        grep -A 15 "coverageThreshold" "$JEST_CONFIG_PATH" 2>/dev/null || echo "カバレッジ閾値が設定されていません"
       fi
       
       # 次のアクション
@@ -808,23 +882,91 @@ else
       echo "   主に未テストのファイルに注目してください"
       ;;
       
-    config_issue)
-      print_error "設定エラー: $FAILURE_MESSAGE"
-      echo -e "${RED}テスト設定に問題があります。${NC}"
+    syntax_error)
+      print_error "構文エラー: $FAILURE_MESSAGE"
+      echo -e "${RED}スクリプトまたはテストコードに構文エラーがあります。${NC}"
+      
+      # エラーメッセージの抽出
+      if grep -A 5 "Parse error\|SyntaxError" "$OUTPUT_LOG_FILE"; then
+        echo -e "\n${YELLOW}構文エラーの詳細:${NC}"
+        grep -A 5 "Parse error\|SyntaxError" "$OUTPUT_LOG_FILE" | head -n 6
+      fi
       
       # 次のアクション
       echo -e "\n${BLUE}次のアクション:${NC}"
-      echo -e "1. ${GREEN}Jestの設定ファイルを確認する:${NC}"
-      echo "   cat $JEST_CONFIG_PATH"
-      echo -e "2. ${GREEN}カバレッジを強制的に有効化する:${NC}"
-      echo "   ./scripts/run-tests.sh --force-coverage $TEST_TYPE"
-      echo -e "3. ${GREEN}デバッグモードで詳細ログを確認する:${NC}"
+      echo -e "1. ${GREEN}エラーログを確認して構文エラーを修正する:${NC}"
+      echo "   cat $OUTPUT_LOG_FILE"
+      echo -e "2. ${GREEN}構文チェックのみを実行する:${NC}"
+      echo "   npx eslint \"**/*.js\""
+      ;;
+      
+    execution_error)
+      print_error "実行エラー: $FAILURE_MESSAGE"
+      echo -e "${RED}テスト実行中にシステムエラーが発生しました。${NC}"
+      
+      # 最後のエラーメッセージを抽出
+      if tail -n 20 "$OUTPUT_LOG_FILE" | grep -q "error"; then
+        echo -e "\n${YELLOW}エラーメッセージ:${NC}"
+        tail -n 20 "$OUTPUT_LOG_FILE" | grep -A 3 "error" | head -n 4
+      fi
+      
+      # 次のアクション
+      echo -e "\n${BLUE}次のアクション:${NC}"
+      echo -e "1. ${GREEN}環境をクリーンアップして再実行する:${NC}"
+      echo "   ./scripts/run-tests.sh -c $TEST_TYPE"
+      echo -e "2. ${GREEN}モックモードで実行する:${NC}"
+      echo "   ./scripts/run-tests.sh -m $TEST_TYPE"
+      echo -e "3. ${GREEN}デバッグログを確認する:${NC}"
       echo "   ./scripts/run-tests.sh -d $TEST_TYPE"
+      ;;
+      
+    data_mismatch)
+      print_error "データ不一致: $FAILURE_MESSAGE"
+      echo -e "${RED}Jestの出力と結果JSONファイルの間に不一致があります。${NC}"
+      
+      # Jestの出力
+      if grep -q "Tests:" "$OUTPUT_LOG_FILE"; then
+        echo -e "\n${YELLOW}Jestの出力:${NC}"
+        grep "Tests:" "$OUTPUT_LOG_FILE" | tail -n1
+      fi
+      
+      # JSONデータ
+      if [ -f "./test-results/detailed-results.json" ]; then
+        echo -e "\n${YELLOW}JSON結果データ:${NC}"
+        grep -o '"numTotalTests":[0-9]*,"numFailedTests":[0-9]*,"numPassedTests":[0-9]*' "./test-results/detailed-results.json" || echo "データが見つかりません"
+      fi
+      
+      # 次のアクション
+      echo -e "\n${BLUE}次のアクション:${NC}"
+      echo -e "1. ${GREEN}テスト環境をリセットして再実行する:${NC}"
+      echo "   ./scripts/run-tests.sh -c $TEST_TYPE"
+      echo -e "2. ${GREEN}カスタムレポーターを無効化して実行する:${NC}"
+      echo "   ./scripts/run-tests.sh --config custom-jest.config.js $TEST_TYPE"
+      ;;
+      
+    data_missing)
+      print_error "データ欠落: $FAILURE_MESSAGE"
+      echo -e "${RED}テスト結果ファイルが生成されていません。${NC}"
+      
+      # 次のアクション
+      echo -e "\n${BLUE}次のアクション:${NC}"
+      echo -e "1. ${GREEN}テスト結果ディレクトリを確認:${NC}"
+      echo "   ls -la ./test-results/"
+      echo -e "2. ${GREEN}カスタムレポーターの動作を確認:${NC}"
+      echo "   cat ./custom-reporter.js"
+      echo -e "3. ${GREEN}シンプルな設定で再実行:${NC}"
+      echo "   npx jest --no-coverage"
       ;;
       
     *)
       print_error "不明なエラー"
       echo -e "${RED}原因不明のエラーが発生しました。デバッグモードで追加情報を確認してください。${NC}"
+      
+      # エラーログから抽出
+      if tail -n 20 "$OUTPUT_LOG_FILE" | grep -q "error\|Error\|failed"; then
+        echo -e "\n${YELLOW}エラーメッセージ:${NC}"
+        tail -n 20 "$OUTPUT_LOG_FILE" | grep -A 2 "error\|Error\|failed" | head -n 3
+      fi
       
       # 次のアクション
       echo -e "\n${BLUE}次のアクション:${NC}"
@@ -836,23 +978,10 @@ else
       echo "   ./scripts/run-tests.sh -n $TEST_TYPE"
       ;;
   esac
-  
-  # Jest設定ファイルとカバレッジ閾値の表示
-  if [ -f "$JEST_CONFIG_PATH" ] && ([ $FAILURE_TYPE = "coverage_issue" ] || [ $FAILURE_TYPE = "config_issue" ]); then
-    echo -e "\n${YELLOW}Jest設定ファイルのカバレッジ閾値:${NC}"
-    grep -A 10 "coverageThreshold" "$JEST_CONFIG_PATH" || echo "カバレッジ閾値が設定されていません"
-    
-    # カバレッジ閾値と現在のカバレッジの乖離に関する説明
-    if [ $FAILURE_TYPE = "coverage_issue" ]; then
-      echo -e "\n${YELLOW}注意:${NC} Jest設定ファイルの閾値とrun-tests.shスクリプトの閾値が異なる場合、"
-      echo "より厳しい方の閾値が適用されます。Jest設定ファイルの閾値を調整するか、"
-      echo "カバレッジエラーを無視するオプション(-i)を使用することを検討してください。"
-    fi
-  fi
 fi
 
 # テスト後のクリーンアップ提案
-if [ $TEST_RESULT -eq 0 ] && [ $CLEAN -ne 1 ]; then
+if [ "$FAILURE_TYPE" = "success" ] && [ $CLEAN -ne 1 ]; then
   print_info "次回のテスト実行前に環境をクリーンアップすることをお勧めします:"
   echo "  ./scripts/run-tests.sh -c ..."
 fi

@@ -31,6 +31,7 @@
 #### ユーティリティ関連 (Utils)
 - `__tests__/unit/utils/cookieParser.test.js`
 - `__tests__/unit/utils/responseUtils.test.js`
+- `__tests__/unit/utils/errorHandler.test.js` // 追加実装済み
 
 ### 統合テスト (Integration Tests)
 
@@ -53,7 +54,7 @@
 ### ミドルウェア (Middleware)
 
 ```javascript
-// __tests__/unit/middleware/errorHandler.test.js
+// __tests__/unit/middleware/errorHandler.test.js - 未実装
 describe('エラーハンドリングミドルウェア', () => {
   test('一般的なエラーを正しく処理する', () => {/* ... */});
   test('バリデーションエラーを正しく処理する', () => {/* ... */});
@@ -253,7 +254,8 @@ describe('ユーザー体験テスト', () => {
 ### 優先順位
 
 1. **高優先度**:
-   - ミドルウェアテスト（エラーハンドリング、ロギング、CORS）
+   - ミドルウェアテスト（ロギング、CORS）
+   - ✅ エラーハンドリングユーティリティ（`errorHandler.test.js`として実装済み）
    - 未テスト：市場データ取得エンドポイント（`getMarketData.test.js`）
    - 未テスト：ポートフォリオ関連エンドポイント（`savePortfolio.test.js`、`getPortfolio.test.js`）
    - 未テスト：ポートフォリオ分析サービス（`portfolioAnalysisService.test.js`）
@@ -309,6 +311,7 @@ describe('ユーザー体験テスト', () => {
 
 ### フェーズ1（1-2週間）
 - ミドルウェアテストの実装
+- ✅ エラーハンドリングユーティリティテストの実装（完了）
 - 主要エンドポイントのテスト実装（`getMarketData.test.js`、`savePortfolio.test.js`）
 - カバレッジ目標：40%
 

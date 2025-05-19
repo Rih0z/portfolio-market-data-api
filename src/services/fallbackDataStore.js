@@ -8,6 +8,12 @@
  * 2. 取得失敗したデータの記録と統計
  * 3. 管理者向けAPIのサポート
  * 
+ * 注意:
+ * このモジュールと src/services/usage.js には機能重複があります。
+ * v2.0.0から始まり、v3.0.0で完了する統合計画に沿って、
+ * 両モジュールは段階的に統合される予定です。
+ * 詳細は INTEGRATION_PLAN.md を参照してください。
+ * 
  * @author Portfolio Manager Team
  * @created 2025-05-20
  */

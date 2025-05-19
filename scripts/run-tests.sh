@@ -5,17 +5,6 @@
 # Portfolio Market Data APIテスト実行スクリプト
 # Jest設定ファイルを利用し、各種テスト実行オプションを提供
 #
-# @author Koki Riho
-# @updated 2025-05-15 - 新しいテスト種別の追加、詳細レポート生成オプションの強化
-# @updated 2025-05-16 - カバレッジチャートの自動生成機能追加、テストカバレッジ目標の段階追跡
-# @updated 2025-05-17 - カバレッジオプションが確実に有効になるように修正、強制カバレッジオプション追加
-# @updated 2025-05-19 - Jest設定ファイルを明示的に指定する機能追加、依存関係の明確化
-# @updated 2025-05-20 - カバレッジデータ生成の信頼性向上、デバッグオプション強化
-#
-
-# 便利なサンプルコマンド
-# JEST_COVERAGE=true ./scripts/run-tests.sh integration  # カバレッジを強制的に有効化して統合テストを実行
-# USE_API_MOCKS=true ./scripts/run-tests.sh e2e          # モックを使用してE2Eテストを実行
 
 # 色の設定
 GREEN='\033[0;32m'
@@ -90,25 +79,6 @@ show_help() {
   echo "  initial             初期段階の目標 (20-30%) - 基本的なテスト実装時"
   echo "  mid                 中間段階の目標 (40-60%) - サービス層とAPIハンドラーのテスト時"
   echo "  final               最終段階の目標 (70-80%) - 完全なテストカバレッジ時"
-  echo ""
-  echo "使用例:"
-  echo "  $0 unit             単体テストのみ実行（カバレッジあり）"
-  echo "  $0 -c all           環境クリーンアップ後、すべてのテストを実行"
-  echo "  $0 -a -v e2e        APIサーバー自動起動でE2Eテストを実行し、結果をビジュアル表示"
-  echo "  $0 -m -w unit       モックを使用し、監視モードで単体テストを実行"
-  echo "  $0 quick            単体テストと統合テストを高速実行（モック使用）"
-  echo "  $0 -n integration   カバレッジチェック無効で統合テストを実行"
-  echo "  $0 --force-coverage integration  カバレッジを強制的に有効化して統合テストを実行"
-  echo "  $0 -f -m e2e        テストを強制実行モードで実行（モック使用）"
-  echo "  $0 -d e2e           デバッグモードでE2Eテストを実行（詳細ログ表示）"
-  echo "  $0 -i e2e           カバレッジエラーを無視してテスト成功を正確に表示"
-  echo "  $0 -s \"services/*.test.js\" specific  サービス関連のテストファイルのみ実行"
-  echo "  $0 unit:services    サービス層の単体テストのみ実行"
-  echo "  $0 --chart all      すべてのテストを実行し、カバレッジチャートを生成"
-  echo "  $0 -t mid all       中間段階のカバレッジ目標を設定してすべてのテストを実行"
-  echo "  $0 --config custom-jest.config.js unit  カスタム設定ファイルで単体テストを実行"
-  echo "  $0 --verbose-coverage all    カバレッジデータ処理の詳細ログを確認"
-  echo ""
 }
 
 # 変数の初期化
@@ -228,103 +198,6 @@ if [[ ! "$COVERAGE_TARGET" =~ ^(initial|mid|final)$ ]]; then
   print_error "不明なカバレッジ目標段階: $COVERAGE_TARGET"
   print_info "有効な値: initial, mid, final"
   exit 1
-fi
-
-# Jest configuration のデバッグ情報を追加
-debug_jest_config() {
-  print_info "Jest設定のデバッグ情報を表示します..."
-  
-  # Jest のバージョンを確認
-  JEST_VERSION=$(npx jest --version 2>/dev/null || echo "Jest not found")
-  echo "Jest バージョン: $JEST_VERSION"
-  
-  # 使用するJest設定ファイルの確認
-  echo "使用する設定ファイル: $JEST_CONFIG_PATH"
-  if [ -f "$JEST_CONFIG_PATH" ]; then
-    echo "$JEST_CONFIG_PATH が見つかりました"
-    echo "設定内容:"
-    cat "$JEST_CONFIG_PATH" | grep -E "coverage|collectCoverage|setupFiles|reporters" || echo "主要設定が見つかりません"
-  else
-    print_error "$JEST_CONFIG_PATH が見つかりません"
-    
-    # 代替設定ファイルを探す
-    if [ -f "jest.config.js" ]; then
-      echo "jest.config.js が見つかりました（代替として使用します）"
-      JEST_CONFIG_PATH="jest.config.js"
-    elif [ -f "jest.config.json" ]; then
-      echo "jest.config.json が見つかりました（代替として使用します）"
-      JEST_CONFIG_PATH="jest.config.json"
-    else
-      # package.jsonのJest設定を確認
-      if [ -f "package.json" ]; then
-        echo "package.json の Jest 設定を確認:"
-        cat package.json | grep -A 20 '"jest":' || echo "package.jsonにJest設定が見つかりません"
-      fi
-    fi
-  fi
-  
-  # 関連ファイルの存在確認
-  echo "関連ファイルのチェック:"
-  
-  if [ -f "jest.setup.js" ]; then
-    echo "- jest.setup.js: 存在します"
-  else
-    echo "- jest.setup.js: 見つかりません"
-  fi
-  
-  if [ -f "__tests__/setup.js" ]; then
-    echo "- __tests__/setup.js: 存在します"
-  else
-    echo "- __tests__/setup.js: 見つかりません"
-  fi
-  
-  if [ -f "custom-reporter.js" ]; then
-    echo "- custom-reporter.js: 存在します"
-  else
-    echo "- custom-reporter.js: 見つかりません" 
-  fi
-  
-  # .env.localファイルの確認
-  if [ -f ".env.local" ]; then
-    echo ".env.local ファイルをチェックしています（カバレッジ設定の上書きがないか）:"
-    cat .env.local | grep -E "JEST|COVERAGE|collectCoverage|jest" || echo "カバレッジ関連の設定は見つかりません"
-  fi
-  
-  # 関連するnodeモジュールをチェック
-  echo "インストールされている関連パッケージ:"
-  npm list | grep -E "jest|istanbul|coverage" || echo "カバレッジ関連パッケージが見つかりません"
-}
-
-# デバッグモードの場合は、Jest設定も表示
-if [ $DEBUG_MODE -eq 1 ]; then
-  debug_jest_config
-fi
-
-# nvmが指定されている場合、Node.js 18に切り替え
-if [ $USE_NVM -eq 1 ]; then
-  print_info "nvmを使用してNode.js 18に切り替えます..."
-  
-  # nvmをロード
-  export NVM_DIR="$HOME/.nvm"
-  [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-  
-  # 現在のNode.jsバージョンを確認
-  CURRENT_NODE_VERSION=$(node -v)
-  
-  if [[ "$CURRENT_NODE_VERSION" == v18.* ]]; then
-    print_success "既にNode.js $CURRENT_NODE_VERSION を使用しています"
-  else
-    # Node.js 18に切り替え
-    nvm use 18 || {
-      print_warning "Node.js 18に切り替えられませんでした。インストールを試みます..."
-      nvm install 18 && nvm use 18 || {
-        print_error "Node.js 18のインストールに失敗しました。"
-        print_info "nvm install 18 を手動で実行するか、npm config set engine-strict false を実行してください。"
-        exit 1
-      }
-    }
-    print_success "Node.js $(node -v) に切り替えました"
-  fi
 fi
 
 # 環境変数が既に設定されているかチェック
@@ -581,56 +454,98 @@ fi
 # テスト結果
 TEST_RESULT=$?
 
-# カバレッジ関連ファイルのチェック
-if [ $NO_COVERAGE -ne 1 ] || [ $FORCE_COVERAGE -eq 1 ]; then
-  # カバレッジ結果ファイルの存在チェック
-  if [ ! -f "./test-results/detailed-results.json" ]; then
-    print_warning "カバレッジ結果ファイルが見つかりません。Jest実行中にエラーが発生した可能性があります。"
+# 失敗の詳細な理由を特定する関数
+analyze_failure_reason() {
+  local has_coverage_data=0
+  local has_coverage_issue=0
+  local has_failed_tests=0
+  local has_config_issue=0
+  local failure_message=""
+  
+  # カバレッジデータの有無を確認
+  if [ -f "./test-results/detailed-results.json" ]; then
+    # 失敗したテストがあるか確認
+    FAILED_TESTS=$(grep -o '"numFailedTests":[0-9]*' ./test-results/detailed-results.json | cut -d':' -f2)
     
-    # カバレッジディレクトリを確認
-    if [ -d "./coverage" ]; then
-      print_info "coverage ディレクトリが存在します。内容を確認します："
-      ls -la ./coverage
+    if [ "$FAILED_TESTS" != "0" ]; then
+      has_failed_tests=1
+      failure_message="$FAILED_TESTS件のテストが失敗しています"
+    fi
+    
+    # カバレッジ情報があるか確認
+    if grep -q "coverageMap" ./test-results/detailed-results.json; then
+      has_coverage_data=1
       
-      # coverage-final.json が存在するか確認
-      if [ -f "./coverage/coverage-final.json" ]; then
-        print_success "coverage-final.json ファイルが見つかりました。"
+      # カバレッジ閾値に達しているか確認
+      STATEMENTS_COVERAGE=$(grep -o '"statements":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
+      BRANCHES_COVERAGE=$(grep -o '"branches":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
+      FUNCTIONS_COVERAGE=$(grep -o '"functions":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
+      LINES_COVERAGE=$(grep -o '"lines":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
+      
+      # 目標に応じた閾値
+      case $COVERAGE_TARGET in
+        initial)
+          # 20-30%目標
+          THRESHOLD_STATEMENTS=30
+          THRESHOLD_BRANCHES=20
+          THRESHOLD_FUNCTIONS=25
+          THRESHOLD_LINES=30
+          ;;
+        mid)
+          # 40-60%目標
+          THRESHOLD_STATEMENTS=60
+          THRESHOLD_BRANCHES=50
+          THRESHOLD_FUNCTIONS=60
+          THRESHOLD_LINES=60
+          ;;
+        final)
+          # 70-80%目標
+          THRESHOLD_STATEMENTS=80
+          THRESHOLD_BRANCHES=70
+          THRESHOLD_FUNCTIONS=80
+          THRESHOLD_LINES=80
+          ;;
+      esac
+      
+      # カバレッジが閾値を下回っているか確認
+      if (( $(echo "$STATEMENTS_COVERAGE < $THRESHOLD_STATEMENTS" | bc -l) || 
+             $(echo "$BRANCHES_COVERAGE < $THRESHOLD_BRANCHES" | bc -l) || 
+             $(echo "$FUNCTIONS_COVERAGE < $THRESHOLD_FUNCTIONS" | bc -l) || 
+             $(echo "$LINES_COVERAGE < $THRESHOLD_LINES" | bc -l) )); then
+        has_coverage_issue=1
         
-        # デバッグモードでカバレッジファイルの詳細を表示
-        if [ $DEBUG_MODE -eq 1 ] || [ $VERBOSE_COVERAGE -eq 1 ]; then
-          print_info "カバレッジファイルの先頭部分:"
-          head -n 20 ./coverage/coverage-final.json
+        if [ -z "$failure_message" ]; then
+          failure_message="コードカバレッジが要求レベルに達していません"
         fi
-      else
-        print_warning "coverage-final.json ファイルが見つかりません。"
-        
-        # 代替ファイルを確認
-        for file in ./coverage/*; do
-          if [ -f "$file" ]; then
-            print_info "検出されたファイル: $file"
-          fi
-        done
       fi
     else
-      print_warning "coverage ディレクトリが見つかりません。"
-      print_info "カバレッジを有効にして再実行してみてください: --force-coverage オプションを使用"
+      has_config_issue=1
+      failure_message="カバレッジデータが生成されていません"
     fi
   else
-    # coverageMapプロパティの存在チェック
-    if ! grep -q "coverageMap" ./test-results/detailed-results.json; then
-      print_warning "カバレッジデータが結果ファイルに含まれていません。"
-      print_info "Jest設定でcollectCoverageオプションが有効になっていることを確認してください。"
-      
-      # カバレッジファイルを直接コピー（緊急対応）
-      if [ -f "./coverage/coverage-final.json" ]; then
-        print_info "coverage-final.json ファイルを ./test-results/coverage-data.json にコピーします。"
-        cp ./coverage/coverage-final.json ./test-results/coverage-data.json
-      fi
-    else
-      print_success "カバレッジデータが結果ファイルに含まれています。"
+    has_config_issue=1
+    failure_message="テスト結果ファイルが見つかりません"
+  fi
+  
+  # 設定ファイルの問題を確認
+  if [ ! -f "$JEST_CONFIG_PATH" ]; then
+    has_config_issue=1
+    if [ -z "$failure_message" ]; then
+      failure_message="Jest設定ファイルが見つかりません: $JEST_CONFIG_PATH"
     fi
   fi
-fi
+  
+  # 最終的な分析
+  if [ $has_failed_tests -eq 1 ]; then
+    echo "test_failure:$failure_message"
+  elif [ $has_coverage_issue -eq 1 ]; then
+    echo "coverage_issue:$failure_message"
+  elif [ $has_config_issue -eq 1 ]; then
+    echo "config_issue:$failure_message"
+  else
+    echo "unknown:詳細不明のエラーが発生しました"
+  fi
+}
 
 # カバレッジエラーを無視するモードが有効な場合
 if [ $IGNORE_COVERAGE_ERRORS -eq 1 ] && [ -f "./test-results/detailed-results.json" ]; then
@@ -655,36 +570,6 @@ if [ $GENERATE_CHART -eq 1 ] && [ $NO_COVERAGE -ne 1 ] && [ -f "./test-results/d
     print_success "カバレッジチャートが生成されました"
   else
     print_warning "カバレッジチャートの生成に失敗しました"
-    # エラーの詳細を確認
-    if [ $DEBUG_MODE -eq 1 ]; then
-      print_info "チャート生成スクリプトを手動で実行してエラーを確認します..."
-      NODE_ENV=production node --trace-warnings ./scripts/generate-coverage-chart.js
-    fi
-  fi
-fi
-
-# HTMLカバレッジレポートを開く
-if [ $HTML_COVERAGE -eq 1 ] && [ $TEST_RESULT -eq 0 ]; then
-  print_info "HTMLカバレッジレポートを開いています..."
-  if [ -f "./coverage/lcov-report/index.html" ]; then
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-      # macOS
-      open ./coverage/lcov-report/index.html
-    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-      # Linux
-      if command -v xdg-open > /dev/null; then
-        xdg-open ./coverage/lcov-report/index.html
-      else
-        print_warning "xdg-open コマンドが見つかりません。ブラウザで ./coverage/lcov-report/index.html を開いてください。"
-      fi
-    elif [[ "$OSTYPE" == "cygwin" ]] || [[ "$OSTYPE" == "msys" ]] || [[ "$OSTYPE" == "win32" ]]; then
-      # Windows
-      start ./coverage/lcov-report/index.html
-    else
-      print_warning "未知のOSタイプです。ブラウザで ./coverage/lcov-report/index.html を開いてください。"
-    fi
-  else
-    print_warning "カバレッジレポートが見つかりません。"
   fi
 fi
 
@@ -820,37 +705,150 @@ if [ $TEST_RESULT -eq 0 ]; then
     fi
   fi
 else
-  print_header "テスト実行が失敗しました... 😢"
+  # 失敗原因の分析
+  FAILURE_ANALYSIS=$(analyze_failure_reason)
+  FAILURE_TYPE=${FAILURE_ANALYSIS%%:*}
+  FAILURE_MESSAGE=${FAILURE_ANALYSIS#*:}
   
-  # デバッグモードの場合、詳細情報を表示
-  if [ $DEBUG_MODE -eq 1 ]; then
-    print_info "テスト失敗の詳細情報:"
-    echo "テスト種別: $TEST_TYPE"
-    echo "終了コード: $TEST_RESULT"
-    
-    if [ -f "./test-results/detailed-results.json" ]; then
-      FAILED_TESTS=$(grep -o '"numFailedTests":[0-9]*' ./test-results/detailed-results.json | cut -d':' -f2)
-      print_info "失敗したテスト数: $FAILED_TESTS"
-      
-      # 失敗したテストの詳細を表示（最大5件）
+  # 失敗原因に応じたメッセージを表示
+  print_header "テスト実行が失敗しました 😢"
+  print_info "失敗の詳細分析:"
+  
+  case $FAILURE_TYPE in
+    test_failure)
+      print_error "テスト実行エラー: $FAILURE_MESSAGE"
+      echo -e "${RED}テストコードに問題があります。アサーションに失敗しています。${NC}"
       if [ -f "./test-results/test-log.md" ]; then
-        echo "失敗したテストの詳細:"
-        grep -A 5 "## エラーサマリー" ./test-results/test-log.md | head -10
+        echo -e "\n${YELLOW}失敗したテストの詳細:${NC}"
+        grep -A 3 "## エラーサマリー" ./test-results/test-log.md | head -10
+        echo -e "${YELLOW}...(省略)...${NC}"
       fi
-    fi
-    
-    echo "ログファイルは ./test-results/ ディレクトリにあります"
-  fi
+      
+      # 次のアクション
+      echo -e "\n${BLUE}次のアクション:${NC}"
+      echo -e "1. ${GREEN}失敗したテストを確認する:${NC}"
+      echo "   cat ./test-results/test-log.md"
+      echo -e "2. ${GREEN}ビジュアルレポートで詳細を確認する:${NC}"
+      echo "   ./scripts/run-tests.sh -v $TEST_TYPE"
+      echo -e "3. ${GREEN}特定のテストだけを実行して調査する:${NC}"
+      echo "   ./scripts/run-tests.sh -s \"パターン\" specific"
+      ;;
+      
+    coverage_issue)
+      print_error "カバレッジ不足: $FAILURE_MESSAGE"
+      
+      # カバレッジ情報を表示
+      if [ -f "./test-results/detailed-results.json" ]; then
+        # 各カバレッジメトリクスを取得
+        STATEMENTS_COVERAGE=$(grep -o '"statements":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
+        BRANCHES_COVERAGE=$(grep -o '"branches":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
+        FUNCTIONS_COVERAGE=$(grep -o '"functions":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
+        LINES_COVERAGE=$(grep -o '"lines":{"covered":[0-9]*,"total":[0-9]*,"pct":[0-9.]*' ./test-results/detailed-results.json | awk -F: '{print $6}' | sed 's/}//')
+        
+        # 現在のカバレッジ状況
+        echo -e "${YELLOW}現在のカバレッジ状況:${NC}"
+        echo -e "- Statements: ${RED}${STATEMENTS_COVERAGE}%${NC}"
+        echo -e "- Branches:   ${RED}${BRANCHES_COVERAGE}%${NC}"
+        echo -e "- Functions:  ${RED}${FUNCTIONS_COVERAGE}%${NC}"
+        echo -e "- Lines:      ${RED}${LINES_COVERAGE}%${NC}"
+        
+        # 目標に応じた閾値
+        case $COVERAGE_TARGET in
+          initial)
+            # 20-30%目標
+            THRESHOLD_STATEMENTS=30
+            THRESHOLD_BRANCHES=20
+            THRESHOLD_FUNCTIONS=25
+            THRESHOLD_LINES=30
+            
+            echo -e "\n${YELLOW}初期段階の目標:${NC}"
+            echo -e "- Statements: ${THRESHOLD_STATEMENTS}%"
+            echo -e "- Branches:   ${THRESHOLD_BRANCHES}%"
+            echo -e "- Functions:  ${THRESHOLD_FUNCTIONS}%"
+            echo -e "- Lines:      ${THRESHOLD_LINES}%"
+            ;;
+          mid)
+            # 40-60%目標
+            THRESHOLD_STATEMENTS=60
+            THRESHOLD_BRANCHES=50
+            THRESHOLD_FUNCTIONS=60
+            THRESHOLD_LINES=60
+            
+            echo -e "\n${YELLOW}中間段階の目標:${NC}"
+            echo -e "- Statements: ${THRESHOLD_STATEMENTS}%"
+            echo -e "- Branches:   ${THRESHOLD_BRANCHES}%"
+            echo -e "- Functions:  ${THRESHOLD_FUNCTIONS}%"
+            echo -e "- Lines:      ${THRESHOLD_LINES}%"
+            ;;
+          final)
+            # 70-80%目標
+            THRESHOLD_STATEMENTS=80
+            THRESHOLD_BRANCHES=70
+            THRESHOLD_FUNCTIONS=80
+            THRESHOLD_LINES=80
+            
+            echo -e "\n${YELLOW}最終段階の目標:${NC}"
+            echo -e "- Statements: ${THRESHOLD_STATEMENTS}%"
+            echo -e "- Branches:   ${THRESHOLD_BRANCHES}%"
+            echo -e "- Functions:  ${THRESHOLD_FUNCTIONS}%"
+            echo -e "- Lines:      ${THRESHOLD_LINES}%"
+            ;;
+        esac
+      fi
+      
+      # 次のアクション
+      echo -e "\n${BLUE}次のアクション:${NC}"
+      echo -e "1. ${GREEN}カバレッジを無視してテストを実行する:${NC}"
+      echo "   ./scripts/run-tests.sh -i $TEST_TYPE"
+      echo -e "2. ${GREEN}より適切なカバレッジ目標を設定する:${NC}"
+      echo "   ./scripts/run-tests.sh -t initial $TEST_TYPE"
+      echo -e "3. ${GREEN}カバレッジレポートを確認して足りない部分を特定する:${NC}"
+      echo "   ./scripts/run-tests.sh --html-coverage $TEST_TYPE"
+      echo -e "4. ${GREEN}テストを追加してカバレッジを向上させる:${NC}"
+      echo "   主に未テストのファイルに注目してください"
+      ;;
+      
+    config_issue)
+      print_error "設定エラー: $FAILURE_MESSAGE"
+      echo -e "${RED}テスト設定に問題があります。${NC}"
+      
+      # 次のアクション
+      echo -e "\n${BLUE}次のアクション:${NC}"
+      echo -e "1. ${GREEN}Jestの設定ファイルを確認する:${NC}"
+      echo "   cat $JEST_CONFIG_PATH"
+      echo -e "2. ${GREEN}カバレッジを強制的に有効化する:${NC}"
+      echo "   ./scripts/run-tests.sh --force-coverage $TEST_TYPE"
+      echo -e "3. ${GREEN}デバッグモードで詳細ログを確認する:${NC}"
+      echo "   ./scripts/run-tests.sh -d $TEST_TYPE"
+      ;;
+      
+    *)
+      print_error "不明なエラー"
+      echo -e "${RED}原因不明のエラーが発生しました。デバッグモードで追加情報を確認してください。${NC}"
+      
+      # 次のアクション
+      echo -e "\n${BLUE}次のアクション:${NC}"
+      echo -e "1. ${GREEN}デバッグモードで再実行する:${NC}"
+      echo "   ./scripts/run-tests.sh -d $TEST_TYPE"
+      echo -e "2. ${GREEN}テスト環境をクリーンアップして再実行する:${NC}"
+      echo "   ./scripts/run-tests.sh -c $TEST_TYPE"
+      echo -e "3. ${GREEN}カバレッジを無効化して実行する:${NC}"
+      echo "   ./scripts/run-tests.sh -n $TEST_TYPE"
+      ;;
+  esac
   
-  # 改善提案を表示
-  print_info "改善提案:"
-  echo "- 詳細なエラー情報を確認: cat ./test-results/test-log.md"
-  echo "- ビジュアルレポートを表示: ./scripts/run-tests.sh -v $TEST_TYPE"
-  echo "- モックモードでテストを再実行: ./scripts/run-tests.sh -m $TEST_TYPE"
-  echo "- カバレッジエラーを無視してテスト: ./scripts/run-tests.sh -i $TEST_TYPE"
-  echo "- カバレッジの問題が原因の場合は強制的に有効化: ./scripts/run-tests.sh --force-coverage $TEST_TYPE"
-  echo "- デバッグモードで詳細情報を表示: ./scripts/run-tests.sh -d $TEST_TYPE"
-  echo "- カバレッジデータ処理の詳細を確認: ./scripts/run-tests.sh --verbose-coverage $TEST_TYPE"
+  # Jest設定ファイルとカバレッジ閾値の表示
+  if [ -f "$JEST_CONFIG_PATH" ] && ([ $FAILURE_TYPE = "coverage_issue" ] || [ $FAILURE_TYPE = "config_issue" ]); then
+    echo -e "\n${YELLOW}Jest設定ファイルのカバレッジ閾値:${NC}"
+    grep -A 10 "coverageThreshold" "$JEST_CONFIG_PATH" || echo "カバレッジ閾値が設定されていません"
+    
+    # カバレッジ閾値と現在のカバレッジの乖離に関する説明
+    if [ $FAILURE_TYPE = "coverage_issue" ]; then
+      echo -e "\n${YELLOW}注意:${NC} Jest設定ファイルの閾値とrun-tests.shスクリプトの閾値が異なる場合、"
+      echo "より厳しい方の閾値が適用されます。Jest設定ファイルの閾値を調整するか、"
+      echo "カバレッジエラーを無視するオプション(-i)を使用することを検討してください。"
+    fi
+  fi
 fi
 
 # テスト後のクリーンアップ提案

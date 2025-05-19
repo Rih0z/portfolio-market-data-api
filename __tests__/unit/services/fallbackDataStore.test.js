@@ -159,7 +159,6 @@ describe('Fallback Data Store Service', () => {
           return Promise.resolve({
             data: {
               [TEST_SYMBOL]: {
-                ticker: TEST_SYMBOL,
                 price: 150,
                 change: 1.5,
                 name: 'Apple Inc.'
@@ -211,7 +210,7 @@ describe('Fallback Data Store Service', () => {
           Item: expect.objectContaining({
             symbol: TEST_SYMBOL,
             type: TEST_TYPE,
-            reason: errorInfo.message,
+            reason: 'API timeout',
             dateKey: expect.any(String)
           })
         })
@@ -374,15 +373,12 @@ describe('Fallback Data Store Service', () => {
     });
     
     test('現在のフォールバックデータをGitHubに書き出す', async () => {
-      // テストデータ
-      const failedSymbols = [TEST_SYMBOL, 'MSFT', '7203'];
-      
       // 失敗した銘柄のモック
       mockDynamoDb.query.mockReturnValue({
         promise: jest.fn().mockResolvedValue({
           Items: [
             {
-              id: `failure:${TEST_SYMBOL}`,
+              id: `failure:${TEST_SYMBOL}:us-stock`,
               type: 'us-stock'
             }
           ]
@@ -424,7 +420,8 @@ describe('Fallback Data Store Service', () => {
     
     test('GitHub APIエラー時はfalseを返す', async () => {
       // GitHub APIがエラーをスローするようにモック
-      axios.get.mockRejectedValue(new Error('API error'));
+      const mockError = new Error('API error');
+      axios.get.mockRejectedValue(mockError);
       
       // 関数実行
       const result = await fallbackDataStore.exportCurrentFallbacksToGitHub();
@@ -433,7 +430,7 @@ describe('Fallback Data Store Service', () => {
       expect(result).toBe(false);
       expect(logger.error).toHaveBeenCalledWith(
         'Error exporting fallbacks to GitHub:',
-        expect.any(Error)
+        mockError
       );
     });
     

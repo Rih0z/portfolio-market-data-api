@@ -171,6 +171,11 @@ const getFallbackForSymbol = async (symbol, type) => {
     return null;
   }
   
+  // 必要な場合はtickerプロパティを追加
+  if (!symbolData.ticker) {
+    symbolData.ticker = symbol;
+  }
+  
   // 最終更新日時を設定
   if (!symbolData.lastUpdated) {
     symbolData.lastUpdated = new Date().toISOString();
@@ -188,15 +193,21 @@ const getFallbackForSymbol = async (symbol, type) => {
  * データ取得失敗を記録する
  * @param {string} symbol - 銘柄コード
  * @param {string} type - データタイプ
- * @param {string} reason - 失敗理由
+ * @param {Error|string} errorInfo - 失敗理由
  * @returns {Promise<boolean>} 成功したかどうか
  */
-const recordFailedFetch = async (symbol, type, reason) => {
+const recordFailedFetch = async (symbol, type, errorInfo) => {
   try {
     const dynamoDb = getDynamoDb();
     
     const now = new Date();
     const dateKey = now.toISOString().split('T')[0]; // YYYY-MM-DD
+    
+    // エラー情報の処理
+    let reason = errorInfo;
+    if (errorInfo instanceof Error) {
+      reason = errorInfo.message;
+    }
     
     // データ取得失敗の記録
     const params = {
@@ -334,9 +345,9 @@ const exportCurrentFallbacksToGitHub = async () => {
       // DynamoDBから最新の失敗記録を取得
       const queryParams = {
         TableName: FALLBACK_TABLE,
-        KeyConditionExpression: 'id = :id',
+        KeyConditionExpression: 'begins_with(id, :id)',
         ExpressionAttributeValues: {
-          ':id': `failure:${symbol}`
+          ':id': `failure:${symbol}:`
         },
         ScanIndexForward: false, // 降順（最新のものから）
         Limit: 1
@@ -359,8 +370,7 @@ const exportCurrentFallbacksToGitHub = async () => {
         case 'jp-stock':
         case 'us-stock':
           stocks[symbol] = {
-            symbol,
-            type,
+            ticker: symbol,
             price: cachedData.price,
             change: cachedData.change,
             changePercent: cachedData.changePercent,
@@ -371,8 +381,7 @@ const exportCurrentFallbacksToGitHub = async () => {
           break;
         case 'etf':
           etfs[symbol] = {
-            symbol,
-            type,
+            ticker: symbol,
             price: cachedData.price,
             change: cachedData.change,
             changePercent: cachedData.changePercent,
@@ -383,8 +392,7 @@ const exportCurrentFallbacksToGitHub = async () => {
           break;
         case 'mutual-fund':
           mutualFunds[symbol] = {
-            symbol,
-            type,
+            ticker: symbol,
             price: cachedData.price,
             change: cachedData.change,
             changePercent: cachedData.changePercent,
@@ -395,7 +403,7 @@ const exportCurrentFallbacksToGitHub = async () => {
           break;
         case 'exchange-rate':
           exchangeRates[symbol] = {
-            symbol,
+            ticker: symbol,
             base: cachedData.base,
             target: cachedData.target,
             rate: cachedData.rate,
@@ -561,12 +569,13 @@ const getFailureStatistics = async (days = 7) => {
   }
 };
 
+// テスト用にキャッシュをエクスポート
 module.exports = {
   getFallbackData,
   getFallbackForSymbol,
   recordFailedFetch,
   getFailedSymbols,
   exportCurrentFallbacksToGitHub,
-  getFailureStatistics
+  getFailureStatistics,
+  fallbackDataCache
 };
-

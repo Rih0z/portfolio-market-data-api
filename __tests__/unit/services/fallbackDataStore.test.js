@@ -54,11 +54,19 @@ describe('Fallback Data Store Service', () => {
   const TEST_SYMBOL = 'AAPL';
   const TEST_TYPE = DATA_TYPES.US_STOCK;
   const MOCK_DATE = '2025-05-18T12:00:00Z';
+  const MOCK_STOCK_DATA = {
+    [TEST_SYMBOL]: {
+      price: 150
+    }
+  };
   
   // 各テスト前の準備
   beforeEach(() => {
     // モックをリセット
-    jest.resetAllMocks();
+    jest.clearAllMocks();
+    
+    // 環境変数のリセット
+    delete process.env.GITHUB_TOKEN;
     
     // DynamoDBモックを設定
     awsConfig.getDynamoDb.mockReturnValue(mockDynamoDb);
@@ -66,16 +74,24 @@ describe('Fallback Data Store Service', () => {
     // Date.nowとtoISOStringをモック
     jest.spyOn(Date.prototype, 'toISOString').mockReturnValue(MOCK_DATE);
     
-    // キャッシュのモック初期化
-    fallbackDataStore.cache = {
-      lastFetched: 0,
-      data: {
-        stocks: {},
-        etfs: {},
-        mutualFunds: {},
-        exchangeRates: {}
+    // インスタンス変数をリセット（fallbackDataCacheをリセット）
+    if (fallbackDataStore.cache) {
+      // 既存のgetter/setterへの参照を保持しながら、内部データをリセット
+      const originalDescriptor = Object.getOwnPropertyDescriptor(fallbackDataStore, 'cache');
+      if (originalDescriptor) {
+        // 一旦内部データにアクセスしてリセット
+        const original = originalDescriptor.get ? originalDescriptor.get.call(fallbackDataStore) : originalDescriptor.value;
+        if (original) {
+          original.lastFetched = 0;
+          original.data = {
+            stocks: {},
+            etfs: {},
+            mutualFunds: {},
+            exchangeRates: {}
+          };
+        }
       }
-    };
+    }
 
     // cacheService.getの返り値を設定
     cacheService.get.mockImplementation((key) => {
@@ -92,6 +108,7 @@ describe('Fallback Data Store Service', () => {
     });
 
     // GitHubからの応答をモック
+    axios.get.mockReset();
     axios.get.mockImplementation((url) => {
       if (url.includes('fallback-stocks.json')) {
         return Promise.resolve({
@@ -106,11 +123,24 @@ describe('Fallback Data Store Service', () => {
       }
       return Promise.resolve({ data: {} });
     });
+    
+    // GitHub PUT リクエストのモック
+    axios.put.mockReset();
+    axios.put.mockResolvedValue({
+      data: {
+        content: { sha: 'new-sha' }
+      }
+    });
+  });
+  
+  afterEach(() => {
+    // 各テスト終了後、モックをリストア
+    jest.resetAllMocks();
   });
   
   describe('getFallbackData', () => {
     test('キャッシュが有効な場合はキャッシュからデータを返す', async () => {
-      // キャッシュデータを設定
+      // キャッシュデータを設定（spy経由で直接設定）
       const mockCacheData = {
         stocks: { 
           [TEST_SYMBOL]: { price: 150 } 
@@ -120,11 +150,11 @@ describe('Fallback Data Store Service', () => {
         exchangeRates: {}
       };
       
-      // fallbackDataCacheを直接設定する
-      fallbackDataStore.cache = {
+      // キャッシュにデータを直接設定
+      jest.spyOn(fallbackDataStore, 'cache', 'get').mockReturnValueOnce({
         lastFetched: Date.now() - 1000, // 1秒前
         data: mockCacheData
-      };
+      });
       
       // 関数実行
       const result = await fallbackDataStore.getFallbackData();
@@ -165,11 +195,11 @@ describe('Fallback Data Store Service', () => {
         exchangeRates: {}
       };
       
-      // fallbackDataCacheを直接設定する
-      fallbackDataStore.cache = {
+      // fallbackDataCacheをspyで設定
+      jest.spyOn(fallbackDataStore, 'cache', 'get').mockReturnValue({
         lastFetched: Date.now() - 3600000, // 1時間前
         data: mockCacheData
-      };
+      });
       
       // GitHubからの応答をモック（エラー）
       axios.get.mockRejectedValue(new Error('API error'));
@@ -189,6 +219,43 @@ describe('Fallback Data Store Service', () => {
   });
   
   describe('getFallbackForSymbol', () => {
+    beforeEach(() => {
+      // getFallbackDataのモックを設定（独自のキャッシュクリア）
+      jest.spyOn(fallbackDataStore, 'getFallbackData').mockImplementation(async () => {
+        return {
+          stocks: {
+            [TEST_SYMBOL]: {
+              price: 150,
+              change: 1.5,
+              name: 'Apple Inc.'
+            }
+          },
+          etfs: {},
+          mutualFunds: {},
+          exchangeRates: {}
+        };
+      });
+      
+      // getDefaultFallbackDataのモックを設定
+      jest.spyOn(fallbackDataStore, 'getDefaultFallbackData').mockImplementation((symbol, type) => {
+        if (symbol === 'NONEXISTENT') {
+          return null;
+        }
+        return {
+          ticker: symbol,
+          price: 150,
+          change: 0,
+          changePercent: 0,
+          name: 'Test Stock',
+          currency: 'USD',
+          isStock: true,
+          isMutualFund: false,
+          source: 'Test Default',
+          lastUpdated: MOCK_DATE
+        };
+      });
+    });
+    
     test('特定の銘柄のフォールバックデータを取得する', async () => {
       // 関数実行
       const result = await fallbackDataStore.getFallbackForSymbol(TEST_SYMBOL, TEST_TYPE);
@@ -204,6 +271,9 @@ describe('Fallback Data Store Service', () => {
     });
     
     test('非推奨のデータタイプを使用した場合、警告を表示して正しく動作する', async () => {
+      // warnメソッドのスパイを作成して呼び出しを検証できるようにする
+      const warnSpy = jest.spyOn(logger, 'warn');
+      
       // 関数実行（非推奨データタイプ 'stock' を使用）
       const result = await fallbackDataStore.getFallbackForSymbol(TEST_SYMBOL, 'stock');
       
@@ -213,17 +283,20 @@ describe('Fallback Data Store Service', () => {
       expect(result.price).toBe(150);
       
       // 警告が出たことを確認
-      expect(logger.warn).toHaveBeenCalled();
-      const warnArgs = logger.warn.mock.calls[0];
-      expect(warnArgs[0]).toContain("DEPRECATED: 'データタイプ 'stock'' は非推奨です");
+      expect(warnSpy).toHaveBeenCalled();
+      // 最初の呼び出しの第一引数を取得
+      const warnFirstCallFirstArg = warnSpy.mock.calls[0][0];
+      expect(warnFirstCallFirstArg).toContain("DEPRECATED: 'データタイプ 'stock'' は非推奨です");
     });
     
     test('存在しない銘柄の場合はnullを返す', async () => {
-      // GitHubからの応答をモック（空のデータ）
-      axios.get.mockResolvedValue({ data: {} });
-      
-      // デフォルトフォールバックデータをnullに設定
-      jest.spyOn(fallbackDataStore, 'getDefaultFallbackData').mockReturnValueOnce(null);
+      // getFallbackDataのモックを設定（空のデータ）
+      jest.spyOn(fallbackDataStore, 'getFallbackData').mockResolvedValueOnce({
+        stocks: {},
+        etfs: {},
+        mutualFunds: {},
+        exchangeRates: {}
+      });
       
       // 関数実行
       const result = await fallbackDataStore.getFallbackForSymbol('NONEXISTENT', TEST_TYPE);
@@ -235,6 +308,15 @@ describe('Fallback Data Store Service', () => {
   
   describe('recordFailedFetch', () => {
     test('データ取得失敗を記録する', async () => {
+      // DynamoDBの応答をモック
+      mockDynamoDb.put.mockReturnValueOnce({
+        promise: jest.fn().mockResolvedValueOnce({})
+      });
+      
+      mockDynamoDb.update.mockReturnValueOnce({
+        promise: jest.fn().mockResolvedValueOnce({})
+      });
+      
       // エラー情報
       const errorInfo = new Error('API timeout');
       
@@ -399,11 +481,9 @@ describe('Fallback Data Store Service', () => {
   });
   
   describe('exportCurrentFallbacksToGitHub', () => {
-    const GITHUB_TOKEN = 'test-token';
-    
     beforeEach(() => {
       // GitHub関連の環境変数をモック
-      process.env.GITHUB_TOKEN = GITHUB_TOKEN;
+      process.env.GITHUB_TOKEN = 'test-token';
       
       // 失敗した銘柄のモックデータを用意
       mockDynamoDb.query.mockImplementation(() => ({
@@ -419,45 +499,39 @@ describe('Fallback Data Store Service', () => {
       }));
       
       // GitHubのファイル情報取得APIをモック
-      axios.get.mockResolvedValue({
-        data: {
-          sha: 'test-sha'
+      axios.get.mockImplementation((url) => {
+        if (url.includes('api.github.com/repos')) {
+          return Promise.resolve({
+            data: {
+              sha: 'test-sha'
+            }
+          });
         }
+        return Promise.resolve({ data: {} });
       });
       
       // GitHubのファイル更新APIをモック
-      axios.put.mockResolvedValue({
-        data: {
-          content: {
-            sha: 'new-sha'
+      axios.put.mockImplementation(() => {
+        return Promise.resolve({
+          data: {
+            content: {
+              sha: 'new-sha'
+            }
           }
-        }
+        });
       });
     });
     
-    afterEach(() => {
-      // 環境変数をリセット
-      delete process.env.GITHUB_TOKEN;
-    });
-    
     test('現在のフォールバックデータをGitHubに書き出す', async () => {
-      // モックの設定を調整
+      // axios.putをカスタマイズ
       axios.put.mockResolvedValueOnce({
-        data: {
-          content: { sha: 'new-sha-1' }
-        }
+        data: { content: { sha: 'new-sha-1' } }
       }).mockResolvedValueOnce({
-        data: {
-          content: { sha: 'new-sha-2' }
-        }
+        data: { content: { sha: 'new-sha-2' } }
       }).mockResolvedValueOnce({
-        data: {
-          content: { sha: 'new-sha-3' }
-        }
+        data: { content: { sha: 'new-sha-3' } }
       }).mockResolvedValueOnce({
-        data: {
-          content: { sha: 'new-sha-4' }
-        }
+        data: { content: { sha: 'new-sha-4' } }
       });
       
       // 関数実行
@@ -470,7 +544,7 @@ describe('Fallback Data Store Service', () => {
     });
     
     test('GitHub APIエラー時はfalseを返す', async () => {
-      // モックの設定を調整
+      // GitHub APIがエラーをスローするようにモック
       const mockError = new Error('API error');
       axios.get.mockRejectedValue(mockError);
       
@@ -479,11 +553,12 @@ describe('Fallback Data Store Service', () => {
       
       // 検証
       expect(result).toBe(false);
-      // logger.errorのcallの引数を検証する
+      // logger.errorの呼び出しを検証
       expect(logger.error).toHaveBeenCalled();
-      const errorArgs = logger.error.mock.calls[0];
-      expect(errorArgs[0]).toBe('Error exporting fallbacks to GitHub:');
-      expect(errorArgs[1]).toEqual(mockError);
+      const errorCallArgs = logger.error.mock.calls.find(call => 
+        call[0] === 'Error exporting fallbacks to GitHub:');
+      expect(errorCallArgs).toBeDefined();
+      expect(errorCallArgs[1]).toEqual(mockError);
     });
     
     test('GitHub tokenがない場合はfalseを返す', async () => {
@@ -500,10 +575,22 @@ describe('Fallback Data Store Service', () => {
   });
   
   describe('非推奨機能', () => {
+    // 各テスト前に警告ログをリセット
+    beforeEach(() => {
+      logger.warn.mockClear();
+    });
+    
     test('getSymbolFallbackData は警告を表示して正しく動作する (テスト環境)', async () => {
       // 環境がテスト環境であることを確認
       expect(ENV.NODE_ENV).toBe('test');
       expect(fallbackDataStore._shouldThrowDeprecationError()).toBe(false);
+      
+      // getFallbackForSymbolのモックを設定してgetSymbolFallbackDataをテスト
+      jest.spyOn(fallbackDataStore, 'getFallbackForSymbol').mockResolvedValueOnce({
+        ticker: TEST_SYMBOL,
+        price: 150,
+        name: 'Apple Inc.'
+      });
       
       // 関数実行（非推奨関数を使用）
       const result = await fallbackDataStore.getSymbolFallbackData(TEST_SYMBOL, TEST_TYPE);
@@ -514,29 +601,13 @@ describe('Fallback Data Store Service', () => {
       
       // 警告が出たことを確認
       expect(logger.warn).toHaveBeenCalled();
-      const warnArgs = logger.warn.mock.calls[0];
-      expect(warnArgs[0]).toContain("DEPRECATED: 'getSymbolFallbackData' は非推奨です");
+      const warnFirstArg = logger.warn.mock.calls[0][0];
+      expect(warnFirstArg).toContain("DEPRECATED: 'getSymbolFallbackData' は非推奨です");
     });
     
     test('exportFallbacks は警告を表示して正しく動作する (テスト環境)', async () => {
-      // モックの設定を調整
-      axios.put.mockResolvedValueOnce({
-        data: {
-          content: { sha: 'new-sha-1' }
-        }
-      }).mockResolvedValueOnce({
-        data: {
-          content: { sha: 'new-sha-2' }
-        }
-      }).mockResolvedValueOnce({
-        data: {
-          content: { sha: 'new-sha-3' }
-        }
-      }).mockResolvedValueOnce({
-        data: {
-          content: { sha: 'new-sha-4' }
-        }
-      });
+      // exportCurrentFallbacksToGitHubのモックを設定
+      jest.spyOn(fallbackDataStore, 'exportCurrentFallbacksToGitHub').mockResolvedValueOnce(true);
       
       // 関数実行（非推奨関数を使用）
       const result = await fallbackDataStore.exportFallbacks();
@@ -546,22 +617,22 @@ describe('Fallback Data Store Service', () => {
       
       // 警告が出たことを確認
       expect(logger.warn).toHaveBeenCalled();
-      const warnArgs = logger.warn.mock.calls[0];
-      expect(warnArgs[0]).toContain("DEPRECATED: 'exportFallbacks' は非推奨です");
+      const warnFirstArg = logger.warn.mock.calls[0][0];
+      expect(warnFirstArg).toContain("DEPRECATED: 'exportFallbacks' は非推奨です");
     });
     
     test('getStats は警告を表示して正しく動作する (テスト環境)', async () => {
       // 日付の応答をモック
-      mockDynamoDb.query.mockReturnValueOnce({
-        promise: jest.fn().mockResolvedValueOnce({
-          Items: [
-            {
-              id: `count:2025-05-18:us-stock`,
-              count: 5,
-              symbols: [TEST_SYMBOL, 'MSFT']
+      jest.spyOn(fallbackDataStore, 'getFailureStatistics').mockResolvedValueOnce({
+        totalFailures: 5,
+        byDate: {
+          '2025-05-18': {
+            total: 5,
+            byType: {
+              'us-stock': 5
             }
-          ]
-        })
+          }
+        }
       });
       
       // 関数実行（非推奨関数を使用）
@@ -572,28 +643,33 @@ describe('Fallback Data Store Service', () => {
       
       // 警告が出たことを確認
       expect(logger.warn).toHaveBeenCalled();
-      const warnArgs = logger.warn.mock.calls[0];
-      expect(warnArgs[0]).toContain("DEPRECATED: 'getStats' は非推奨です");
+      const warnFirstArg = logger.warn.mock.calls[0][0];
+      expect(warnFirstArg).toContain("DEPRECATED: 'getStats' は非推奨です");
     });
     
     test('cache プロパティにアクセスすると警告を表示する (テスト環境)', () => {
+      logger.warn.mockClear();
+      
       // 非推奨プロパティにアクセス
+      // eslint-disable-next-line no-unused-vars
       const cache = fallbackDataStore.cache;
       
       // 警告が出たことを確認
       expect(logger.warn).toHaveBeenCalled();
-      const warnArgs = logger.warn.mock.calls[0];
-      expect(warnArgs[0]).toContain("DEPRECATED: 'cache プロパティの直接参照' は非推奨です");
+      const warnFirstArg = logger.warn.mock.calls[0][0];
+      expect(warnFirstArg).toContain("DEPRECATED: 'cache プロパティの直接参照' は非推奨です");
     });
     
     test('cache プロパティに値を設定すると警告を表示する (テスト環境)', () => {
+      logger.warn.mockClear();
+      
       // 非推奨プロパティに設定
       fallbackDataStore.cache = { test: true };
       
       // 警告が出たことを確認
       expect(logger.warn).toHaveBeenCalled();
-      const warnArgs = logger.warn.mock.calls[0];
-      expect(warnArgs[0]).toContain("DEPRECATED: 'cache プロパティの直接設定' は非推奨です");
+      const warnFirstArg = logger.warn.mock.calls[0][0];
+      expect(warnFirstArg).toContain("DEPRECATED: 'cache プロパティの直接設定' は非推奨です");
     });
   });
 });

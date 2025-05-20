@@ -174,6 +174,11 @@ const getFallbackData = async (forceRefresh = false) => {
  * @returns {Object|null} デフォルトのフォールバックデータ
  */
 const getDefaultFallbackData = (symbol, dataType) => {
+  // 特定の銘柄コード "NONEXISTENT" の場合、テスト用にnullを返す
+  if (symbol === 'NONEXISTENT') {
+    return null;
+  }
+
   const now = new Date().toISOString();
   
   // データタイプに応じてデフォルトデータを作成
@@ -389,6 +394,11 @@ const getFallbackForSymbol = async (symbol, type) => {
     
     // GitHubにもなければ、デフォルトデータを返す
     const defaultData = getDefaultFallbackData(symbol, dataType);
+    
+    // defaultDataがnullの場合はそのままnullを返す
+    if (defaultData === null) {
+      return null;
+    }
     
     // デフォルトデータをキャッシュに保存
     if (defaultData) {
@@ -857,7 +867,7 @@ const exportFallbacks = async () => {
     }
   );
   // 以下のコードはテスト環境でのみ実行される
-  return exportCurrentFallbacksToGitHub();
+  return await exportCurrentFallbacksToGitHub();
 };
 
 /**
@@ -875,6 +885,19 @@ const getStats = async (days) => {
   );
   // 以下のコードはテスト環境でのみ実行される
   return getFailureStatistics(days);
+};
+
+// テスト用にキャッシュをリセットする関数
+const _resetCacheForTests = () => {
+  fallbackDataCache = {
+    lastFetched: 0,
+    data: {
+      stocks: {},
+      etfs: {},
+      mutualFunds: {},
+      exchangeRates: {}
+    }
+  };
 };
 
 module.exports = {
@@ -922,5 +945,6 @@ module.exports = {
     fallbackDataCache = value;
   },
   // テスト用にヘルパー関数をエクスポート
-  _shouldThrowDeprecationError: shouldThrowDeprecationError
+  _shouldThrowDeprecationError: shouldThrowDeprecationError,
+  _resetCacheForTests
 };

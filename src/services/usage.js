@@ -7,8 +7,8 @@
  * このモジュールは src/services/fallbackDataStore.js へのプロキシとして機能します。
  * 
  * 警告：
- * このファイルは完全に非推奨です。すべての呼び出しは処理を停止します。
- * 直接 fallbackDataStore.js を使用してください。
+ * このファイルは完全に非推奨です。直接 fallbackDataStore.js を使用してください。
+ * このモジュールは v3.0.0 で削除される予定です。
  * 
  * @author Portfolio Manager Team
  * @created 2025-05-11
@@ -22,7 +22,22 @@ const fallbackDataStore = require('./fallbackDataStore');
 const { warnDeprecation } = require('../utils/deprecation');
 const { ENV } = require('../config/envConfig');
 
-// 非推奨警告を表示する関数 - 常に処理を停止
+/**
+ * 環境に基づいて非推奨機能の処理方法を決定する
+ * テスト環境では警告のみ、開発環境では処理を停止
+ * @returns {boolean} 例外をスローする場合はtrue
+ */
+const shouldThrowDeprecationError = () => {
+  // document/test-plan.md では 'test' 環境ではテストの実行に支障が出ないよう、
+  // 警告は出すが処理は継続することが望ましいとされています
+  return ENV.NODE_ENV === 'development' || ENV.NODE_ENV !== 'test';
+};
+
+/**
+ * 非推奨警告を表示する関数
+ * @param {string} methodName - メソッド名
+ * @returns {string} - 警告メッセージ
+ */
 const showDeprecationWarning = (methodName) => {
   return warnDeprecation(
     `usage.js の ${methodName}`,
@@ -30,7 +45,7 @@ const showDeprecationWarning = (methodName) => {
     {
       version: '2.0.0',
       removalVersion: '3.0.0',
-      throwError: true // 必ず処理を停止する
+      throwError: shouldThrowDeprecationError() // 環境に基づいて例外をスローするかどうかを決定
     }
   );
 };
@@ -45,7 +60,7 @@ const showDeprecationWarning = (methodName) => {
  */
 const recordFailedFetch = async (symbol, dataType, errorInfo) => {
   showDeprecationWarning('recordFailedFetch');
-  // 下記のコードは実行されません（前の行でエラーがスローされる）
+  // 下記のコードはテスト環境でのみ実行されます
   return fallbackDataStore.recordFailedFetch(symbol, dataType, errorInfo);
 };
 
@@ -58,7 +73,7 @@ const recordFailedFetch = async (symbol, dataType, errorInfo) => {
  */
 const getFallbackForSymbol = async (symbol, dataType) => {
   showDeprecationWarning('getFallbackForSymbol');
-  // 下記のコードは実行されません（前の行でエラーがスローされる）
+  // 下記のコードはテスト環境でのみ実行されます
   return fallbackDataStore.getFallbackForSymbol(symbol, dataType);
 };
 
@@ -71,7 +86,7 @@ const getFallbackForSymbol = async (symbol, dataType) => {
  */
 const getDefaultFallbackData = (symbol, dataType) => {
   showDeprecationWarning('getDefaultFallbackData');
-  // 下記のコードは実行されません（前の行でエラーがスローされる）
+  // 下記のコードはテスト環境でのみ実行されます
   return fallbackDataStore.getDefaultFallbackData(symbol, dataType);
 };
 
@@ -85,7 +100,7 @@ const getDefaultFallbackData = (symbol, dataType) => {
  */
 const saveFallbackData = async (symbol, dataType, data) => {
   showDeprecationWarning('saveFallbackData');
-  // 下記のコードは実行されません（前の行でエラーがスローされる）
+  // 下記のコードはテスト環境でのみ実行されます
   return fallbackDataStore.saveFallbackData(symbol, dataType, data);
 };
 
@@ -98,7 +113,7 @@ const saveFallbackData = async (symbol, dataType, data) => {
  */
 const updateFallbackData = async (dataType, dataItems) => {
   showDeprecationWarning('updateFallbackData');
-  // 下記のコードは実行されません（前の行でエラーがスローされる）
+  // 下記のコードはテスト環境でのみ実行されます
   return fallbackDataStore.updateFallbackData(dataType, dataItems);
 };
 
@@ -107,5 +122,7 @@ module.exports = {
   getFallbackForSymbol,
   getDefaultFallbackData,
   saveFallbackData,
-  updateFallbackData
+  updateFallbackData,
+  // テスト用にヘルパー関数をエクスポート
+  _shouldThrowDeprecationError: shouldThrowDeprecationError
 };

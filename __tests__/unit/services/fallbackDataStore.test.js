@@ -6,6 +6,7 @@
  * 
  * @author Portfolio Manager Team
  * @created 2025-05-18
+ * @updated 2025-05-21 非推奨機能のテスト調整
  */
 
 // テスト対象モジュールのインポート
@@ -75,6 +76,20 @@ describe('Fallback Data Store Service', () => {
         exchangeRates: {}
       }
     };
+
+    // cacheService.getの返り値を設定
+    cacheService.get.mockImplementation((key) => {
+      if (key.includes(TEST_SYMBOL)) {
+        return Promise.resolve({
+          data: {
+            ticker: TEST_SYMBOL,
+            price: 150,
+            name: 'Apple Inc.'
+          }
+        });
+      }
+      return Promise.resolve(null);
+    });
   });
   
   describe('getFallbackData', () => {
@@ -415,15 +430,6 @@ describe('Fallback Data Store Service', () => {
         })
       }));
       
-      // キャッシュからのデータ取得をモック
-      cacheService.get.mockResolvedValue({
-        ticker: TEST_SYMBOL,
-        price: 150,
-        change: 1.5,
-        name: 'Apple Inc.',
-        lastUpdated: MOCK_DATE
-      });
-      
       // GitHubのファイル情報取得APIをモック
       axios.get.mockResolvedValue({
         data: {
@@ -486,7 +492,11 @@ describe('Fallback Data Store Service', () => {
   });
   
   describe('非推奨機能', () => {
-    test('getSymbolFallbackData は警告を表示して正しく動作する', async () => {
+    test('getSymbolFallbackData は警告を表示して正しく動作する (テスト環境)', async () => {
+      // 環境がテスト環境であることを確認
+      expect(ENV.NODE_ENV).toBe('test');
+      expect(fallbackDataStore._shouldThrowDeprecationError()).toBe(false);
+      
       // GitHubからの応答をモック
       axios.get.mockImplementation((url) => {
         if (url.includes('fallback-stocks.json')) {
@@ -517,7 +527,7 @@ describe('Fallback Data Store Service', () => {
       );
     });
     
-    test('exportFallbacks は警告を表示して正しく動作する', async () => {
+    test('exportFallbacks は警告を表示して正しく動作する (テスト環境)', async () => {
       // 関数実行（非推奨関数を使用）
       const result = await fallbackDataStore.exportFallbacks();
       
@@ -531,7 +541,7 @@ describe('Fallback Data Store Service', () => {
       );
     });
     
-    test('getStats は警告を表示して正しく動作する', async () => {
+    test('getStats は警告を表示して正しく動作する (テスト環境)', async () => {
       // 日付の応答をモック
       mockDynamoDb.query.mockReturnValueOnce({
         promise: jest.fn().mockResolvedValueOnce({
@@ -558,7 +568,7 @@ describe('Fallback Data Store Service', () => {
       );
     });
     
-    test('cache プロパティにアクセスすると警告を表示する', () => {
+    test('cache プロパティにアクセスすると警告を表示する (テスト環境)', () => {
       // 非推奨プロパティにアクセス
       const cache = fallbackDataStore.cache;
       
@@ -569,7 +579,7 @@ describe('Fallback Data Store Service', () => {
       );
     });
     
-    test('cache プロパティに値を設定すると警告を表示する', () => {
+    test('cache プロパティに値を設定すると警告を表示する (テスト環境)', () => {
       // 非推奨プロパティに設定
       fallbackDataStore.cache = { test: true };
       

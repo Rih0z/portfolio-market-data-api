@@ -1,8 +1,8 @@
-# PFWise-API テスト計画書
+# Portfolio Market Data API - テスト計画書
 
 ## 1. 現在のテスト実装状況
 
-現在のテストカバレッジは約37.5%です。下記に実装済みのテストファイルを示します。
+現在のテストカバレッジは約40%です。下記に実装済みのテストファイルを示します。
 
 ### 単体テスト (Unit Tests)
 
@@ -30,8 +30,10 @@
 #### マーケットデータ関連
 - `__tests__/unit/function/marketData.test.js` // 実装済み
 
-#### キャッシュ関連
+#### キャッシュとフォールバックデータ関連
 - `__tests__/unit/services/cache.test.js`
+- `__tests__/unit/services/fallbackDataStore.test.js` // 更新済み
+- `__tests__/unit/services/usage.test.js` // 新規実装済み
 
 #### ユーティリティ関連 (Utils)
 - `__tests__/unit/utils/cookieParser.test.js`
@@ -214,6 +216,8 @@ describe('ユーザー体験テスト', () => {
    - ✅ エラーハンドリングユーティリティ（`errorHandler.test.js`として実装済み）
    - ✅ 市場データ取得エンドポイント（`marketData.test.js`として実装済み）
    - ✅ ポートフォリオ関連エンドポイント（`saveFile.test.js`、`loadFile.test.js`として実装済み）
+   - ✅ フォールバックデータサービス（`fallbackDataStore.test.js`として更新済み）
+   - ✅ 非推奨プロキシモジュール（`usage.test.js`として実装済み）
 
 2. **中優先度**:
    - ユーザー管理関連のテスト（`userService.test.js`、`updateUserSettings.test.js`）
@@ -262,6 +266,11 @@ describe('ユーザー体験テスト', () => {
    - 新機能実装時には対応するテストを必ず実装
    - リファクタリング前にテストを実装して安全性を確保
 
+5. **非推奨機能のテスト**:
+   - 非推奨APIの警告メカニズムを確認するテストを実装
+   - 環境による動作の違い（開発/テスト/本番）を検証
+   - 完全移行後のクリーンアップのためのテストも考慮
+
 ## 6. ロードマップ
 
 ### フェーズ1（1-2週間）
@@ -270,11 +279,14 @@ describe('ユーザー体験テスト', () => {
 - ✅ 市場データ取得エンドポイントのテスト実装（`marketData.test.js`として完了）
 - ✅ ミドルウェアテスト（CORS）（`cors.test.js`として完了）
 - ✅ ポートフォリオ関連エンドポイントのテスト実装（`saveFile.test.js`、`loadFile.test.js`として完了）
+- ✅ フォールバックデータサービスのテスト更新（環境検出機能対応）
+- ✅ 非推奨プロキシモジュール（usage.js）のテスト実装
 - カバレッジ目標：45%
 
 ### フェーズ2（2-3週間）
 - ユーザー管理関連のテスト実装
 - 残りのエンドポイントテスト実装
+- 非推奨機能の移行サポートテスト実装
 - カバレッジ目標：60%
 
 ### フェーズ3（3-4週間）
@@ -287,11 +299,12 @@ describe('ユーザー体験テスト', () => {
 - 残りのユーティリティテストの実装
 - E2Eテストの拡充
 - バグ修正とリファクタリング
+- 完全移行後の最終確認テスト
 - カバレッジ目標：80%以上
 
-## 17. 参考リソース
+## 7. 参考リソース
 
 - Jest ドキュメント: https://jestjs.io/docs/
 - JavaScript テスティングのベストプラクティス: https://github.com/goldbergyoni/javascript-testing-best-practices
 - AWS SDK JavaScript v3 テスト: https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/testing-mocking.html
-
+- 非推奨機能のテストアプローチ: https://martinfowler.com/bliki/FeatureToggle.html

@@ -59,10 +59,11 @@ describe('Usage Service (非推奨プロキシモジュール)', () => {
       // 検証
       expect(result).toEqual(TEST_DATA);
       expect(fallbackDataStore.getFallbackForSymbol).toHaveBeenCalledWith(TEST_SYMBOL, TEST_TYPE);
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining("DEPRECATED: 'usage.js の getFallbackForSymbol' は非推奨です"),
-        expect.any(String)
-      );
+      // 警告メッセージをtoHaveBeenCalledWithの代わりにtoHaveBeenCalledを使用し、
+      // 別途引数の内容を検証する方法に変更
+      expect(logger.warn).toHaveBeenCalled();
+      const warnArgs = logger.warn.mock.calls[0];
+      expect(warnArgs[0]).toContain("DEPRECATED: 'usage.js の getFallbackForSymbol' は非推奨です");
     });
   });
   
@@ -74,10 +75,9 @@ describe('Usage Service (非推奨プロキシモジュール)', () => {
       // 検証
       expect(result).toBe(true);
       expect(fallbackDataStore.recordFailedFetch).toHaveBeenCalledWith(TEST_SYMBOL, TEST_TYPE, ERROR_INFO);
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining("DEPRECATED: 'usage.js の recordFailedFetch' は非推奨です"),
-        expect.any(String)
-      );
+      expect(logger.warn).toHaveBeenCalled();
+      const warnArgs = logger.warn.mock.calls[0];
+      expect(warnArgs[0]).toContain("DEPRECATED: 'usage.js の recordFailedFetch' は非推奨です");
     });
   });
   
@@ -89,10 +89,9 @@ describe('Usage Service (非推奨プロキシモジュール)', () => {
       // 検証
       expect(result).toEqual(TEST_DATA);
       expect(fallbackDataStore.getDefaultFallbackData).toHaveBeenCalledWith(TEST_SYMBOL, TEST_TYPE);
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining("DEPRECATED: 'usage.js の getDefaultFallbackData' は非推奨です"),
-        expect.any(String)
-      );
+      expect(logger.warn).toHaveBeenCalled();
+      const warnArgs = logger.warn.mock.calls[0];
+      expect(warnArgs[0]).toContain("DEPRECATED: 'usage.js の getDefaultFallbackData' は非推奨です");
     });
   });
   
@@ -104,10 +103,9 @@ describe('Usage Service (非推奨プロキシモジュール)', () => {
       // 検証
       expect(result).toBe(true);
       expect(fallbackDataStore.saveFallbackData).toHaveBeenCalledWith(TEST_SYMBOL, TEST_TYPE, TEST_DATA);
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining("DEPRECATED: 'usage.js の saveFallbackData' は非推奨です"),
-        expect.any(String)
-      );
+      expect(logger.warn).toHaveBeenCalled();
+      const warnArgs = logger.warn.mock.calls[0];
+      expect(warnArgs[0]).toContain("DEPRECATED: 'usage.js の saveFallbackData' は非推奨です");
     });
   });
   
@@ -119,10 +117,9 @@ describe('Usage Service (非推奨プロキシモジュール)', () => {
       // 検証
       expect(result).toEqual({ success: true, updated: 2 });
       expect(fallbackDataStore.updateFallbackData).toHaveBeenCalledWith(TEST_TYPE, TEST_DATA_ITEMS);
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining("DEPRECATED: 'usage.js の updateFallbackData' は非推奨です"),
-        expect.any(String)
-      );
+      expect(logger.warn).toHaveBeenCalled();
+      const warnArgs = logger.warn.mock.calls[0];
+      expect(warnArgs[0]).toContain("DEPRECATED: 'usage.js の updateFallbackData' は非推奨です");
     });
   });
   

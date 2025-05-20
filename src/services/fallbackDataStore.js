@@ -3,19 +3,19 @@
  * ファイルパス: src/services/fallbackDataStore.js
  * 
  * 説明: 
- * データ取得失敗時のフォールバックデータを管理するサービス。
+ * データ取得失敗時のフォールバックデータを管理する統合サービス。
  * 1. GitHubからフォールバックデータを取得・更新
  * 2. 取得失敗したデータの記録と統計
  * 3. 管理者向けAPIのサポート
+ * 4. デフォルトフォールバックデータの生成 (usage.jsから統合)
+ * 5. キャッシュベースのフォールバック (usage.jsから統合)
  * 
  * 注意:
- * このモジュールと src/services/usage.js には機能重複があります。
- * v2.0.0から始まり、v3.0.0で完了する統合計画に沿って、
- * 両モジュールは段階的に統合される予定です。
- * 詳細は INTEGRATION_PLAN.md を参照してください。
+ * このモジュールはsrc/services/usage.jsの機能を統合済みです。
+ * v2.0.0から段階的に統合を開始し、v3.0.0で完全統合されました。
  * 
  * @author Portfolio Manager Team
- * @created 2025-05-20
+ * @updated 2025-05-20
  */
 'use strict';
 
@@ -29,6 +29,7 @@ const { withRetry, isRetryableApiError } = require('../utils/retry');
 const { ENV } = require('../config/envConfig');
 const logger = require('../utils/logger');
 const { warnDeprecation } = require('../utils/deprecation');
+const { DATA_TYPES, CACHE_TIMES } = require('../config/constants');
 
 // 設定値
 const FALLBACK_TABLE = process.env.FALLBACK_DATA_TABLE || `${process.env.DYNAMODB_TABLE_PREFIX || 'portfolio-market-data-'}-fallback-data`;
@@ -36,6 +37,9 @@ const FALLBACK_DATA_REFRESH_INTERVAL = parseInt(process.env.FALLBACK_DATA_REFRES
 const GITHUB_REPO_OWNER = process.env.GITHUB_REPO_OWNER || 'portfolio-manager-team';
 const GITHUB_REPO_NAME = process.env.GITHUB_REPO_NAME || 'market-data-fallbacks';
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
+
+// usage.jsから統合: フォールバックキャッシュのプレフィックス
+const FALLBACK_PREFIX = 'fallback:';
 
 // 非推奨となったデータタイプマッピング
 const DEPRECATED_TYPE_MAP = {
@@ -152,6 +156,142 @@ const getFallbackData = async (forceRefresh = false) => {
 };
 
 /**
+ * デフォルトのフォールバックデータを取得する (usage.jsから統合)
+ * @param {string} symbol - 証券コードまたはティッカーシンボル
+ * @param {string} dataType - データタイプ
+ * @returns {Object|null} デフォルトのフォールバックデータ
+ */
+const getDefaultFallbackData = (symbol, dataType) => {
+  const now = new Date().toISOString();
+  
+  // データタイプに応じてデフォルトデータを作成
+  switch (dataType) {
+    case DATA_TYPES.US_STOCK:
+      return {
+        ticker: symbol,
+        price: symbol === 'AAPL' ? 180.95 : 100,
+        change: 0,
+        changePercent: 0,
+        name: symbol,
+        currency: 'USD',
+        isStock: true,
+        isMutualFund: false,
+        source: 'Default Fallback',
+        lastUpdated: now
+      };
+    
+    case DATA_TYPES.JP_STOCK:
+      return {
+        ticker: symbol,
+        price: symbol === '7203' ? 2500 : 2000,
+        change: 0,
+        changePercent: 0,
+        name: `日本株 ${symbol}`,
+        currency: 'JPY',
+        isStock: true,
+        isMutualFund: false,
+        source: 'Default Fallback',
+        lastUpdated: now
+      };
+    
+    case DATA_TYPES.MUTUAL_FUND:
+      return {
+        ticker: `${symbol}C`,
+        price: 10000,
+        change: 0,
+        changePercent: 0,
+        name: `投資信託 ${symbol}`,
+        currency: 'JPY',
+        isStock: false,
+        isMutualFund: true,
+        priceLabel: '基準価額',
+        source: 'Default Fallback',
+        lastUpdated: now
+      };
+    
+    case DATA_TYPES.EXCHANGE_RATE:
+      // 通貨ペアを解析
+      const [base, target] = symbol.split('-');
+      return {
+        pair: symbol,
+        base,
+        target,
+        rate: base === 'USD' && target === 'JPY' ? 149.82 : 1.0,
+        change: 0,
+        changePercent: 0,
+        source: 'Default Fallback',
+        lastUpdated: now
+      };
+    
+    default:
+      return null;
+  }
+};
+
+/**
+ * フォールバックデータを保存する (usage.jsから統合)
+ * @param {string} symbol - 証券コードまたはティッカーシンボル
+ * @param {string} dataType - データタイプ
+ * @param {Object} data - 保存するデータ
+ * @returns {Promise<boolean>} 保存成功時はtrue
+ */
+const saveFallbackData = async (symbol, dataType, data) => {
+  try {
+    // キャッシュキーを構築
+    const cacheKey = `${FALLBACK_PREFIX}${dataType}:${symbol}`;
+    
+    // フォールバックデータのTTLを設定
+    const ttl = CACHE_TIMES.FALLBACK_DATA;
+    
+    // データをキャッシュに保存
+    return await cacheService.set(cacheKey, data, ttl);
+  } catch (error) {
+    logger.error(`Error saving fallback data for ${dataType}:${symbol}:`, error);
+    return false;
+  }
+};
+
+/**
+ * フォールバックデータを更新する (usage.jsから統合)
+ * @param {string} dataType - データタイプ
+ * @param {Array<Object>} dataItems - 更新するデータの配列
+ * @returns {Promise<Object>} 更新結果
+ */
+const updateFallbackData = async (dataType, dataItems) => {
+  try {
+    let successCount = 0;
+    let failCount = 0;
+    
+    // 各データアイテムを処理
+    for (const item of dataItems) {
+      const symbol = item.ticker || item.pair;
+      if (symbol) {
+        const success = await saveFallbackData(symbol, dataType, item);
+        if (success) {
+          successCount++;
+        } else {
+          failCount++;
+        }
+      }
+    }
+    
+    return {
+      success: true,
+      dataType,
+      updated: successCount,
+      failed: failCount,
+      total: dataItems.length
+    };
+  } catch (error) {
+    logger.error(`Error updating fallback data for ${dataType}:`, error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+};
+
+/**
  * 特定の銘柄のフォールバックデータを取得する
  * @param {string} symbol - 銘柄コード
  * @param {string} type - データタイプ（stock, etf, mutualFund, exchangeRate）
@@ -164,58 +304,94 @@ const getFallbackForSymbol = async (symbol, type) => {
     warnDeprecation(
       `データタイプ '${type}'`, 
       `'${DEPRECATED_TYPE_MAP[type]}'`,
-      { version: '2.0.0', removalVersion: '3.0.0' }
+      { 
+        version: '2.0.0', 
+        removalVersion: '3.0.0',
+        throwError: ENV.NODE_ENV === 'development' // 開発環境では処理を停止
+      }
     );
     dataType = DEPRECATED_TYPE_MAP[type];
   }
   
-  const fallbackData = await getFallbackData();
-  
-  let dataCategory;
-  switch (dataType) {
-    case 'jp-stock':
-    case 'us-stock':
-      dataCategory = 'stocks';
-      break;
-    case 'etf':
-      dataCategory = 'etfs';
-      break;
-    case 'mutual-fund':
-      dataCategory = 'mutualFunds';
-      break;
-    case 'exchange-rate':
-      dataCategory = 'exchangeRates';
-      break;
-    default:
-      dataCategory = 'stocks';
+  try {
+    // usage.jsの実装: まずキャッシュを確認
+    const cacheKey = `${FALLBACK_PREFIX}${dataType}:${symbol}`;
+    const cachedData = await cacheService.get(cacheKey);
+    
+    if (cachedData && cachedData.data) {
+      return {
+        ...cachedData.data,
+        source: 'Fallback Cache'
+      };
+    }
+    
+    // fallbackDataStoreの実装: GitHubからデータを取得
+    const fallbackData = await getFallbackData();
+    
+    let dataCategory;
+    switch (dataType) {
+      case 'jp-stock':
+      case 'us-stock':
+        dataCategory = 'stocks';
+        break;
+      case 'etf':
+        dataCategory = 'etfs';
+        break;
+      case 'mutual-fund':
+        dataCategory = 'mutualFunds';
+        break;
+      case 'exchange-rate':
+        dataCategory = 'exchangeRates';
+        break;
+      default:
+        dataCategory = 'stocks';
+    }
+    
+    // シンボルのデータを取得
+    const symbolData = fallbackData[dataCategory][symbol];
+    
+    if (symbolData) {
+      // 結果オブジェクトをクローン（元のオブジェクトを変更しないため）
+      const result = { ...symbolData };
+      
+      // 必要な場合はtickerプロパティを追加
+      if (!result.ticker) {
+        result.ticker = symbol;
+      }
+      
+      // 最終更新日時を設定
+      if (!result.lastUpdated) {
+        result.lastUpdated = new Date().toISOString();
+      }
+      
+      // ソースを設定
+      if (!result.source) {
+        result.source = 'GitHub Fallback';
+      }
+      
+      // 結果をキャッシュに保存
+      await saveFallbackData(symbol, dataType, result);
+      
+      return result;
+    }
+    
+    // GitHubにもなければ、デフォルトデータを返す
+    const defaultData = getDefaultFallbackData(symbol, dataType);
+    
+    // デフォルトデータをキャッシュに保存
+    if (defaultData) {
+      await saveFallbackData(symbol, dataType, defaultData);
+    }
+    
+    return defaultData;
+    
+  } catch (error) {
+    logger.error(`Error getting fallback data for ${dataType}:${symbol}:`, error);
+    
+    // エラー時はデフォルトデータで対応
+    const defaultData = getDefaultFallbackData(symbol, dataType);
+    return defaultData;
   }
-  
-  // シンボルのデータを取得
-  const symbolData = fallbackData[dataCategory][symbol];
-  
-  if (!symbolData) {
-    return null;
-  }
-  
-  // 結果オブジェクトをクローン（元のオブジェクトを変更しないため）
-  const result = { ...symbolData };
-  
-  // 必要な場合はtickerプロパティを追加
-  if (!result.ticker) {
-    result.ticker = symbol;
-  }
-  
-  // 最終更新日時を設定
-  if (!result.lastUpdated) {
-    result.lastUpdated = new Date().toISOString();
-  }
-  
-  // ソースを設定
-  if (!result.source) {
-    result.source = 'GitHub Fallback';
-  }
-  
-  return result;
 };
 
 /**
@@ -233,21 +409,33 @@ const recordFailedFetch = async (symbol, type, errorInfo) => {
       warnDeprecation(
         `データタイプ '${type}'`, 
         `'${DEPRECATED_TYPE_MAP[type]}'`,
-        { version: '2.0.0', removalVersion: '3.0.0' }
+        { 
+          version: '2.0.0', 
+          removalVersion: '3.0.0',
+          throwError: ENV.NODE_ENV === 'development' // 開発環境では処理を停止
+        }
       );
       dataType = DEPRECATED_TYPE_MAP[type];
     }
-    
-    const dynamoDb = getDynamoDb();
-    
-    const now = new Date();
-    const dateKey = now.toISOString().split('T')[0]; // YYYY-MM-DD
     
     // エラー情報の処理
     let reason = errorInfo;
     if (errorInfo instanceof Error) {
       reason = errorInfo.message;
     }
+    
+    // ログに記録（usage.jsからの実装）
+    const errorMessage = errorInfo instanceof Error 
+      ? errorInfo.message 
+      : (typeof errorInfo === 'string' ? errorInfo : 'Unknown error');
+    
+    logger.warn(`Data fetch failed for ${dataType}:${symbol}:`, errorMessage);
+    
+    // DynamoDBに記録（fallbackDataStore.jsからの実装）
+    const dynamoDb = getDynamoDb();
+    
+    const now = new Date();
+    const dateKey = now.toISOString().split('T')[0]; // YYYY-MM-DD
     
     // データ取得失敗の記録
     const params = {
@@ -305,7 +493,11 @@ const getFailedSymbols = async (dateKey, type) => {
       warnDeprecation(
         `データタイプ '${type}'`, 
         `'${DEPRECATED_TYPE_MAP[type]}'`,
-        { version: '2.0.0', removalVersion: '3.0.0' }
+        { 
+          version: '2.0.0', 
+          removalVersion: '3.0.0',
+          throwError: ENV.NODE_ENV === 'development' // 開発環境では処理を停止
+        }
       );
       dataType = DEPRECATED_TYPE_MAP[type];
     }
@@ -414,7 +606,9 @@ const exportCurrentFallbacksToGitHub = async () => {
       // キャッシュから現在の値を取得（フォールバック値も含む）
       const cachedData = await cacheService.get(`${type}:${symbol}`);
       
-      if (!cachedData) continue;
+      if (!cachedData || !cachedData.data) continue;
+      
+      const data = cachedData.data;
       
       // データを分類
       switch (type) {
@@ -422,45 +616,45 @@ const exportCurrentFallbacksToGitHub = async () => {
         case 'us-stock':
           stocks[symbol] = {
             ticker: symbol,
-            price: cachedData.price,
-            change: cachedData.change,
-            changePercent: cachedData.changePercent,
-            name: cachedData.name,
-            currency: cachedData.currency,
-            lastUpdated: cachedData.lastUpdated
+            price: data.price,
+            change: data.change,
+            changePercent: data.changePercent,
+            name: data.name,
+            currency: data.currency,
+            lastUpdated: data.lastUpdated
           };
           break;
         case 'etf':
           etfs[symbol] = {
             ticker: symbol,
-            price: cachedData.price,
-            change: cachedData.change,
-            changePercent: cachedData.changePercent,
-            name: cachedData.name,
-            currency: cachedData.currency,
-            lastUpdated: cachedData.lastUpdated
+            price: data.price,
+            change: data.change,
+            changePercent: data.changePercent,
+            name: data.name,
+            currency: data.currency,
+            lastUpdated: data.lastUpdated
           };
           break;
         case 'mutual-fund':
           mutualFunds[symbol] = {
             ticker: symbol,
-            price: cachedData.price,
-            change: cachedData.change,
-            changePercent: cachedData.changePercent,
-            name: cachedData.name,
-            currency: cachedData.currency,
-            lastUpdated: cachedData.lastUpdated
+            price: data.price,
+            change: data.change,
+            changePercent: data.changePercent,
+            name: data.name,
+            currency: data.currency,
+            lastUpdated: data.lastUpdated
           };
           break;
         case 'exchange-rate':
           exchangeRates[symbol] = {
             ticker: symbol,
-            base: cachedData.base,
-            target: cachedData.target,
-            rate: cachedData.rate,
-            change: cachedData.change,
-            changePercent: cachedData.changePercent,
-            lastUpdated: cachedData.lastUpdated
+            base: data.base,
+            target: data.target,
+            rate: data.rate,
+            change: data.change,
+            changePercent: data.changePercent,
+            lastUpdated: data.lastUpdated
           };
           break;
       }
@@ -624,33 +818,61 @@ const getFailureStatistics = async (days = 7) => {
  * @deprecated v2.0.0から非推奨です。getFallbackForSymbol を使用してください。
  */
 const getSymbolFallbackData = async (symbol, type) => {
-  warnDeprecation('getSymbolFallbackData', 'getFallbackForSymbol');
-  return getFallbackForSymbol(symbol, type);
+  warnDeprecation(
+    'getSymbolFallbackData', 
+    'getFallbackForSymbol',
+    { 
+      version: '2.0.0', 
+      removalVersion: '3.0.0',
+      throwError: true // 常に処理を停止
+    }
+  );
+  return getFallbackForSymbol(symbol, type); // この行は実行されない
 };
 
 /**
  * @deprecated v2.0.0から非推奨です。exportCurrentFallbacksToGitHub を使用してください。
  */
 const exportFallbacks = async () => {
-  warnDeprecation('exportFallbacks', 'exportCurrentFallbacksToGitHub');
-  return exportCurrentFallbacksToGitHub();
+  warnDeprecation(
+    'exportFallbacks', 
+    'exportCurrentFallbacksToGitHub',
+    { 
+      version: '2.0.0', 
+      removalVersion: '3.0.0',
+      throwError: true // 常に処理を停止
+    }
+  );
+  return exportCurrentFallbacksToGitHub(); // この行は実行されない
 };
 
 /**
  * @deprecated v2.0.0から非推奨です。getFailureStatistics を使用してください。
  */
 const getStats = async (days) => {
-  warnDeprecation('getStats', 'getFailureStatistics');
-  return getFailureStatistics(days);
+  warnDeprecation(
+    'getStats', 
+    'getFailureStatistics',
+    { 
+      version: '2.0.0', 
+      removalVersion: '3.0.0',
+      throwError: true // 常に処理を停止
+    }
+  );
+  return getFailureStatistics(days); // この行は実行されない
 };
 
 module.exports = {
+  // 統合された機能（usage.jsとの統合）
   getFallbackData,
   getFallbackForSymbol,
   recordFailedFetch,
   getFailedSymbols,
   exportCurrentFallbacksToGitHub,
   getFailureStatistics,
+  getDefaultFallbackData,
+  saveFallbackData,
+  updateFallbackData,
   
   // 非推奨機能（下位互換性のため残す）
   getSymbolFallbackData,
@@ -659,11 +881,27 @@ module.exports = {
   
   // テスト用にキャッシュをエクスポート
   get cache() {
-    warnDeprecation('cache プロパティの直接参照', 'getFallbackData() メソッド');
+    warnDeprecation(
+      'cache プロパティの直接参照', 
+      'getFallbackData() メソッド',
+      { 
+        version: '2.0.0', 
+        removalVersion: '3.0.0',
+        throwError: true // 常に処理を停止 
+      }
+    );
     return fallbackDataCache;
   },
   set cache(value) {
-    warnDeprecation('cache プロパティの直接設定', 'getFallbackData() メソッド');
+    warnDeprecation(
+      'cache プロパティの直接設定', 
+      'getFallbackData() メソッド',
+      { 
+        version: '2.0.0', 
+        removalVersion: '3.0.0',
+        throwError: true // 常に処理を停止
+      }
+    );
     fallbackDataCache = value;
   },
   fallbackDataCache

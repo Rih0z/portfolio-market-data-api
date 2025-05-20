@@ -1,23 +1,39 @@
 /**
  * プロジェクト: portfolio-market-data-api
- * ファイルパス: src/services/fallbackDataStore.js
+ * ファイルパス: src/services/usage.js
  * 
  * 説明:
- * フォールバックデータストアサービス。
- * データソースが利用できない場合のためのフォールバックデータを管理します。
- * 障害発生時に適切なデータを提供することで、APIの可用性を高めます。
+ * フォールバックデータストアサービス - プロキシモジュール。
+ * このモジュールは src/services/fallbackDataStore.js へのプロキシとして機能します。
+ * 
+ * 警告：
+ * このファイルは完全に非推奨です。すべての呼び出しは処理を停止します。
+ * 直接 fallbackDataStore.js を使用してください。
  * 
  * @author Portfolio Manager Team
  * @created 2025-05-11
+ * @updated 2025-05-21 fallbackDataStoreへの統合完了
+ * 
+ * @deprecated v3.0.0 以降では fallbackDataStore.js を直接使用してください。このモジュールは削除される予定です。
  */
 'use strict';
 
-const cacheService = require('./cache');
-const { DATA_TYPES, CACHE_TIMES } = require('../config/constants');
-const logger = require('../utils/logger');
+const fallbackDataStore = require('./fallbackDataStore');
+const { warnDeprecation } = require('../utils/deprecation');
+const { ENV } = require('../config/envConfig');
 
-// フォールバックキャッシュのプレフィックス
-const FALLBACK_PREFIX = 'fallback:';
+// 非推奨警告を表示する関数 - 常に処理を停止
+const showDeprecationWarning = (methodName) => {
+  return warnDeprecation(
+    `usage.js の ${methodName}`,
+    `fallbackDataStore.js の同等メソッド`,
+    {
+      version: '2.0.0',
+      removalVersion: '3.0.0',
+      throwError: true // 必ず処理を停止する
+    }
+  );
+};
 
 /**
  * データ取得に失敗した記録を保存する
@@ -25,21 +41,12 @@ const FALLBACK_PREFIX = 'fallback:';
  * @param {string} dataType - データタイプ
  * @param {string|Error} errorInfo - エラー情報
  * @returns {Promise<boolean>} 記録成功時はtrue
+ * @deprecated fallbackDataStore.js の recordFailedFetch を使用してください。このモジュールはv3.0.0で削除されます。
  */
 const recordFailedFetch = async (symbol, dataType, errorInfo) => {
-  try {
-    // 失敗カウントの更新などの処理があればここに実装
-    const errorMessage = errorInfo instanceof Error 
-      ? errorInfo.message 
-      : (typeof errorInfo === 'string' ? errorInfo : 'Unknown error');
-    
-    logger.warn(`Data fetch failed for ${dataType}:${symbol}:`, errorMessage);
-    
-    return true;
-  } catch (error) {
-    logger.error('Error recording failed fetch:', error);
-    return false;
-  }
+  showDeprecationWarning('recordFailedFetch');
+  // 下記のコードは実行されません（前の行でエラーがスローされる）
+  return fallbackDataStore.recordFailedFetch(symbol, dataType, errorInfo);
 };
 
 /**
@@ -47,36 +54,12 @@ const recordFailedFetch = async (symbol, dataType, errorInfo) => {
  * @param {string} symbol - 証券コードまたはティッカーシンボル
  * @param {string} dataType - データタイプ
  * @returns {Promise<Object|null>} フォールバックデータ（存在しない場合はnull）
+ * @deprecated fallbackDataStore.js の getFallbackForSymbol を使用してください。このモジュールはv3.0.0で削除されます。
  */
 const getFallbackForSymbol = async (symbol, dataType) => {
-  try {
-    // キャッシュキーを構築
-    const cacheKey = `${FALLBACK_PREFIX}${dataType}:${symbol}`;
-    
-    // キャッシュからデータを取得
-    const cachedData = await cacheService.get(cacheKey);
-    
-    if (cachedData) {
-      return {
-        ...cachedData,
-        source: 'Fallback Cache'
-      };
-    }
-    
-    // キャッシュになければデフォルトデータを返す
-    const defaultData = getDefaultFallbackData(symbol, dataType);
-    
-    // デフォルトデータをキャッシュに保存
-    if (defaultData) {
-      const ttl = CACHE_TIMES.FALLBACK_DATA;
-      await cacheService.set(cacheKey, defaultData, ttl);
-    }
-    
-    return defaultData;
-  } catch (error) {
-    logger.error(`Error getting fallback data for ${dataType}:${symbol}:`, error);
-    return null;
-  }
+  showDeprecationWarning('getFallbackForSymbol');
+  // 下記のコードは実行されません（前の行でエラーがスローされる）
+  return fallbackDataStore.getFallbackForSymbol(symbol, dataType);
 };
 
 /**
@@ -84,72 +67,12 @@ const getFallbackForSymbol = async (symbol, dataType) => {
  * @param {string} symbol - 証券コードまたはティッカーシンボル
  * @param {string} dataType - データタイプ
  * @returns {Object|null} デフォルトのフォールバックデータ
+ * @deprecated fallbackDataStore.js の getDefaultFallbackData を使用してください。このモジュールはv3.0.0で削除されます。
  */
 const getDefaultFallbackData = (symbol, dataType) => {
-  const now = new Date().toISOString();
-  
-  // データタイプに応じてデフォルトデータを作成
-  switch (dataType) {
-    case DATA_TYPES.US_STOCK:
-      return {
-        ticker: symbol,
-        price: symbol === 'AAPL' ? 180.95 : 100,
-        change: 0,
-        changePercent: 0,
-        name: symbol,
-        currency: 'USD',
-        isStock: true,
-        isMutualFund: false,
-        source: 'Default Fallback',
-        lastUpdated: now
-      };
-    
-    case DATA_TYPES.JP_STOCK:
-      return {
-        ticker: symbol,
-        price: symbol === '7203' ? 2500 : 2000,
-        change: 0,
-        changePercent: 0,
-        name: `日本株 ${symbol}`,
-        currency: 'JPY',
-        isStock: true,
-        isMutualFund: false,
-        source: 'Default Fallback',
-        lastUpdated: now
-      };
-    
-    case DATA_TYPES.MUTUAL_FUND:
-      return {
-        ticker: `${symbol}C`,
-        price: 10000,
-        change: 0,
-        changePercent: 0,
-        name: `投資信託 ${symbol}`,
-        currency: 'JPY',
-        isStock: false,
-        isMutualFund: true,
-        priceLabel: '基準価額',
-        source: 'Default Fallback',
-        lastUpdated: now
-      };
-    
-    case DATA_TYPES.EXCHANGE_RATE:
-      // 通貨ペアを解析
-      const [base, target] = symbol.split('-');
-      return {
-        pair: symbol,
-        base,
-        target,
-        rate: base === 'USD' && target === 'JPY' ? 149.82 : 1.0,
-        change: 0,
-        changePercent: 0,
-        source: 'Default Fallback',
-        lastUpdated: now
-      };
-    
-    default:
-      return null;
-  }
+  showDeprecationWarning('getDefaultFallbackData');
+  // 下記のコードは実行されません（前の行でエラーがスローされる）
+  return fallbackDataStore.getDefaultFallbackData(symbol, dataType);
 };
 
 /**
@@ -158,21 +81,12 @@ const getDefaultFallbackData = (symbol, dataType) => {
  * @param {string} dataType - データタイプ
  * @param {Object} data - 保存するデータ
  * @returns {Promise<boolean>} 保存成功時はtrue
+ * @deprecated fallbackDataStore.js の saveFallbackData を使用してください。このモジュールはv3.0.0で削除されます。
  */
 const saveFallbackData = async (symbol, dataType, data) => {
-  try {
-    // キャッシュキーを構築
-    const cacheKey = `${FALLBACK_PREFIX}${dataType}:${symbol}`;
-    
-    // フォールバックデータのTTLを設定
-    const ttl = CACHE_TIMES.FALLBACK_DATA;
-    
-    // データをキャッシュに保存
-    return await cacheService.set(cacheKey, data, ttl);
-  } catch (error) {
-    logger.error(`Error saving fallback data for ${dataType}:${symbol}:`, error);
-    return false;
-  }
+  showDeprecationWarning('saveFallbackData');
+  // 下記のコードは実行されません（前の行でエラーがスローされる）
+  return fallbackDataStore.saveFallbackData(symbol, dataType, data);
 };
 
 /**
@@ -180,39 +94,12 @@ const saveFallbackData = async (symbol, dataType, data) => {
  * @param {string} dataType - データタイプ
  * @param {Array<Object>} dataItems - 更新するデータの配列
  * @returns {Promise<Object>} 更新結果
+ * @deprecated fallbackDataStore.js の updateFallbackData を使用してください。このモジュールはv3.0.0で削除されます。
  */
 const updateFallbackData = async (dataType, dataItems) => {
-  try {
-    let successCount = 0;
-    let failCount = 0;
-    
-    // 各データアイテムを処理
-    for (const item of dataItems) {
-      const symbol = item.ticker || item.pair;
-      if (symbol) {
-        const success = await saveFallbackData(symbol, dataType, item);
-        if (success) {
-          successCount++;
-        } else {
-          failCount++;
-        }
-      }
-    }
-    
-    return {
-      success: true,
-      dataType,
-      updated: successCount,
-      failed: failCount,
-      total: dataItems.length
-    };
-  } catch (error) {
-    logger.error(`Error updating fallback data for ${dataType}:`, error);
-    return {
-      success: false,
-      error: error.message
-    };
-  }
+  showDeprecationWarning('updateFallbackData');
+  // 下記のコードは実行されません（前の行でエラーがスローされる）
+  return fallbackDataStore.updateFallbackData(dataType, dataItems);
 };
 
 module.exports = {
@@ -222,4 +109,3 @@ module.exports = {
   saveFallbackData,
   updateFallbackData
 };
-

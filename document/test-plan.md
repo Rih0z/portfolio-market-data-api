@@ -2,7 +2,7 @@
 
 ## 1. 現在のテスト実装状況
 
-現在のテストカバレッジは約45%です。下記に実装済みのテストファイルを示します。
+現在のテストカバレッジは約47%です。下記に実装済みのテストファイルを示します。
 
 ### 単体テスト (Unit Tests)
 
@@ -47,6 +47,7 @@
 - `__tests__/unit/utils/cors.test.js` // 実装済み
 - `__tests__/unit/utils/configManager.test.js` // 実装済み
 - `__tests__/unit/utils/dataFetchWithFallback.test.js` // 新規実装
+- `__tests__/unit/utils/budgetCheck.test.js` // 新規実装
 
 ### 統合テスト (Integration Tests)
 

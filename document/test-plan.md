@@ -156,7 +156,7 @@ describe('ユーザープロフィール取得エンドポイント', () => {
 ### 設定管理 (Configuration)
 
 ```javascript
-// __tests__/unit/utils/configManager.test.js
+// __tests__/unit/utils/configManager.test.js - 実装済み
 describe('設定管理ユーティリティ', () => {
   test('環境変数から設定値を正しく読み込む', () => {/* ... */});
   test('デフォルト値が適用される', () => {/* ... */});

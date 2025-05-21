@@ -384,6 +384,16 @@ src/
 - `createSessionCookie(sessionId, maxAge, secure, sameSite)`: セッションCookieを生成
 - `createClearSessionCookie(secure)`: セッションCookieを削除するためのCookieを生成
 
+### configManager.js
+
+**説明**: 環境変数を読み込み、デフォルト値や環境別の設定を適用するユーティリティ。
+機密情報をマスクした設定オブジェクトを取得できます。
+
+**関数**:
+- `loadConfig()`: 環境変数から設定を読み込む
+- `getConfig(key)`: 設定値またはマスク済み設定全体を取得
+- `sanitizeConfig(config)`: 機密情報をマスクしたオブジェクトを返す
+
 ### dataFetchUtils.js
 
 **説明**: データ取得に関連する共通ユーティリティ関数を提供。

@@ -208,14 +208,17 @@ const addBudgetWarningToResponse = async (response) => {
     // 予算警告をチェック
     const isCritical = await module.exports.isBudgetCritical();
     const isWarning = !isCritical && await module.exports.isBudgetWarning();
-    
+
+    // 警告メッセージを取得
+    const warningMessage =
+      isCritical || isWarning
+        ? await module.exports.getBudgetWarningMessage()
+        : '';
+
     // 警告がない場合はそのまま返す
-    if (!isCritical && !isWarning) {
+    if (!warningMessage) {
       return response;
     }
-    
-    // 警告メッセージを取得
-    const warningMessage = await module.exports.getBudgetWarningMessage();
     
     // パース済みのレスポンスボディ
     let responseBody = {};

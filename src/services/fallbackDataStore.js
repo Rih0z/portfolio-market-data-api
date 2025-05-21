@@ -687,6 +687,17 @@ const exportCurrentFallbacksToGitHub = async () => {
     
     // 現在のGitHubのデータと統合
     const currentFallbacks = await getFallbackData(true);
+
+    // 取得に失敗してデータが空の場合はエラーとして扱う
+    if (
+      !currentFallbacks ||
+      (Object.keys(currentFallbacks.stocks || {}).length === 0 &&
+        Object.keys(currentFallbacks.etfs || {}).length === 0 &&
+        Object.keys(currentFallbacks.mutualFunds || {}).length === 0 &&
+        Object.keys(currentFallbacks.exchangeRates || {}).length === 0)
+    ) {
+      throw new Error('Failed to fetch current fallback data');
+    }
     
     const updatedStocks = { ...currentFallbacks.stocks, ...stocks };
     const updatedEtfs = { ...currentFallbacks.etfs, ...etfs };

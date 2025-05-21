@@ -36,7 +36,9 @@ const FALLBACK_TABLE = process.env.FALLBACK_DATA_TABLE || `${process.env.DYNAMOD
 const FALLBACK_DATA_REFRESH_INTERVAL = parseInt(process.env.FALLBACK_DATA_REFRESH_INTERVAL || '3600000', 10); // 1時間
 const GITHUB_REPO_OWNER = process.env.GITHUB_REPO_OWNER || 'portfolio-manager-team';
 const GITHUB_REPO_NAME = process.env.GITHUB_REPO_NAME || 'market-data-fallbacks';
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
+// GitHub Token はテスト実行中に動的に変更されることがあるため、
+// 参照時に常に環境変数から取得する関数を定義する
+const getGitHubToken = () => process.env.GITHUB_TOKEN || '';
 
 // usage.jsから統合: フォールバックキャッシュのプレフィックス
 const FALLBACK_PREFIX = 'fallback:';
@@ -575,7 +577,8 @@ const getFailedSymbols = async (dateKey, type) => {
  * @returns {Promise<boolean>} 成功したかどうか
  */
 const exportCurrentFallbacksToGitHub = async () => {
-  if (!GITHUB_TOKEN) {
+  const token = getGitHubToken();
+  if (!token) {
     logger.error('GitHub token not provided');
     return false;
   }
@@ -694,11 +697,11 @@ const exportCurrentFallbacksToGitHub = async () => {
     const updateFile = async (fileName, content) => {
       // 現在のファイルの情報を取得
       const fileInfoUrl = `https://api.github.com/repos/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/contents/${fileName}`;
-      
+
       try {
         const fileInfoResponse = await axios.get(fileInfoUrl, {
           headers: {
-            'Authorization': `token ${GITHUB_TOKEN}`,
+            'Authorization': `token ${token}`,
             'Accept': 'application/vnd.github.v3+json'
           }
         });
@@ -712,7 +715,7 @@ const exportCurrentFallbacksToGitHub = async () => {
           sha
         }, {
           headers: {
-            'Authorization': `token ${GITHUB_TOKEN}`,
+            'Authorization': `token ${token}`,
             'Accept': 'application/vnd.github.v3+json'
           }
         });

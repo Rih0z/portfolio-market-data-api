@@ -41,6 +41,8 @@
 - `__tests__/unit/utils/errorHandler.test.js` // 実装済み
 - `__tests__/unit/utils/logger.test.js` // 実装済み
 - `__tests__/unit/utils/cors.test.js` // 実装済み
+- `__tests__/unit/utils/configManager.test.js` // 実装済み
+- `__tests__/unit/utils/dataFetchWithFallback.test.js` // 新規実装
 
 ### 統合テスト (Integration Tests)
 
@@ -156,7 +158,7 @@ describe('ユーザープロフィール取得エンドポイント', () => {
 ### 設定管理 (Configuration)
 
 ```javascript
-// __tests__/unit/utils/configManager.test.js
+// __tests__/unit/utils/configManager.test.js - 実装済み
 describe('設定管理ユーティリティ', () => {
   test('環境変数から設定値を正しく読み込む', () => {/* ... */});
   test('デフォルト値が適用される', () => {/* ... */});

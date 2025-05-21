@@ -9,7 +9,6 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const { DynamoDBClient, CreateTableCommand, ListTablesCommand } = require('@aws-sdk/client-dynamodb');
 
 // 色の設定
 const colors = {
@@ -29,6 +28,18 @@ const log = {
   error: message => console.log(`${colors.red}[ERROR]${colors.reset} ${message}`),
   step: message => console.log(`${colors.cyan}[STEP]${colors.reset} ${message}`)
 };
+
+// AWS SDK の読み込み（オフライン環境に対応）
+let DynamoDBClient;
+let CreateTableCommand;
+let ListTablesCommand;
+let dynamodbAvailable = false;
+try {
+  ({ DynamoDBClient, CreateTableCommand, ListTablesCommand } = require('@aws-sdk/client-dynamodb'));
+  dynamodbAvailable = true;
+} catch (err) {
+  log.warning('@aws-sdk/client-dynamodb が見つかりません。DynamoDB 関連の処理をスキップします');
+}
 
 /**
  * DynamoDB Local が起動しているかチェック
@@ -55,6 +66,11 @@ function isDynamoDBRunning() {
  */
 async function startDynamoDBLocal() {
   log.step('DynamoDB Local の確認・起動...');
+
+  if (process.env.SKIP_DYNAMODB_CHECKS === 'true') {
+    log.warning('SKIP_DYNAMODB_CHECKS=true のため DynamoDB Local の起動をスキップします');
+    return false;
+  }
   
   // 既に起動しているか確認
   if (isDynamoDBRunning()) {
@@ -212,6 +228,11 @@ function createTestDirectories() {
  * @returns {DynamoDBClient} DynamoDBクライアント
  */
 function createDynamoDBClient() {
+  if (!dynamodbAvailable) {
+    log.warning('DynamoDB クライアントを作成できません。AWS SDK がインストールされていません');
+    return null;
+  }
+
   return new DynamoDBClient({
     region: 'us-east-1',
     endpoint: process.env.DYNAMODB_ENDPOINT || 'http://localhost:8000',
@@ -228,8 +249,13 @@ function createDynamoDBClient() {
  */
 async function createTestTables() {
   log.step('テスト用テーブルを作成しています...');
-  
+
   try {
+    if (!dynamodbAvailable) {
+      log.warning('AWS SDK が利用できないため、テーブル作成をスキップします');
+      return true;
+    }
+
     const client = createDynamoDBClient();
     
     // 既存のテーブルを取得

@@ -310,3 +310,7 @@ describe('ユーザー体験テスト', () => {
 - JavaScript テスティングのベストプラクティス: https://github.com/goldbergyoni/javascript-testing-best-practices
 - AWS SDK JavaScript v3 テスト: https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/testing-mocking.html
 - 非推奨機能のテストアプローチ: https://martinfowler.com/bliki/FeatureToggle.html
+
+## 8. テスト結果
+
+`npm run test:full:mock` および `npm test` を実行した結果を `document/test-results.md` に記録しています。現在、依存モジュールがインストールされていないため、テストランナーが起動できず失敗しています。詳細なログは同ファイルを参照してください。

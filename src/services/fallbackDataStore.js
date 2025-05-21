@@ -720,36 +720,23 @@ const exportCurrentFallbacksToGitHub = async () => {
         return true;
       } catch (error) {
         logger.error(`Error updating ${fileName}:`, error);
-        return false;
+        // エラーは上位でまとめて処理するため再スロー
+        throw error;
       }
     };
     
     // 並列でファイルを更新
-    const [stocksResult, etfsResult, fundsResult, ratesResult] = await Promise.allSettled([
+    // すべてのファイル更新を並列で実行
+    await Promise.all([
       updateFile('fallback-stocks.json', updatedStocks),
       updateFile('fallback-etfs.json', updatedEtfs),
       updateFile('fallback-funds.json', updatedFunds),
       updateFile('fallback-rates.json', updatedRates)
     ]);
-    
-    // 結果を集計
-    const results = {
-      stocks: stocksResult.status === 'fulfilled' && stocksResult.value,
-      etfs: etfsResult.status === 'fulfilled' && etfsResult.value,
-      mutualFunds: fundsResult.status === 'fulfilled' && fundsResult.value,
-      exchangeRates: ratesResult.status === 'fulfilled' && ratesResult.value
-    };
-    
-    // 少なくとも一つのファイルが更新されていれば成功
-    const success = Object.values(results).some(result => result === true);
-    
-    if (success) {
-      logger.info('Successfully updated fallback data on GitHub');
-    } else {
-      logger.error('Failed to update any fallback data files on GitHub');
-    }
-    
-    return success;
+
+    logger.info('Successfully updated fallback data on GitHub');
+
+    return true;
   } catch (error) {
     logger.error('Error exporting fallbacks to GitHub:', error);
     return false;
@@ -867,7 +854,7 @@ const exportFallbacks = async () => {
     }
   );
   // 以下のコードはテスト環境でのみ実行される
-  return await exportCurrentFallbacksToGitHub();
+  return await module.exports.exportCurrentFallbacksToGitHub();
 };
 
 /**

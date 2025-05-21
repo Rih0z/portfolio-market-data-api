@@ -41,6 +41,8 @@
 - `__tests__/unit/utils/errorHandler.test.js` // 実装済み
 - `__tests__/unit/utils/logger.test.js` // 実装済み
 - `__tests__/unit/utils/cors.test.js` // 実装済み
+- `__tests__/unit/utils/configManager.test.js` // 実装済み
+- `__tests__/unit/utils/dataFetchWithFallback.test.js` // 新規実装
 
 ### 統合テスト (Integration Tests)
 

@@ -2,7 +2,7 @@
 
 ## 1. 現在のテスト実装状況
 
-現在のテストカバレッジは約40%です。下記に実装済みのテストファイルを示します。
+現在のテストカバレッジは約45%です。下記に実装済みのテストファイルを示します。
 
 ### 単体テスト (Unit Tests)
 
@@ -34,6 +34,10 @@
 - `__tests__/unit/services/cache.test.js`
 - `__tests__/unit/services/fallbackDataStore.test.js` // 更新済み
 - `__tests__/unit/services/usage.test.js` // 新規実装済み
+
+#### アラート・メトリクス関連
+- `__tests__/unit/services/alerts.test.js` // 新規実装
+- `__tests__/unit/services/matrics.test.js` // 新規実装
 
 #### ユーティリティ関連 (Utils)
 - `__tests__/unit/utils/cookieParser.test.js`
@@ -220,6 +224,8 @@ describe('ユーザー体験テスト', () => {
    - ✅ ポートフォリオ関連エンドポイント（`saveFile.test.js`、`loadFile.test.js`として実装済み）
    - ✅ フォールバックデータサービス（`fallbackDataStore.test.js`として更新済み）
    - ✅ 非推奨プロキシモジュール（`usage.test.js`として実装済み）
+   - ✅ アラートサービス（`alerts.test.js`として実装済み）
+   - ✅ メトリクスサービス（`matrics.test.js`として実装済み）
 
 2. **中優先度**:
    - ユーザー管理関連のテスト（`userService.test.js`、`updateUserSettings.test.js`）
@@ -283,6 +289,8 @@ describe('ユーザー体験テスト', () => {
 - ✅ ポートフォリオ関連エンドポイントのテスト実装（`saveFile.test.js`、`loadFile.test.js`として完了）
 - ✅ フォールバックデータサービスのテスト更新（環境検出機能対応）
 - ✅ 非推奨プロキシモジュール（usage.js）のテスト実装
+- ✅ アラートサービスのテスト実装（`alerts.test.js`）
+- ✅ メトリクスサービスのテスト実装（`matrics.test.js`）
 - カバレッジ目標：45%
 
 ### フェーズ2（2-3週間）

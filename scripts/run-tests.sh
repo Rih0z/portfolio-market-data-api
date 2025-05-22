@@ -136,6 +136,16 @@ JEST_CONFIG_PATH="jest.config.js"
 VERBOSE_COVERAGE=0
 DETECT_OPEN_HANDLES=0
 
+# cross-env コマンドの検出
+if [ -x "./node_modules/.bin/cross-env" ]; then
+  CROSS_ENV_CMD="npx ./node_modules/.bin/cross-env"
+elif command -v cross-env >/dev/null 2>&1; then
+  CROSS_ENV_CMD="npx cross-env"
+else
+  print_warning "cross-env が見つかりません。環境変数を直接設定してテストを実行します"
+  CROSS_ENV_CMD=""
+fi
+
 # オプション解析
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -586,10 +596,10 @@ fi
 # テストの実行
 if [ -n "$ENV_VARS" ]; then
   # JESTのカバレッジ設定を強制的に有効化（.env.localの設定より優先）
-  eval "npx cross-env JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true ENABLE_COVERAGE=true $ENV_VARS $JEST_CMD"
+  eval "$CROSS_ENV_CMD JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true ENABLE_COVERAGE=true $ENV_VARS $JEST_CMD"
 else
   # JESTのカバレッジ設定を強制的に有効化
-  eval "npx cross-env JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true ENABLE_COVERAGE=true $JEST_CMD"
+  eval "$CROSS_ENV_CMD JEST_COVERAGE=true COLLECT_COVERAGE=true FORCE_COLLECT_COVERAGE=true ENABLE_COVERAGE=true $JEST_CMD"
 fi
 
 # テスト結果
@@ -663,7 +673,11 @@ if [ $GENERATE_CHART -eq 1 ] && [ $NO_COVERAGE -ne 1 ] && [ -f "./test-results/d
   print_info "カバレッジチャートを生成しています..."
   
   # チャート生成スクリプトを実行
-  npx cross-env NODE_ENV=production node ./scripts/generate-coverage-chart.js
+  if [ -n "$CROSS_ENV_CMD" ]; then
+    $CROSS_ENV_CMD NODE_ENV=production node ./scripts/generate-coverage-chart.js
+  else
+    NODE_ENV=production node ./scripts/generate-coverage-chart.js
+  fi
   
   if [ $? -eq 0 ]; then
     print_success "カバレッジチャートが生成されました"

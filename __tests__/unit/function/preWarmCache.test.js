@@ -29,7 +29,7 @@ const RATE_SYMBOLS = ['USD-JPY', 'EUR-USD', 'EUR-JPY', 'GBP-USD', 'USD-CNY'];
 beforeEach(() => {
   jest.clearAllMocks();
   cache.cleanup.mockResolvedValue({ count: 0 });
-  scrapingBlacklist.cleanupExpiredEntries.mockResolvedValue({ count: 0 });
+  scrapingBlacklist.cleanupBlacklist.mockResolvedValue({ count: 0 });
   enhancedMarketDataService.getUsStocksData.mockResolvedValue({});
   enhancedMarketDataService.getJpStocksData.mockResolvedValue({});
   enhancedMarketDataService.getMutualFundsData.mockResolvedValue({});
@@ -41,7 +41,7 @@ describe('preWarmCache handler', () => {
     const result = await preWarmCache.handler({});
 
     expect(cache.cleanup).toHaveBeenCalled();
-    expect(scrapingBlacklist.cleanupExpiredEntries).toHaveBeenCalled();
+    expect(scrapingBlacklist.cleanupBlacklist).toHaveBeenCalled();
     expect(enhancedMarketDataService.getUsStocksData).toHaveBeenCalledWith(US_STOCK_SYMBOLS, true);
     expect(enhancedMarketDataService.getJpStocksData).toHaveBeenCalledWith(JP_STOCK_SYMBOLS, true);
     expect(enhancedMarketDataService.getMutualFundsData).toHaveBeenCalledWith(FUND_SYMBOLS, true);

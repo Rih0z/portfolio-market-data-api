@@ -35,6 +35,23 @@ const AGGREGATION_PERIODS = {
   WEEKLY: 604800     // 1週間
 };
 
+// DynamoDBから読み込んだ際にキーを正規化するマッピング
+const TYPE_KEY_MAP = {
+  'jp-stock': 'JP_STOCK',
+  'us-stock': 'US_STOCK',
+  'mutual-fund': 'MUTUAL_FUND',
+  'exchange-rate': 'EXCHANGE_RATE'
+};
+
+const normalizePriorityKeys = (priorities) => {
+  const normalized = {};
+  for (const [key, value] of Object.entries(priorities)) {
+    const mapped = TYPE_KEY_MAP[key] || key;
+    normalized[mapped] = value;
+  }
+  return normalized;
+};
+
 // データソースの優先順位の内部管理
 let sourcePriorities = {};
 
@@ -94,7 +111,9 @@ const loadSourcePriorities = async () => {
   const result = await dynamoDb.get(params).promise();
 
   if (result.Item && result.Item.priorities) {
-    sourcePriorities = result.Item.priorities;
+    // DynamoDB上ではデータタイプキーが小文字で保存されていることがあるため
+    // 読み込み時にキーを正規化する
+    sourcePriorities = normalizePriorityKeys(result.Item.priorities);
     return sourcePriorities;
   }
 

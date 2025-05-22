@@ -53,8 +53,9 @@ const isBlacklisted = async (symbol, market) => {
     
     if (now > cooldownUntil) {
       // クールダウン期間が終了したらブラックリストから削除
-      // テストでもスパイできるようexports経由で呼び出す
-      await exports.removeFromBlacklist(symbol);
+      // module.exports を通して呼び出すことで、
+      // Jest からのスパイが機能するようにする
+      await module.exports.removeFromBlacklist(symbol);
       return false;
     }
     
@@ -168,7 +169,7 @@ const recordSuccess = async (symbol) => {
     
     // ブラックリストから削除
     if (result.Item.failureCount >= MAX_FAILURES) {
-      await exports.removeFromBlacklist(symbol);
+      await module.exports.removeFromBlacklist(symbol);
     } else {
       // 失敗回数をリセット
       const updateParams = {

@@ -117,6 +117,39 @@ const notifySystemEvent = async (eventType, eventData) => {
 };
 
 /**
+ * 汎用アラートを送信する
+ * @param {Object} options - アラートオプション
+ * @param {string} [options.subject] - 件名
+ * @param {string} options.message - メッセージ
+ * @param {Object} [options.detail] - 追加情報
+ * @param {string} [options.severity='INFO'] - 重要度
+ * @param {string} [options.source] - 通知元
+ * @returns {Promise<Object>} 通知結果
+ */
+const sendAlert = async ({
+  subject,
+  message,
+  detail = {},
+  severity = 'INFO',
+  source
+} = {}) => {
+  try {
+    logger.warn('ALERT:', { subject, message, severity, source, ...detail });
+
+    return {
+      success: true,
+      timestamp: new Date().toISOString()
+    };
+  } catch (alertError) {
+    logger.error('Failed to send alert:', alertError);
+    return {
+      success: false,
+      error: alertError.message
+    };
+  }
+};
+
+/**
  * スロットリング付きのアラートを送信する
  * @param {Object} options - アラートオプション
  * @param {string} options.key - アラート識別キー
@@ -161,5 +194,6 @@ module.exports = {
   notifyUsage,
   notifyBudget,
   notifySystemEvent,
+  sendAlert,
   throttledAlert
 };

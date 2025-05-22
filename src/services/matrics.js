@@ -14,6 +14,14 @@
 const { getDynamoDb } = require('../utils/awsConfig');
 const { DATA_SOURCES } = require('../config/constants');
 
+// ソース名を正規化して比較するためのユーティリティ
+const slugify = (name) =>
+  name
+    .toLowerCase()
+    .replace(/[()]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-');
+
 // 環境変数からの設定
 const tablePrefix = (process.env.DYNAMODB_TABLE_PREFIX || 'portfolio-market-data')
   .replace(/-+$/, '');
@@ -90,8 +98,7 @@ const loadSourcePriorities = async () => {
     return sourcePriorities;
   }
 
-  // 存在しない場合は初期値を保存
-  await saveSourcePriorities();
+  // 存在しない場合は初期値をそのまま返す
   return sourcePriorities;
 };
 
@@ -165,10 +172,12 @@ const updateSourcePriority = async (dataType, source, adjustment) => {
 
   try {
     // 現在の優先順位配列
-    const currentOrder = sourcePriorities[mappedType] || [...DATA_SOURCES[mappedType]?.DEFAULT_PRIORITY];
-    
-    // ソースのインデックスを取得
-    const currentIndex = currentOrder.indexOf(source);
+    const currentOrder =
+      sourcePriorities[mappedType] || [...DATA_SOURCES[mappedType]?.DEFAULT_PRIORITY];
+
+    // ソースのインデックスを取得（スラッグ名でも検索可能）
+    const sourceSlug = slugify(source);
+    const currentIndex = currentOrder.findIndex((s) => slugify(s) === sourceSlug);
     if (currentIndex === -1) return false; // ソースが存在しない
     
     // 新しいインデックスを計算
@@ -185,9 +194,10 @@ const updateSourcePriority = async (dataType, source, adjustment) => {
     if (newIndex === currentIndex) return true;
     
     // 配列を再構成
+    const canonicalName = currentOrder[currentIndex];
     const newOrder = [...currentOrder];
     newOrder.splice(currentIndex, 1); // 現在の位置から削除
-    newOrder.splice(newIndex, 0, source); // 新しい位置に挿入
+    newOrder.splice(newIndex, 0, canonicalName); // 新しい位置に挿入
     
     // 更新を保存
     sourcePriorities[mappedType] = newOrder;

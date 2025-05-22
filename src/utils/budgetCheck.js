@@ -42,7 +42,7 @@ const isBudgetCritical = async () => {
     
     // 本番環境では実際のCloudWatchメトリクスを確認
     if (process.env.NODE_ENV === 'production') {
-      const usage = await getBudgetUsage();
+      const usage = await module.exports.getBudgetUsage();
       
       // キャッシュに保存
       await cacheService.set(BUDGET_CACHE_KEY, { 
@@ -82,7 +82,7 @@ const isBudgetWarning = async () => {
     
     // 本番環境では実際のCloudWatchメトリクスを確認
     if (process.env.NODE_ENV === 'production') {
-      const usage = await getBudgetUsage();
+      const usage = await module.exports.getBudgetUsage();
       
       // キャッシュに保存
       await cacheService.set(BUDGET_CACHE_KEY, { 
@@ -176,7 +176,7 @@ const getBudgetWarningMessage = async () => {
     if (cachedStatus) {
       usage = cachedStatus.usage;
     } else if (process.env.NODE_ENV === 'production') {
-      usage = await getBudgetUsage();
+      usage = await module.exports.getBudgetUsage();
     } else if (process.env.TEST_BUDGET_CRITICAL === 'true') {
       usage = 0.98; // テスト用に98%
     } else if (process.env.TEST_BUDGET_WARNING === 'true') {

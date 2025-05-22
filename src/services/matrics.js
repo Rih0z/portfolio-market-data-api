@@ -208,7 +208,10 @@ const updateSourcePriority = async (dataType, source, adjustment) => {
     
     // 更新を保存
     sourcePriorities[mappedType] = newOrder;
-    await saveSourcePriorities();
+    const saveOk = await saveSourcePriorities();
+    if (!saveOk) {
+      return false;
+    }
     
     console.log(`Updated ${mappedType} source priority: ${source} moved from ${currentIndex} to ${newIndex}`);
     return true;

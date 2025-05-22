@@ -7,13 +7,20 @@
     "dev": "serverless offline start",
     "deploy": "serverless deploy --stage dev",
     "deploy:prod": "serverless deploy --stage prod",
-    "logs": "serverless logs -f marketData -t"
+    "logs": "serverless logs -f marketData -t",
+    "test": "jest --forceExit",
+    "test:unit": "jest --selectProjects unit --forceExit",
+    "test:coverage": "jest --coverage --forceExit",
+    "test:clean": "rm -rf ./test-results && mkdir -p ./test-results",
+    "dynamodb:start": "java -Djava.library.path=./dynamodb-local/DynamoDBLocal_lib -jar ./dynamodb-local/DynamoDBLocal.jar -inMemory -port 8000",
+    "test:setup": "node scripts/setup-test-env.js"
   },
   "keywords": [
     "portfolio",
     "market-data",
     "api",
-    "lambda"
+    "lambda",
+    "serverless"
   ],
   "author": "",
   "license": "ISC",
@@ -32,14 +39,12 @@
     "googleapis": "^148.0.0",
     "csv-parse": "^5.5.3",
     "aws-sdk-mock": "^5.8.0",
-    "chart.js": "^3.9.1",
     "cross-env": "^7.0.3",
     "jest": "^29.7.0",
     "jest-html-reporter": "^3.10.2",
     "jest-junit": "^16.0.0",
     "mock-fs": "^5.2.0",
     "nock": "^13.5.1",
-    "open": "^8.4.2",
     "serverless": "^3.32.2",
     "serverless-dotenv-plugin": "^4.0.2",
     "serverless-offline": "^12.0.4",
@@ -47,6 +52,28 @@
     "supertest": "^6.3.4"
   },
   "engines": {
-    "node": ">=18.x"
+    "node": ">=18.x <=18.x"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "reporters": [
+      "default",
+      [
+        "jest-junit",
+        {
+          "outputDirectory": "./test-results",
+          "outputName": "junit.xml"
+        }
+      ],
+      [
+        "jest-html-reporter",
+        {
+          "pageTitle": "pfwise-api テスト結果",
+          "outputPath": "./test-results/test-report.html",
+          "includeFailureMsg": true,
+          "includeSuiteFailure": true
+        }
+      ]
+    ]
   }
 }

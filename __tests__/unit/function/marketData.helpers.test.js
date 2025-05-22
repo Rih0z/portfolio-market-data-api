@@ -63,6 +63,12 @@ describe('marketData helper functions', () => {
       expect(result['USD-EUR']).toBeDefined();
     });
 
+    test('throws error when pairs not provided in non test mode', async () => {
+      await expect(marketData.getMultipleExchangeRates(undefined, false, false))
+        .rejects
+        .toThrow('Currency pairs array is required');
+    });
+
     test('calls enhanced service when not in test', async () => {
       enhancedService.getExchangeRateData = jest.fn().mockResolvedValue({ rate: 1, pair: 'AAA-BBB' });
       const result = await marketData.getMultipleExchangeRates(['AAA-BBB'], false, false);

@@ -583,21 +583,23 @@ const getMultipleExchangeRates = async (pairs, refresh = false, isTest = false) 
     pairs = pairs.split(',').map((p) => p.trim()).filter(Boolean);
   }
 
+  // 入力バリデーション
+  if (!pairs || !Array.isArray(pairs) || pairs.length === 0) {
+    if (isTest) {
+      // テスト環境ではデフォルトペアを使用
+      pairs = ['USD-JPY', 'EUR-JPY', 'GBP-JPY', 'USD-EUR'];
+    } else {
+      throw new Error('Currency pairs array is required');
+    }
+  }
+
   const pairDisplay = Array.isArray(pairs) ? pairs.join(', ') : '';
   logger.info(`Getting multiple exchange rates for ${pairDisplay}. Refresh: ${refresh}. IsTest: ${isTest}`);
   
   // テスト環境の場合はモックデータを返す（より積極的にモックデータを返す）
   if (isTest) {
     logger.info("Using test multiple exchange rate data");
-    
-    // 標準的な通貨ペアを用意（テスト期待値に合わせる）
-    const defaultPairs = ['USD-JPY', 'EUR-JPY', 'GBP-JPY', 'USD-EUR'];
-    
-    // 空の配列や無効な値の場合はデフォルトを使用
-    if (!pairs || !Array.isArray(pairs) || pairs.length === 0) {
-      pairs = defaultPairs;
-    }
-    
+
     const result = {};
     pairs.forEach(pair => {
       const [base, target] = pair.split('-');
@@ -605,15 +607,15 @@ const getMultipleExchangeRates = async (pairs, refresh = false, isTest = false) 
         result[pair] = createTestExchangeRateData(base, target);
       }
     });
-    
+
     // 特定のテストケース用にデフォルトデータを追加
-    defaultPairs.forEach(pair => {
+    ['USD-JPY', 'EUR-JPY', 'GBP-JPY', 'USD-EUR'].forEach(pair => {
       if (!result[pair]) {
         const [base, target] = pair.split('-');
         result[pair] = createTestExchangeRateData(base, target);
       }
     });
-    
+
     return result;
   }
   

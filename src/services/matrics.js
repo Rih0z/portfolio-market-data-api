@@ -161,6 +161,13 @@ const updateSourcePriority = async (dataType, source, adjustment) => {
   // テーブル初期化確認
   if (!isTableInitialized) {
     await initializeMetricsTable();
+  } else {
+    // 最新の優先順位を取得しておく
+    try {
+      await loadSourcePriorities();
+    } catch (e) {
+      console.error('Error reloading source priorities:', e);
+    }
   }
 
   // データタイプによってマッピング処理

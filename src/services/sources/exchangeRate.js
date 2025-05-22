@@ -414,7 +414,7 @@ const getBatchExchangeRates = async (pairs) => {
     pairs.map(async ({ base, target }) => {
       try {
         // 各ペアのレートを取得
-        const rateData = await getExchangeRate(base, target);
+        const rateData = await module.exports.getExchangeRate(base, target);
         const pairKey = `${base}-${target}`;
         results[pairKey] = rateData;
       } catch (error) {

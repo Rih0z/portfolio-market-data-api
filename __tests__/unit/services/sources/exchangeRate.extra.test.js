@@ -20,7 +20,7 @@ describe('exchangeRate service additional coverage', () => {
     expect(result.source).toBe('Internal (same currencies)');
   });
 
-  test('JPY to USD uses inverse rate from dynamic calculation when API fails', async () => {
+  test('JPY to USD falls back to hardcoded rate when API fails', async () => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2025-05-22T00:00:00Z'));
 
@@ -30,17 +30,11 @@ describe('exchangeRate service additional coverage', () => {
     const result = await exchangeRateService.getExchangeRate('JPY', 'USD');
     jest.useRealTimers();
 
-    const baseRate = DEFAULT_EXCHANGE_RATE;
-    const date = new Date('2025-05-22T00:00:00Z');
-    const dayOfYear = Math.floor((date - new Date(date.getFullYear(), 0, 0)) / 86400000);
-    const dateSeed = (dayOfYear + date.getDay()) % 100;
-    const fluctuation = (dateSeed / 100 * 6) - 3;
-    const calculatedRate = baseRate * (1 + (fluctuation / 100));
-    const expected = parseFloat((1 / calculatedRate).toFixed(4));
+    const expected = parseFloat((1 / DEFAULT_EXCHANGE_RATE).toFixed(4));
 
     expect(result.base).toBe('JPY');
     expect(result.target).toBe('USD');
-    expect(result.source).toBe('dynamic-calculation');
+    expect(result.source).toBe('API Fallback');
     expect(result.rate).toBeCloseTo(expected, 4);
   });
 

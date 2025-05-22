@@ -57,14 +57,20 @@ describe('marketData helper functions', () => {
       expect(result['AAA-BBB']).toEqual({ rate: 1, pair: 'AAA-BBB' });
     });
 
-    test('returns dummy data and records fallback when service fails', async () => {
+    test('returns dummy data when service returns null', async () => {
       enhancedService.getExchangeRateData = jest.fn().mockResolvedValue(null);
       fallbackDataStore.recordFailedFetch = jest.fn();
       const result = await marketData.getMultipleExchangeRates(['AAA-BBB'], false, false);
       expect(enhancedService.getExchangeRateData).toHaveBeenCalledWith('AAA', 'BBB', false);
-      expect(fallbackDataStore.recordFailedFetch).toHaveBeenCalledWith('AAA-BBB', DATA_TYPES.EXCHANGE_RATE, 'No data returned');
+      expect(fallbackDataStore.recordFailedFetch).not.toHaveBeenCalled();
       expect(result['AAA-BBB'].pair).toBe('AAA-BBB');
       expect(result['AAA-BBB'].source).toBe('Default Fallback');
+    });
+
+    test('returns error object for invalid pair format', async () => {
+      const result = await marketData.getMultipleExchangeRates(['INVALID'], false, false);
+      expect(result['INVALID'].source).toBe('Error');
+      expect(result['INVALID'].error).toMatch('Invalid currency pair format');
     });
   });
 

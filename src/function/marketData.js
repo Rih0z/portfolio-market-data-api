@@ -577,7 +577,8 @@ const getExchangeRateData = async (base, target, refresh = false, isTest = false
  * @returns {Promise<Object>} 為替レートデータ
  */
 const getMultipleExchangeRates = async (pairs, refresh = false, isTest = false) => {
-  logger.info(`Getting multiple exchange rates for ${pairs.join(', ')}. Refresh: ${refresh}. IsTest: ${isTest}`);
+  const pairDisplay = Array.isArray(pairs) ? pairs.join(', ') : '';
+  logger.info(`Getting multiple exchange rates for ${pairDisplay}. Refresh: ${refresh}. IsTest: ${isTest}`);
   
   // テスト環境の場合はモックデータを返す（より積極的にモックデータを返す）
   if (isTest) {

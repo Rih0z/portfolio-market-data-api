@@ -80,6 +80,9 @@ chmod +x scripts/run-tests.sh
 
 # 単体テストと統合テストを高速実行（モック使用）
 ./scripts/run-tests.sh quick
+
+# カバレッジチャートを生成
+./scripts/run-tests.sh --chart all
 ```
 
 ## 3. npm スクリプトの一覧

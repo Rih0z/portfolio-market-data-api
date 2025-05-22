@@ -51,6 +51,13 @@
 - `__tests__/unit/utils/dataFetchWithFallback.test.js` // 新規実装
 - `__tests__/unit/utils/budgetCheck.test.js` // 新規実装
 
+#### スクリプト関連
+- `__tests__/unit/scripts/runTestsScript.test.js`
+- `__tests__/unit/scripts/runTestsAllScript.test.js`
+- `__tests__/unit/scripts/runTestsAllScript.extra.test.js` // 新規実装
+- `__tests__/unit/scripts/generateCoverageChart.test.js`
+- `__tests__/unit/customReporter.test.js`
+
 ### 統合テスト (Integration Tests)
 
 #### 認証関連 (Auth)

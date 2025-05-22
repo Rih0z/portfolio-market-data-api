@@ -233,6 +233,7 @@ const notifyDataValidationIssue = async (symbol, dataType, validationResult) => 
 
 module.exports = {
   validateData,
+  validatePriceChange,
   validateMultiSourceData,
   notifyDataValidationIssue
 };

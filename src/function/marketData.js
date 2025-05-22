@@ -47,20 +47,23 @@ const validateParams = (params) => {
   }
 
   // シンボルパラメータのチェック（為替レートの場合は除外）
-  if (params.type !== DATA_TYPES.EXCHANGE_RATE && !params.symbols) {
-    result.isValid = false;
-    result.errors.push('Missing required parameter: symbols');
-  } else if (params.symbols) {
-    const symbolsArray = params.symbols
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (symbolsArray.length === 0) {
+  if (params.type !== DATA_TYPES.EXCHANGE_RATE) {
+    if (params.symbols === undefined || params.symbols === null) {
       result.isValid = false;
-      result.errors.push('symbols parameter cannot be empty');
-    } else if (symbolsArray.length > 100) {
-      result.isValid = false;
-      result.errors.push('Too many symbols. Maximum 100 symbols allowed');
+      result.errors.push('Missing required parameter: symbols');
+    } else {
+      const symbolsArray = params.symbols
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      if (symbolsArray.length === 0) {
+        result.isValid = false;
+        result.errors.push('symbols parameter cannot be empty');
+      } else if (symbolsArray.length > 100) {
+        result.isValid = false;
+        result.errors.push('Too many symbols. Maximum 100 symbols allowed');
+      }
     }
   }
 

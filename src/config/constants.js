@@ -23,6 +23,24 @@ const DATA_TYPES = {
 };
 
 /**
+ * データソースとそのデフォルト優先順位
+ */
+const DATA_SOURCES = {
+  US_STOCK: {
+    DEFAULT_PRIORITY: ['Yahoo Finance API', 'Yahoo Finance (Web)', 'Fallback']
+  },
+  JP_STOCK: {
+    DEFAULT_PRIORITY: ['Yahoo Finance Japan', 'Minkabu', 'Kabutan', 'Fallback']
+  },
+  MUTUAL_FUND: {
+    DEFAULT_PRIORITY: ['Morningstar CSV', 'Fallback']
+  },
+  EXCHANGE_RATE: {
+    DEFAULT_PRIORITY: ['exchangerate-host', 'dynamic-calculation', 'hardcoded-values']
+  }
+};
+
+/**
  * エラーコードの定義 - APIレスポンスで使用
  * エラーコードは大文字のスネークケースで定義（テスト互換性のため）
  */
@@ -101,6 +119,16 @@ const DATA_VALIDATION = {
 };
 
 /**
+ * キャッシュ予熱に使用する人気銘柄
+ */
+const PREWARM_SYMBOLS = {
+  'us-stock': ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'NVDA', 'BRK-B', 'JPM', 'JNJ'],
+  'jp-stock': ['7203', '9984', '6758', '8306', '9432', '6861', '7974', '6501', '8035', '9433'],
+  'mutual-fund': ['2931113C', '0131103C', '0231303C', '0131423C', '2931333C'],
+  'exchange-rate': ['USD-JPY', 'EUR-USD', 'EUR-JPY', 'GBP-USD', 'USD-CNY']
+};
+
+/**
  * デフォルト為替レート（データソースが利用できない場合）
  */
 const DEFAULT_EXCHANGE_RATE = 149.5;
@@ -115,5 +143,7 @@ module.exports = {
   RESPONSE_FORMATS,
   BATCH_SIZES,
   DATA_VALIDATION,
+  DATA_SOURCES,
+  PREWARM_SYMBOLS,
   DEFAULT_EXCHANGE_RATE
 };

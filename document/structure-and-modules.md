@@ -69,6 +69,8 @@ src/
 - `CACHE_TIMES`: キャッシュ時間設定（秒単位）
 - `RESPONSE_FORMATS`: レスポンス形式設定（JSON, CSV, TEXT）
 - `BATCH_SIZES`: バッチ処理サイズ設定
+- `DATA_SOURCES`: データソース定義とデフォルト優先順位
+- `PREWARM_SYMBOLS`: キャッシュ予熱用の人気銘柄リスト
 - `DEFAULT_EXCHANGE_RATE`: デフォルト為替レート（149.5）
 
 ### envConfig.js

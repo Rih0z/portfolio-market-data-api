@@ -43,7 +43,7 @@ describe('Metrics Service', () => {
   const TEST_SOURCE = 'yahoo-finance-api';
   
   // 各テスト前の準備
-  beforeEach(() => {
+  beforeEach(async () => {
     // モックをリセット
     jest.clearAllMocks();
     
@@ -56,7 +56,7 @@ describe('Metrics Service', () => {
     
     // 初期化フラグをリセット（テスト対象モジュールの内部状態）
     // 注意: これは通常良い方法ではないが、状態を持つモジュールのテストには必要
-    metricsService.initializeMetricsTable();
+    await metricsService.initializeMetricsTable();
   });
   
   describe('initializeMetricsTable', () => {

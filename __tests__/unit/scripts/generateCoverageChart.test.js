@@ -31,6 +31,26 @@ describe('generate-coverage-chart script utilities', () => {
     expect(chart.loadCoverageData()).toBeNull();
   });
 
+  test('loadCoverageData returns parsed data when file exists', () => {
+    fs.existsSync.mockReturnValue(true);
+    fs.readFileSync.mockReturnValue(JSON.stringify({
+      coverageMap: {
+        total: {
+          statements: { pct: 80, covered: 8, total: 10 },
+          branches: { pct: 70, covered: 7, total: 10 },
+          functions: { pct: 90, covered: 9, total: 10 },
+          lines: { pct: 85, covered: 17, total: 20 }
+        }
+      }
+    }));
+    expect(chart.loadCoverageData()).toEqual({
+      statements: { pct: 80, covered: 8, total: 10 },
+      branches: { pct: 70, covered: 7, total: 10 },
+      functions: { pct: 90, covered: 9, total: 10 },
+      lines: { pct: 85, covered: 17, total: 20 }
+    });
+  });
+
   test('generateBarChart returns svg string', () => {
     const coverageData = {
       statements: { pct: 90, covered: 90, total: 100 },
@@ -43,5 +63,90 @@ describe('generate-coverage-chart script utilities', () => {
     expect(svg).toContain('<svg');
     expect(svg).toContain('テストカバレッジ');
     jest.useRealTimers();
+  });
+
+  test('generateLineChart returns svg string', () => {
+    const current = {
+      statements: { pct: 80 },
+      branches: { pct: 70 },
+      functions: { pct: 60 },
+      lines: { pct: 90 }
+    };
+    const history = [
+      { date: '2025-05-17', statements: 70, branches: 60, functions: 50, lines: 80 }
+    ];
+    jest.useFakeTimers().setSystemTime(new Date('2025-05-18'));
+    const svg = chart.generateLineChart(current, history, 'final');
+    expect(svg).toContain('<svg');
+    expect(svg).toContain('テストカバレッジ履歴');
+    jest.useRealTimers();
+  });
+
+  test('loadCoverageHistory handles missing file', () => {
+    fs.existsSync.mockReturnValue(false);
+    expect(chart.loadCoverageHistory()).toEqual([]);
+  });
+
+  test('loadCoverageHistory handles parse error', () => {
+    fs.existsSync.mockReturnValue(true);
+    fs.readFileSync.mockReturnValue('invalid');
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    expect(chart.loadCoverageHistory()).toEqual([]);
+    expect(errSpy).toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  test('saveCoverageHistory writes merged history', () => {
+    jest.useFakeTimers().setSystemTime(new Date('2025-05-18'));
+    const loadSpy = jest.spyOn(chart, 'loadCoverageHistory').mockReturnValue([]);
+    const writeSpy = fs.writeFileSync.mockImplementation(() => {});
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    chart.saveCoverageHistory({ statements: { pct: 80 }, branches: { pct: 70 }, functions: { pct: 90 }, lines: { pct: 85 } });
+    expect(writeSpy).toHaveBeenCalled();
+    loadSpy.mockRestore();
+    logSpy.mockRestore();
+    jest.useRealTimers();
+  });
+
+  test('embedChartsInReport handles missing report file', () => {
+    fs.existsSync.mockReturnValue(false);
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    chart.embedChartsInReport('<svg/>', '<svg/>');
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  test('embedChartsInReport updates existing html', () => {
+    fs.existsSync.mockReturnValue(true);
+    fs.readFileSync.mockReturnValue('<html><body></body></html>');
+    const writeSpy = fs.writeFileSync.mockImplementation(() => {});
+    chart.embedChartsInReport('<svg/>', '<svg/>');
+    expect(writeSpy).toHaveBeenCalled();
+  });
+
+  test('main exits when coverage data missing', () => {
+    jest.spyOn(chart, 'loadCoverageData').mockReturnValue(null);
+    const exitSpy = jest.spyOn(process, 'exit').mockImplementation(() => { throw new Error('exit'); });
+    expect(() => chart.main()).toThrow('exit');
+    exitSpy.mockRestore();
+  });
+
+  test('main generates charts when data exists', () => {
+    jest.spyOn(chart, 'loadCoverageData').mockReturnValue({
+      statements: { pct: 80 },
+      branches: { pct: 70 },
+      functions: { pct: 90 },
+      lines: { pct: 85 }
+    });
+    jest.spyOn(chart, 'getCoverageTarget').mockReturnValue('final');
+    jest.spyOn(chart, 'generateBarChart').mockReturnValue('bar');
+    jest.spyOn(chart, 'loadCoverageHistory').mockReturnValue([]);
+    jest.spyOn(chart, 'saveCoverageHistory').mockImplementation(() => {});
+    jest.spyOn(chart, 'generateLineChart').mockReturnValue('line');
+    const embedSpy = jest.spyOn(chart, 'embedChartsInReport').mockImplementation(() => {});
+    fs.existsSync.mockReturnValue(true);
+    fs.writeFileSync.mockImplementation(() => {});
+    chart.main();
+    expect(embedSpy).toHaveBeenCalledWith('bar', 'line');
   });
 });

@@ -53,7 +53,8 @@ const isBlacklisted = async (symbol, market) => {
     
     if (now > cooldownUntil) {
       // クールダウン期間が終了したらブラックリストから削除
-      await removeFromBlacklist(symbol);
+      // テストでもスパイできるようexports経由で呼び出す
+      await exports.removeFromBlacklist(symbol);
       return false;
     }
     
@@ -167,7 +168,7 @@ const recordSuccess = async (symbol) => {
     
     // ブラックリストから削除
     if (result.Item.failureCount >= MAX_FAILURES) {
-      await removeFromBlacklist(symbol);
+      await exports.removeFromBlacklist(symbol);
     } else {
       // 失敗回数をリセット
       const updateParams = {

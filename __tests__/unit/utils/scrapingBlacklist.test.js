@@ -89,4 +89,76 @@ describe('Scraping Blacklist Utils', () => {
       expect(alertService.sendAlert).toHaveBeenCalled();
     });
   });
+
+  describe('recordSuccess', () => {
+    test('ブラックリスト登録銘柄は削除される', async () => {
+      mockDynamoDb.get.mockReturnValueOnce({
+        promise: jest.fn().mockResolvedValue({
+          Item: { failureCount: 3 }
+        })
+      });
+      jest.spyOn(blacklist, 'removeFromBlacklist').mockResolvedValue(true);
+
+      const res = await blacklist.recordSuccess('CCC');
+      expect(res).toBe(true);
+      expect(blacklist.removeFromBlacklist).toHaveBeenCalledWith('CCC');
+    });
+
+    test('失敗カウントが残る場合は更新する', async () => {
+      mockDynamoDb.get.mockReturnValueOnce({
+        promise: jest.fn().mockResolvedValue({
+          Item: { failureCount: 2 }
+        })
+      });
+      mockDynamoDb.update.mockReturnValueOnce({ promise: jest.fn().mockResolvedValue({}) });
+
+      const res = await blacklist.recordSuccess('DDD');
+      expect(res).toBe(true);
+      expect(mockDynamoDb.update).toHaveBeenCalled();
+    });
+
+    test('記録がない場合はtrueを返す', async () => {
+      mockDynamoDb.get.mockReturnValueOnce({ promise: jest.fn().mockResolvedValue({}) });
+
+      const res = await blacklist.recordSuccess('EEE');
+      expect(res).toBe(true);
+    });
+  });
+
+  describe('getBlacklistedSymbols', () => {
+    test('ブラックリスト一覧を返す', async () => {
+      const items = [{ symbol: 'FFF' }];
+      mockDynamoDb.scan.mockReturnValueOnce({ promise: jest.fn().mockResolvedValue({ Items: items }) });
+
+      const res = await blacklist.getBlacklistedSymbols();
+      expect(res).toEqual(items);
+      expect(mockDynamoDb.scan).toHaveBeenCalled();
+    });
+
+    test('エラー時は空配列を返す', async () => {
+      mockDynamoDb.scan.mockReturnValueOnce({ promise: jest.fn().mockRejectedValue(new Error('err')) });
+
+      const res = await blacklist.getBlacklistedSymbols();
+      expect(res).toEqual([]);
+    });
+  });
+
+  describe('cleanupBlacklist', () => {
+    test('期限切れアイテムを削除する', async () => {
+      const expired = [{ symbol: 'GGG' }, { symbol: 'HHH' }];
+      mockDynamoDb.scan.mockReturnValueOnce({ promise: jest.fn().mockResolvedValue({ Items: expired }) });
+      mockDynamoDb.delete.mockReturnValue({ promise: jest.fn().mockResolvedValue({}) });
+
+      const res = await blacklist.cleanupBlacklist();
+      expect(res).toEqual({ success: true, cleanedItems: expired.length });
+      expect(mockDynamoDb.delete).toHaveBeenCalledTimes(expired.length);
+    });
+
+    test('エラー時はfalseを返す', async () => {
+      mockDynamoDb.scan.mockReturnValueOnce({ promise: jest.fn().mockRejectedValue(new Error('err')) });
+
+      const res = await blacklist.cleanupBlacklist();
+      expect(res.success).toBe(false);
+    });
+  });
 });

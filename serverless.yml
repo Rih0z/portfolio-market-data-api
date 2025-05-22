@@ -5,7 +5,7 @@ frameworkVersion: '3'
 provider:
   name: aws
   runtime: nodejs18.x
-  region: ${opt:region, 'ap-northeast-1'}
+  region: ${opt:region, 'us-west-2'}
   stage: ${opt:stage, 'dev'}
   profile: ${opt:profile, ''}
   memorySize: 256
@@ -38,8 +38,9 @@ provider:
         - !GetAtt SessionsTable.Arn
     - Effect: Allow
       Action:
-        - sns:Publish
-      Resource: !Ref AlertTopic
+        - budgets:DescribeBudgetPerformanceHistory
+        - budgets:ViewBudget
+      Resource: '*'
 
 functions:
   # 既存のマーケットデータ関連機能
@@ -174,18 +175,7 @@ resources:
         TimeToLiveSpecification:
           AttributeName: ttl
           Enabled: true
-    
-    AlertTopic:
-      Type: AWS::SNS::Topic
-      Properties:
-        TopicName: ${self:service}-${self:provider.stage}-alerts
-        Subscription:
-          - Protocol: email
-            Endpoint: ${env:ADMIN_EMAIL, ''}
 
 plugins:
   - serverless-dotenv-plugin
   - serverless-offline
-
-
-

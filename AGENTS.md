@@ -82,7 +82,7 @@ __test__/
 4. `document/server-func.md` - AWS移行実装計画
 5. `document/specifications.md` - 総合仕様書
 6. `document/structure-and-modules.md` - モジュール構造と関数インターフェース概要
-7. `document/test-files.md` - テストファイル構成
+7. `document/test-plan.md` - テスト計画とファイル構成
 
 ## 開発ガイドライン
 
@@ -134,7 +134,7 @@ npm run test:all
 
 このコマンドは標準のテスト実行に加えて、コードカバレッジやパフォーマンス指標などの詳細なレポートを生成します。
 
-テストの詳細構成は `document/test-files.md` を参照してください。
+テストの詳細構成は `document/test-plan.md` を参照してください。
 
 ## ドキュメント管理
 

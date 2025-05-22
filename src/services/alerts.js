@@ -116,9 +116,50 @@ const notifySystemEvent = async (eventType, eventData) => {
   }
 };
 
+/**
+ * スロットリング付きのアラートを送信する
+ * @param {Object} options - アラートオプション
+ * @param {string} options.key - アラート識別キー
+ * @param {string} options.subject - 件名
+ * @param {string} options.message - メッセージ
+ * @param {Object} options.detail - 詳細情報
+ * @param {number} options.intervalMinutes - スロットル間隔(分)
+ * @returns {Promise<Object>} 通知結果
+ */
+const throttleMap = {};
+const throttledAlert = async ({
+  key,
+  subject,
+  message,
+  detail,
+  intervalMinutes
+}) => {
+  try {
+    const now = Date.now();
+    if (throttleMap[key] && now - throttleMap[key] < intervalMinutes * 60 * 1000) {
+      return { throttled: true };
+    }
+
+    throttleMap[key] = now;
+    logger.warn('THROTTLED ALERT:', { key, subject, message, ...detail });
+
+    return {
+      success: true,
+      timestamp: new Date(now).toISOString()
+    };
+  } catch (alertError) {
+    logger.error('Failed to send throttled alert:', alertError);
+    return {
+      success: false,
+      error: alertError.message
+    };
+  }
+};
+
 module.exports = {
   notifyError,
   notifyUsage,
   notifyBudget,
-  notifySystemEvent
+  notifySystemEvent,
+  throttledAlert
 };

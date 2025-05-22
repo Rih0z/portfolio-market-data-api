@@ -223,6 +223,7 @@ src/
 - `notifyUsage(level, usageData)`: 使用量アラート通知
 - `notifyBudget(level, budgetData)`: 予算アラート通知
 - `notifySystemEvent(eventType, eventData)`: システムイベント通知
+- `throttledAlert(options)`: スロットリングされたアラート通知
 
 ### cache.js
 

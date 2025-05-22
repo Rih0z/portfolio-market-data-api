@@ -80,7 +80,7 @@ async function cleanupExpiredData() {
     logger.info(`Cleaned up ${cleanupResult.count} expired cache items`);
     
     // スクレイピングブラックリストの古いエントリーをクリーンアップ
-    const blacklistCleanupResult = await scrapingBlacklist.cleanupExpiredEntries();
+    const blacklistCleanupResult = await scrapingBlacklist.cleanupBlacklist();
     logger.info(`Cleaned up ${blacklistCleanupResult.count} expired blacklist entries`);
     
     return {

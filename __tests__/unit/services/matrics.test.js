@@ -450,4 +450,16 @@ describe('Metrics Service', () => {
       consoleSpy.mockRestore();
     });
   });
+
+  describe('getErrorType', () => {
+    test('エラーメッセージから適切なタイプを返す', () => {
+      expect(metricsService.getErrorType('timeout occurred')).toBe('TIMEOUT');
+      expect(metricsService.getErrorType('rate limit exceeded')).toBe('RATE_LIMIT');
+      expect(metricsService.getErrorType('ECONNRESET network error')).toBe('NETWORK');
+      expect(metricsService.getErrorType('permission denied 403')).toBe('PERMISSION');
+      expect(metricsService.getErrorType('symbol not found 404')).toBe('NOT_FOUND');
+      expect(metricsService.getErrorType('validation failed')).toBe('VALIDATION');
+      expect(metricsService.getErrorType('unknown issue')).toBe('OTHER');
+    });
+  });
 });

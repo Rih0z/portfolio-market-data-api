@@ -15,7 +15,9 @@ const { getDynamoDb } = require('../utils/awsConfig');
 const { DATA_SOURCES } = require('../config/constants');
 
 // 環境変数からの設定
-const METRICS_TABLE = process.env.METRICS_TABLE || `${process.env.DYNAMODB_TABLE_PREFIX || 'portfolio-market-data-'}-metrics`;
+const tablePrefix = (process.env.DYNAMODB_TABLE_PREFIX || 'portfolio-market-data')
+  .replace(/-+$/, '');
+const METRICS_TABLE = process.env.METRICS_TABLE || `${tablePrefix}-metrics`;
 
 // メトリクス集計の期間（秒単位）
 const AGGREGATION_PERIODS = {
@@ -42,26 +44,26 @@ const initializeSourcePriorities = () => {
     }
   }
 
-  isTableInitialized = true;
-};
+  // 初期化のみ担当するためフラグ設定は呼び出し側で行う
+}; 
 
 /**
  * メトリクス用DynamoDBテーブルを初期化する
  * @returns {Promise<boolean>} 成功したらtrue
  */
 const initializeMetricsTable = async () => {
-  if (isTableInitialized) return true;
-
   try {
     initializeSourcePriorities();
 
     // 既存データソース優先順位を取得
     await loadSourcePriorities();
-    
+
+    isTableInitialized = true;
     return true;
   } catch (error) {
     console.error('Error initializing metrics table:', error);
     initializeSourcePriorities(); // フォールバックとして初期値を設定
+    isTableInitialized = true;
     return false;
   }
 };
@@ -71,8 +73,7 @@ const initializeMetricsTable = async () => {
  * @returns {Promise<Object>} 優先順位データ
  */
 const loadSourcePriorities = async () => {
-  try {
-    const dynamoDb = getDynamoDb();
+  const dynamoDb = getDynamoDb();
     
     const params = {
       TableName: METRICS_TABLE,
@@ -82,20 +83,16 @@ const loadSourcePriorities = async () => {
       }
     };
     
-    const result = await dynamoDb.get(params).promise();
-    
-    if (result.Item && result.Item.priorities) {
-      sourcePriorities = result.Item.priorities;
-      return sourcePriorities;
-    }
-    
-    // 存在しない場合は初期値を保存
-    await saveSourcePriorities();
-    return sourcePriorities;
-  } catch (error) {
-    console.error('Error loading source priorities:', error);
+  const result = await dynamoDb.get(params).promise();
+
+  if (result.Item && result.Item.priorities) {
+    sourcePriorities = result.Item.priorities;
     return sourcePriorities;
   }
+
+  // 存在しない場合は初期値を保存
+  await saveSourcePriorities();
+  return sourcePriorities;
 };
 
 /**
@@ -221,7 +218,6 @@ const startDataSourceRequest = async (source, symbol, dataType) => {
     const now = new Date();
     const timestamp = now.toISOString();
     const hourKey = timestamp.substring(0, 13); // YYYY-MM-DDTHH
-    const dayKey = timestamp.substring(0, 10);  // YYYY-MM-DD
     
     // リクエスト開始をインメモリに記録（データベース書き込みなし）
     if (!global._metricsRequestsInProgress) {
@@ -263,23 +259,11 @@ const recordDataSourceResult = async (source, success, responseTime, dataType, s
     const now = new Date();
     const timestamp = now.toISOString();
     const hourKey = timestamp.substring(0, 13); // YYYY-MM-DDTHH
-    const dayKey = timestamp.substring(0, 10);  // YYYY-MM-DD
     
     // 時間単位のメトリクス更新
     await updateMetrics(dynamoDb, {
       metricType: 'SOURCE_HOURLY',
       metricKey: `${source}:${hourKey}`,
-      dataType,
-      success,
-      responseTime,
-      timestamp,
-      errorMessage
-    });
-    
-    // 日単位のメトリクス更新
-    await updateMetrics(dynamoDb, {
-      metricType: 'SOURCE_DAILY',
-      metricKey: `${source}:${dayKey}`,
       dataType,
       success,
       responseTime,
@@ -702,5 +686,6 @@ module.exports = {
   recordDataSourceResult,
   startBatchDataSourceRequest,
   recordBatchDataSourceResult,
-  getDataSourceMetrics
+  getDataSourceMetrics,
+  getErrorType
 };

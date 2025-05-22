@@ -47,6 +47,7 @@ describe('awsConfig additional branches', () => {
     const fromMock = jest.fn(() => ({}));
     jest.doMock('@aws-sdk/client-dynamodb', () => ({ DynamoDBClient: DynamoDBClientMock }));
     jest.doMock('@aws-sdk/lib-dynamodb', () => ({ DynamoDBDocumentClient: { from: fromMock } }));
+    jest.mock('../../../src/utils/logger');
     const logger = require('../../../src/utils/logger');
 
     const awsConfig = require('../../../src/utils/awsConfig');

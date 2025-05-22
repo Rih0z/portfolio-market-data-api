@@ -93,6 +93,14 @@ const BATCH_SIZES = {
 };
 
 /**
+ * データ検証設定値
+ */
+const DATA_VALIDATION = {
+  PRICE_CHANGE_THRESHOLD: 20, // 価格変動率閾値(%)
+  SOURCE_DIFFERENCE_THRESHOLD: 10 // データソース乖離率閾値(%)
+};
+
+/**
  * デフォルト為替レート（データソースが利用できない場合）
  */
 const DEFAULT_EXCHANGE_RATE = 149.5;
@@ -106,5 +114,6 @@ module.exports = {
   CACHE_TIMES,
   RESPONSE_FORMATS,
   BATCH_SIZES,
+  DATA_VALIDATION,
   DEFAULT_EXCHANGE_RATE
 };

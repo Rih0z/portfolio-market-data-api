@@ -29,6 +29,7 @@
 
 #### マーケットデータ関連
 - `__tests__/unit/function/marketData.test.js` // 実装済み
+- `__tests__/unit/function/marketData.internal.test.js` // 内部関数テスト追加
 
 #### キャッシュとフォールバックデータ関連
 - `__tests__/unit/services/cache.test.js`

@@ -1158,3 +1158,14 @@ module.exports.createDummyJpStockSymbol = createDummyJpStockSymbol;
 module.exports.createDummyMutualFundSymbol = createDummyMutualFundSymbol;
 module.exports.createDummyExchangeRateData = createDummyExchangeRateData;
 module.exports.createTestExchangeRateData = createTestExchangeRateData;
+
+// テスト環境向けに内部関数をエクスポート
+if (process.env.NODE_ENV === 'test') {
+  module.exports._testExports = {
+    getUsStockData,
+    getJpStockData,
+    getMutualFundData,
+    getExchangeRateData,
+    getMultipleExchangeRates
+  };
+}

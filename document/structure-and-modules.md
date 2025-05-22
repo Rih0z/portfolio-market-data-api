@@ -200,6 +200,9 @@ src/
 - `combinedDataHandler(event, context)`: 複合データ取得ハンドラー
 - `highLatencyHandler(event, context)`: 高レイテンシーシミュレーション用ハンドラー
 
+テスト時は内部関数を利用できるよう、`NODE_ENV=test` で読み込んだ場合に
+`_testExports` オブジェクトとして `getUsStockData` などを公開しています。
+
 ### preWarmCache.js
 
 **説明**: APIキャッシュの予熱を行うLambda関数。

@@ -1,5 +1,7 @@
 const marketData = require('../../../src/function/marketData');
 const enhancedService = require('../../../src/services/sources/enhancedMarketDataService');
+const fallbackDataStore = require('../../../src/services/fallbackDataStore');
+const { DATA_TYPES } = require('../../../src/config/constants');
 
 describe('marketData helper functions', () => {
   describe('validateParams', () => {
@@ -53,6 +55,16 @@ describe('marketData helper functions', () => {
       const result = await marketData.getMultipleExchangeRates(['AAA-BBB'], false, false);
       expect(enhancedService.getExchangeRateData).toHaveBeenCalledWith('AAA', 'BBB', false);
       expect(result['AAA-BBB']).toEqual({ rate: 1, pair: 'AAA-BBB' });
+    });
+
+    test('returns dummy data and records fallback when service fails', async () => {
+      enhancedService.getExchangeRateData = jest.fn().mockResolvedValue(null);
+      fallbackDataStore.recordFailedFetch = jest.fn();
+      const result = await marketData.getMultipleExchangeRates(['AAA-BBB'], false, false);
+      expect(enhancedService.getExchangeRateData).toHaveBeenCalledWith('AAA', 'BBB', false);
+      expect(fallbackDataStore.recordFailedFetch).toHaveBeenCalledWith('AAA-BBB', DATA_TYPES.EXCHANGE_RATE, 'No data returned');
+      expect(result['AAA-BBB'].pair).toBe('AAA-BBB');
+      expect(result['AAA-BBB'].source).toBe('Default Fallback');
     });
   });
 

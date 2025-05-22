@@ -552,4 +552,18 @@ function main() {
 }
 
 // スクリプトを実行
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = {
+  roundToTwo,
+  loadCoverageData,
+  getCoverageTarget,
+  generateBarChart,
+  generateLineChart,
+  loadCoverageHistory,
+  saveCoverageHistory,
+  embedChartsInReport,
+  main
+};

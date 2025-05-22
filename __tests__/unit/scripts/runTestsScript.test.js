@@ -26,4 +26,16 @@ describe('run-tests.sh CLI basic behaviour', () => {
     expect(result.status).toBe(1);
     expect(result.stdout).toContain('specific テスト種別を使用する場合');
   });
+
+  test('unknown option shows error and exit code 1', () => {
+    const result = runScript(['--unknown', 'unit']);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('不明なオプション');
+  });
+
+  test('invalid coverage target exits with error', () => {
+    const result = runScript(['-t', 'invalid', 'unit']);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('不明なカバレッジ目標段階');
+  });
 });

@@ -14,10 +14,20 @@ function runScript(args = [], env = {}) {
 }
 
 describe('run-tests.sh all mode', () => {
+  const resultsDir = path.resolve(__dirname, '../../../test-results');
+
   beforeAll(() => {
     if (!fs.existsSync(fakeBinDir)) {
       fs.mkdirSync(fakeBinDir, { recursive: true });
     }
+  });
+
+  beforeEach(() => {
+    if (fs.existsSync(resultsDir)) fs.rmdirSync(resultsDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    if (fs.existsSync(resultsDir)) fs.rmdirSync(resultsDir, { recursive: true });
   });
 
   test('runs all tests with mock commands', () => {

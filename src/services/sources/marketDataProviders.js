@@ -488,8 +488,8 @@ const getJpStocksParallel = async (codes) => {
           await sleep(delay);
         }
         
-        // 株価データを取得
-        const stockData = await getJpStockData(code);
+          // 株価データを取得
+          const stockData = await module.exports.getJpStockData(code);
         results[code] = stockData;
       } catch (error) {
         console.error(`Error getting data for JP stock ${code}:`, error.message);
@@ -562,7 +562,7 @@ const getUsStocksParallel = async (symbols) => {
           }
           
           // 個別に取得処理を実施
-          const stockData = await getUsStockData(symbol);
+          const stockData = await module.exports.getUsStockData(symbol);
           fallbackResults[symbol] = stockData;
         } catch (error) {
           console.error(`Error getting data for US stock ${symbol}:`, error.message);
@@ -654,7 +654,7 @@ const getUsStocksParallel = async (symbols) => {
           }
           
           // 株価データを取得
-          const stockData = await getUsStockData(symbol);
+          const stockData = await module.exports.getUsStockData(symbol);
           results[symbol] = stockData;
         } catch (error) {
           console.error(`Error getting data for US stock ${symbol}:`, error.message);

@@ -178,8 +178,8 @@ exports.handler = async (event, context) => {
     const isMockAPITest = Boolean(global._isMockAPITest || global.USE_API_MOCKS);
     
     // より広範囲なテスト環境検出
-    const isTestEnvironment = isTestContext || isTestEvent || isTestEnv || isTestMode || 
-                             hasMockHeader || hasMockQueryParam || isMockAPITest || true; // 常にテストモードとして扱う
+    const isTestEnvironment = isTestContext || isTestEvent || isTestEnv || isTestMode ||
+                             hasMockHeader || hasMockQueryParam || isMockAPITest;
 
     // データ取得処理
     let data = {};
@@ -580,7 +580,7 @@ const getMultipleExchangeRates = async (pairs, refresh = false, isTest = false) 
   logger.info(`Getting multiple exchange rates for ${pairs.join(', ')}. Refresh: ${refresh}. IsTest: ${isTest}`);
   
   // テスト環境の場合はモックデータを返す（より積極的にモックデータを返す）
-  if (isTest || true) { // 現時点では常にテストデータを返す
+  if (isTest) {
     logger.info("Using test multiple exchange rate data");
     
     // 標準的な通貨ペアを用意（テスト期待値に合わせる）
@@ -720,7 +720,7 @@ exports.combinedDataHandler = async (event, context) => {
     }
     
     // テスト環境またはデータが空の場合はダミーデータを返す（常にダミーデータを提供）
-    if (true) { // 常にテストデータを提供
+    if (isTestEnvironment) {
       logger.info("Providing test/dummy data for combined request");
       
       result.stocks = {
@@ -1140,3 +1140,12 @@ const getCompanyNameJp = (code) => {
   
   return companies[code] || null;
 };
+
+// テストで利用するユーティリティ関数をエクスポート
+module.exports.validateParams = validateParams;
+module.exports.getMultipleExchangeRates = getMultipleExchangeRates;
+module.exports.createDummyUsStockSymbol = createDummyUsStockSymbol;
+module.exports.createDummyJpStockSymbol = createDummyJpStockSymbol;
+module.exports.createDummyMutualFundSymbol = createDummyMutualFundSymbol;
+module.exports.createDummyExchangeRateData = createDummyExchangeRateData;
+module.exports.createTestExchangeRateData = createTestExchangeRateData;

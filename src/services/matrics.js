@@ -726,5 +726,6 @@ module.exports = {
   startBatchDataSourceRequest,
   recordBatchDataSourceResult,
   getDataSourceMetrics,
-  getErrorType
+  getErrorType,
+  ...(process.env.NODE_ENV === 'test' ? { slugify, normalizePriorityKeys } : {})
 };

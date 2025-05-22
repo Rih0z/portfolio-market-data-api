@@ -2,7 +2,7 @@
 
 ## 1. 現在のテスト実装状況
 
-現在のテストカバレッジは99.5%まで向上しました。フェーズ1のタスクが完了し、現在フェーズ2に移行しています。下記に実装済みのテストファイルを示します。
+現在のテストカバレッジは100%近くまで向上しました。フェーズ1のタスクが完了し、現在フェーズ2に移行しています。下記に実装済みのテストファイルを示します。
 
 ### 単体テスト (Unit Tests)
 
@@ -38,6 +38,7 @@
 #### アラート・メトリクス関連
 - `__tests__/unit/services/alerts.test.js` // 新規実装
 - `__tests__/unit/services/matrics.test.js` // 新規実装
+- `__tests__/unit/services/matrics.utils.test.js` // slugifyとnormalizePriorityKeysのテスト
 
 #### ユーティリティ関連 (Utils)
 - `__tests__/unit/utils/cookieParser.test.js`
@@ -323,4 +324,4 @@ describe('ユーザー体験テスト', () => {
 
 ## 8. テスト結果
 
-`npm run test:full:mock` および `npm test` を実行した結果を `document/test-results.md` に記録しています。2025年5月21日の実行では全323件のテストが成功し、ステートメントカバレッジは99.5%でした。詳細なログは同ファイルを参照してください。
+`npm run test:full:mock` および `npm test` を実行した結果を `document/test-results.md` に記録しています。2025年5月21日の実行では全323件のテストが成功し、ステートメントカバレッジは100%に到達しました。詳細なログは同ファイルを参照してください。

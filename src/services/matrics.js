@@ -1,6 +1,6 @@
 /**
  * プロジェクト: portfolio-market-data-api
- * ファイルパス: src/services/metrics.js
+ * ファイルパス: src/services/matrics.js
  * 
  * 説明: 
  * データソースのパフォーマンスとプロパティを追跡するためのメトリクスサービス。

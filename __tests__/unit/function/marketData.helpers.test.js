@@ -29,6 +29,13 @@ describe('marketData helper functions', () => {
       expect(result.errors).toContain('symbols parameter cannot be empty');
     });
 
+    test('returns error when more than 100 symbols provided', () => {
+      const manySymbols = Array.from({ length: 101 }, (_, i) => `SYM${i}`).join(',');
+      const result = marketData.validateParams({ type: 'us-stock', symbols: manySymbols });
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toContain('Too many symbols. Maximum 100 symbols allowed');
+    });
+
     test('valid exchange rate params with base and target', () => {
       const result = marketData.validateParams({ type: 'exchange-rate', base: 'USD', target: 'JPY' });
       expect(result.isValid).toBe(true);

@@ -522,20 +522,16 @@ const getExchangeRateData = async (base, target, refresh = false, isTest = false
     // 強化版サービスで取得
     const result = await enhancedMarketDataService.getExchangeRateData(base, target, refresh);
     
-    // テスト期待値に合わせて、データがない場合はダミーデータを返す
+    // 取得結果が無効な場合はフォールバックを記録してダミーデータを返す
     if (!result || result.error) {
       logger.warn(`Invalid result from enhancedMarketDataService for exchange rate: ${pair}`);
-      const dummyData = createDummyExchangeRateData(base, target);
-      return { [pair]: dummyData };
-    }
-    
-    // データが取得できない場合はフォールバックデータを記録
-    if (!result || result.error) {
       await fallbackDataStore.recordFailedFetch(
         pair,
         DATA_TYPES.EXCHANGE_RATE,
         result?.error || 'No data returned'
       );
+      const dummyData = createDummyExchangeRateData(base, target);
+      return { [pair]: dummyData };
     }
     
     return { [pair]: result };

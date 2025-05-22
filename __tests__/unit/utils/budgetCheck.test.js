@@ -60,3 +60,47 @@ describe('addBudgetWarningToResponse', () => {
     expect(result).toEqual(mockResponse);
   });
 });
+
+describe('isBudgetCritical and isBudgetWarning', () => {
+  const cache = require('../../../src/services/cache');
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('cache value triggers critical state', async () => {
+    cache.get.mockResolvedValue({ usage: 0.96 });
+    const result = await budgetCheck.isBudgetCritical();
+    expect(result).toBe(true);
+  });
+
+  test('production mode fetches usage and caches result', async () => {
+    cache.get.mockResolvedValue(null);
+    cache.set.mockResolvedValue(true);
+    jest.spyOn(budgetCheck, 'getBudgetUsage').mockResolvedValue(0.97);
+    const origEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+
+    const result = await budgetCheck.isBudgetCritical();
+
+    expect(budgetCheck.getBudgetUsage).toHaveBeenCalled();
+    expect(cache.set).toHaveBeenCalled();
+    expect(result).toBe(true);
+    process.env.NODE_ENV = origEnv;
+  });
+
+  test('env flag forces critical', async () => {
+    cache.get.mockResolvedValue(null);
+    const origEnv = process.env.TEST_BUDGET_CRITICAL;
+    process.env.TEST_BUDGET_CRITICAL = 'true';
+    const result = await budgetCheck.isBudgetCritical();
+    expect(result).toBe(true);
+    process.env.TEST_BUDGET_CRITICAL = origEnv;
+  });
+
+  test('cache value triggers warning state', async () => {
+    cache.get.mockResolvedValue({ usage: 0.9 });
+    const result = await budgetCheck.isBudgetWarning();
+    expect(result).toBe(true);
+  });
+});

@@ -11,6 +11,7 @@ const { DATA_TYPES, BATCH_SIZES } = require('../../../../src/config/constants');
 const dataFetchWithFallback = require('../../../../src/utils/dataFetchWithFallback');
 const yahooFinanceService = require('../../../../src/services/sources/yahooFinance');
 const scrapingService = require('../../../../src/services/sources/marketDataProviders');
+const exchangeRateService = require('../../../../src/services/sources/exchangeRate');
 
 jest.mock('../../../../src/utils/dataFetchWithFallback');
 jest.mock('../../../../src/services/sources/yahooFinance');

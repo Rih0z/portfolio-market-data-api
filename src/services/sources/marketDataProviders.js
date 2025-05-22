@@ -746,6 +746,7 @@ const getBlacklistedSymbols = async () => {
     symbols.forEach(item => {
       if (result[item.market]) {
         result[item.market].push({
+          market: item.market,
           symbol: item.symbol,
           failureCount: item.failureCount,
           lastFailure: item.lastFailure,

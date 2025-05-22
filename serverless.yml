@@ -16,6 +16,8 @@ provider:
     ADMIN_EMAIL: ${env:ADMIN_EMAIL, ''}
     ADMIN_API_KEY: ${env:ADMIN_API_KEY, ''}
     CRON_SECRET: ${env:CRON_SECRET, ''}
+    # AWS_REGION: ${env:AWS_REGION, 'us-west-2'}  # Lambda予約語のため削除
+    # AWS_ACCOUNT_ID: ${env:AWS_ACCOUNT_ID, ''}   # Lambda予約語のため削除
     DAILY_REQUEST_LIMIT: ${env:DAILY_REQUEST_LIMIT, '5000'}
     MONTHLY_REQUEST_LIMIT: ${env:MONTHLY_REQUEST_LIMIT, '100000'}
     DISABLE_ON_LIMIT: ${env:DISABLE_ON_LIMIT, 'true'}
@@ -28,22 +30,59 @@ provider:
     SESSION_TABLE: ${env:SESSION_TABLE, '${self:service}-${self:provider.stage}-sessions'}
     CORS_ALLOW_ORIGIN: ${env:CORS_ALLOW_ORIGIN, '*'}
     DRIVE_FOLDER_NAME: ${env:DRIVE_FOLDER_NAME, 'PortfolioManagerData'}
+    LOG_LEVEL: ${env:LOG_LEVEL, 'info'}
+    BUDGET_CHECK_ENABLED: ${env:BUDGET_CHECK_ENABLED, 'false'}
+    FREE_TIER_LIMIT: ${env:FREE_TIER_LIMIT, '25'}
+    DEFAULT_EXCHANGE_RATE: ${env:DEFAULT_EXCHANGE_RATE, '150.0'}
+    
+    # 外部APIキー（オプション）
+    ALPACA_API_KEY: ${env:ALPACA_API_KEY, ''}
+    ALPACA_API_SECRET: ${env:ALPACA_API_SECRET, ''}
+    ALPHA_VANTAGE_API_KEY: ${env:ALPHA_VANTAGE_API_KEY, ''}
+    YAHOO_FINANCE_API_KEY: ${env:YAHOO_FINANCE_API_KEY, ''}
+    YAHOO_FINANCE_API_HOST: ${env:YAHOO_FINANCE_API_HOST, 'yh-finance.p.rapidapi.com'}
+    OPEN_EXCHANGE_RATES_APP_ID: ${env:OPEN_EXCHANGE_RATES_APP_ID, ''}
+    FIXER_API_KEY: ${env:FIXER_API_KEY, ''}
+    
+    # スクレイピング設定
+    JP_STOCK_SCRAPING_TIMEOUT: ${env:JP_STOCK_SCRAPING_TIMEOUT, '30000'}
+    US_STOCK_SCRAPING_TIMEOUT: ${env:US_STOCK_SCRAPING_TIMEOUT, '20000'}
+    MUTUAL_FUND_TIMEOUT: ${env:MUTUAL_FUND_TIMEOUT, '30000'}
+    SCRAPING_RATE_LIMIT_DELAY: ${env:SCRAPING_RATE_LIMIT_DELAY, '500'}
+    SCRAPING_MAX_FAILURES: ${env:SCRAPING_MAX_FAILURES, '3'}
+    SCRAPING_COOLDOWN_DAYS: ${env:SCRAPING_COOLDOWN_DAYS, '7'}
+    
+    # GitHub設定（フォールバック用）
+    GITHUB_TOKEN: ${env:GITHUB_TOKEN, ''}
+    GITHUB_REPO_OWNER: ${env:GITHUB_REPO_OWNER, ''}
+    GITHUB_REPO_NAME: ${env:GITHUB_REPO_NAME, ''}
   
   iamRoleStatements:
     - Effect: Allow
       Action:
-        - dynamodb:*
+        - dynamodb:Query
+        - dynamodb:Scan
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+        - dynamodb:UpdateItem
+        - dynamodb:DeleteItem
+        - dynamodb:DescribeTable
       Resource: 
         - !GetAtt MarketDataCacheTable.Arn
         - !GetAtt SessionsTable.Arn
+        - !GetAtt ScrapingBlacklistTable.Arn
+    - Effect: Allow
+      Action:
+        - sns:Publish
+      Resource: !Ref AlertTopic
     - Effect: Allow
       Action:
         - budgets:DescribeBudgetPerformanceHistory
-        - budgets:ViewBudget
+        - budgets:DescribeBudgets
       Resource: '*'
 
 functions:
-  # 既存のマーケットデータ関連機能
+  # マーケットデータ関連機能
   marketData:
     handler: src/function/marketData.handler
     events:
@@ -52,29 +91,12 @@ functions:
           method: get
           cors: true
   
-  # 追加: 複合マーケットデータ取得エンドポイント
-  combinedMarketData:
-    handler: src/function/marketData.combinedDataHandler
-    events:
-      - http:
-          path: api/market-data/combined
-          method: post
-          cors: true
-  
-  # 追加: 高レイテンシーシミュレーションエンドポイント
-  highLatencyMarketData:
-    handler: src/function/marketData.highLatencyHandler
-    events:
-      - http:
-          path: api/market-data/high-latency
-          method: get
-          cors: true
-  
   preWarmCache:
     handler: src/function/preWarmCache.handler
     events:
       - schedule: rate(1 hour)
   
+  # 管理者機能
   getStatus:
     handler: src/function/admin/getStatus.handler
     events:
@@ -93,7 +115,16 @@ functions:
           cors: true
           private: true
   
-  # 新規追加: Google認証関連
+  getBudgetStatus:
+    handler: src/function/admin/getBudgetStatus.handler
+    events:
+      - http:
+          path: admin/getBudgetStatus
+          method: get
+          cors: true
+          private: true
+  
+  # Google認証関連
   googleLogin:
     handler: src/function/auth/googleLogin.handler
     events:
@@ -157,10 +188,10 @@ resources:
           - AttributeName: key
             KeyType: HASH
         TimeToLiveSpecification:
-          AttributeName: expires
+          AttributeName: ttl
           Enabled: true
     
-    # 新規追加: セッション管理用DynamoDBテーブル
+    # セッション管理用DynamoDBテーブル
     SessionsTable:
       Type: AWS::DynamoDB::Table
       Properties:
@@ -175,6 +206,30 @@ resources:
         TimeToLiveSpecification:
           AttributeName: ttl
           Enabled: true
+    
+    # スクレイピングブラックリスト用DynamoDBテーブル
+    ScrapingBlacklistTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${self:provider.stage}-scraping-blacklist
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: symbol
+            AttributeType: S
+        KeySchema:
+          - AttributeName: symbol
+            KeyType: HASH
+        TimeToLiveSpecification:
+          AttributeName: ttl
+          Enabled: true
+    
+    AlertTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: ${self:service}-${self:provider.stage}-alerts
+        Subscription:
+          - Protocol: email
+            Endpoint: ${env:ADMIN_EMAIL, ''}
 
 plugins:
   - serverless-dotenv-plugin

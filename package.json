@@ -7,33 +7,7 @@
     "dev": "serverless offline start",
     "deploy": "serverless deploy --stage dev",
     "deploy:prod": "serverless deploy --stage prod",
-    "logs": "serverless logs -f marketData -t",
-    "test": "jest --forceExit",
-    "test:unit": "jest --selectProjects unit --forceExit",
-    "test:integration": "jest --selectProjects integration --forceExit",
-    "test:e2e": "jest --selectProjects e2e --forceExit",
-    "test:coverage": "jest --coverage --forceExit",
-    "test:watch": "jest --watch",
-    "test:ci": "jest --ci --reporters=default --reporters=jest-junit --forceExit",
-    "test:visual": "jest --forceExit && open ./test-results/visual-report.html",
-    "test:e2e:auto": "cross-env RUN_E2E_TESTS=true jest --selectProjects e2e --forceExit",
-    "test:e2e:mock": "cross-env USE_API_MOCKS=true jest --selectProjects e2e --forceExit",
-    "test:all": "jest --runInBand --all --forceExit",
-    "dynamodb:start": "java -Djava.library.path=./dynamodb-local/DynamoDBLocal_lib -jar ./dynamodb-local/DynamoDBLocal.jar -inMemory -port 8000",
-    "dynamodb:stop": "pkill -f \"DynamoDBLocal.jar\" || true",
-    "test:setup": "node scripts/setup-test-env.js",
-    "test:reset": "rm -rf ./test-results && mkdir -p ./test-results",
-    "test:full": "npm run test:reset && npm run test:setup && sleep 2 && npm run test && open ./test-results/visual-report.html",
-    "test:clean": "npm run dynamodb:stop && npm run test:reset",
-    "test:quick": "cross-env USE_API_MOCKS=true jest --selectProjects unit integration --forceExit",
-    "test:dev": "cross-env NODE_ENV=development USE_API_MOCKS=true jest --watch",
-    "test:full:mock": "npm run test:reset && npm run test:setup && cross-env USE_API_MOCKS=true npm run test",
-    "test:full:auto": "npm run test:reset && npm run test:setup && cross-env RUN_E2E_TESTS=true npm run test",
-    
-    "test:nocov": "jest --no-coverage --forceExit",
-    "test:unit:nocov": "jest --selectProjects unit --no-coverage --forceExit",
-    "test:integration:nocov": "jest --selectProjects integration --no-coverage --forceExit",
-    "test:e2e:nocov": "jest --selectProjects e2e --no-coverage --forceExit"
+    "logs": "serverless logs -f marketData -t"
   },
   "keywords": [
     "portfolio",
@@ -44,20 +18,19 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "axios": "^1.6.2",
+    "cheerio": "^1.0.0-rc.12"
+  },
+  "devDependencies": {
     "@aws-sdk/client-budgets": "^3.808.0",
     "@aws-sdk/client-dynamodb": "^3.808.0",
     "@aws-sdk/client-sns": "^3.808.0",
     "@aws-sdk/client-sts": "^3.808.0",
     "@aws-sdk/lib-dynamodb": "^3.808.0",
     "@aws-sdk/util-dynamodb": "^3.808.0",
-    "aws-sdk": "^2.1570.0",
-    "axios": "^1.6.2",
-    "cheerio": "^1.0.0-rc.12",
-    "csv-parse": "^5.5.3",
     "google-auth-library": "^9.15.1",
-    "googleapis": "^148.0.0"
-  },
-  "devDependencies": {
+    "googleapis": "^148.0.0",
+    "csv-parse": "^5.5.3",
     "aws-sdk-mock": "^5.8.0",
     "chart.js": "^3.9.1",
     "cross-env": "^7.0.3",
@@ -75,13 +48,5 @@
   },
   "engines": {
     "node": ">=18.x"
-  },
-  "jest-junit": {
-    "outputDirectory": "./test-results",
-    "outputName": "junit.xml",
-    "classNameTemplate": "{filepath}",
-    "titleTemplate": "{classname} > {title}",
-    "ancestorSeparator": " > "
   }
 }
-

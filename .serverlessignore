@@ -1,0 +1,78 @@
+# .serverlessignore - Lambda デプロイから除外するファイル
+
+# 開発関連ファイル
+.git/**
+.gitignore
+.env*
+.nvmrc
+README.md
+*.md
+
+# テスト関連
+__tests__/**
+test/**
+tests/**
+*.test.js
+*.spec.js
+jest.config.js
+jest.setup.js
+coverage/**
+
+# 開発用ツール
+.vscode/**
+.idea/**
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# キャッシュとビルドファイル
+.serverless/**
+.webpack/**
+.nyc_output/**
+node_modules/.cache/**
+
+# 開発用依存関係（devDependencies）
+node_modules/jest/**
+node_modules/@types/**
+node_modules/typescript/**
+node_modules/ts-node/**
+node_modules/nodemon/**
+node_modules/eslint/**
+node_modules/prettier/**
+
+# ドキュメントとサンプル
+docs/**
+examples/**
+samples/**
+
+# 重いファイル（もしあれば）
+*.zip
+*.tar.gz
+*.pdf
+*.mp4
+*.mov
+
+# macOS関連
+.DS_Store
+**/.DS_Store
+
+# Windows関連
+Thumbs.db
+ehthumbs.db
+
+# Linux関連
+*~
+
+# プロジェクト固有の除外ファイル
+dynamodb-local/**
+scripts/setup-test-env.js
+
+# 設定ファイル（本番では不要）
+docker-compose.yml
+Dockerfile
+
+# バックアップファイル
+*.bak
+*.backup
+*.old

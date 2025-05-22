@@ -51,7 +51,10 @@ const validateParams = (params) => {
     result.isValid = false;
     result.errors.push('Missing required parameter: symbols');
   } else if (params.symbols) {
-    const symbolsArray = params.symbols.split(',');
+    const symbolsArray = params.symbols
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
     if (symbolsArray.length === 0) {
       result.isValid = false;
       result.errors.push('symbols parameter cannot be empty');
@@ -573,6 +576,10 @@ const getExchangeRateData = async (base, target, refresh = false, isTest = false
  * @returns {Promise<Object>} 為替レートデータ
  */
 const getMultipleExchangeRates = async (pairs, refresh = false, isTest = false) => {
+  if (typeof pairs === 'string') {
+    pairs = pairs.split(',').map((p) => p.trim()).filter(Boolean);
+  }
+
   const pairDisplay = Array.isArray(pairs) ? pairs.join(', ') : '';
   logger.info(`Getting multiple exchange rates for ${pairDisplay}. Refresh: ${refresh}. IsTest: ${isTest}`);
   

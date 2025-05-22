@@ -23,6 +23,12 @@ describe('marketData helper functions', () => {
       expect(result.errors).toContain('Missing required parameter: symbols');
     });
 
+    test('returns error when symbols is empty string', () => {
+      const result = marketData.validateParams({ type: 'us-stock', symbols: '' });
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toContain('symbols parameter cannot be empty');
+    });
+
     test('valid exchange rate params with base and target', () => {
       const result = marketData.validateParams({ type: 'exchange-rate', base: 'USD', target: 'JPY' });
       expect(result.isValid).toBe(true);
@@ -71,6 +77,13 @@ describe('marketData helper functions', () => {
       const result = await marketData.getMultipleExchangeRates(['INVALID'], false, false);
       expect(result['INVALID'].source).toBe('Error');
       expect(result['INVALID'].error).toMatch('Invalid currency pair format');
+    });
+
+    test('accepts comma separated string for pairs', async () => {
+      enhancedService.getExchangeRateData = jest.fn().mockResolvedValue({ rate: 1, pair: 'USD-JPY' });
+      const result = await marketData.getMultipleExchangeRates('USD-JPY', false, false);
+      expect(enhancedService.getExchangeRateData).toHaveBeenCalledWith('USD', 'JPY', false);
+      expect(result['USD-JPY']).toEqual({ rate: 1, pair: 'USD-JPY' });
     });
   });
 

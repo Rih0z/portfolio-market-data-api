@@ -14,7 +14,7 @@
  */
 'use strict';
 
-const { PutCommand, GetCommand, DeleteCommand, QueryCommand } = require('@aws-sdk/lib-dynamodb');
+const { PutCommand, GetCommand, DeleteCommand, QueryCommand, ScanCommand } = require('@aws-sdk/lib-dynamodb');
 const { getDynamoDb } = require('../utils/awsConfig');
 const { withRetry } = require('../utils/retry');
 const logger = require('../utils/logger');
@@ -144,6 +144,39 @@ const delete_ = async (key) => {
 };
 
 /**
+ * TTLが期限切れのキャッシュをクリーンアップする
+ * @returns {Promise<{count: number}>} 削除したアイテム数
+ */
+const cleanup = async () => {
+  try {
+    const db = getDynamoDb();
+    const now = Math.floor(Date.now() / 1000);
+    const scanParams = {
+      TableName: CACHE_TABLE,
+      FilterExpression: '#ttl <= :now',
+      ExpressionAttributeNames: { '#ttl': 'ttl' },
+      ExpressionAttributeValues: { ':now': now }
+    };
+    const scanResult = await withRetry(() => db.send(new ScanCommand(scanParams)));
+    const expiredItems = scanResult.Items || [];
+
+    for (const item of expiredItems) {
+      const delCmd = new DeleteCommand({
+        TableName: CACHE_TABLE,
+        Key: { key: item.key }
+      });
+      await withRetry(() => db.send(delCmd));
+    }
+
+    logger.info(`Cleaned up ${expiredItems.length} expired cache items`);
+    return { count: expiredItems.length };
+  } catch (error) {
+    logger.error('Error cleaning up expired cache:', error);
+    throw error;
+  }
+};
+
+/**
  * プレフィックスに一致するすべてのキャッシュを取得する
  * @param {string} prefix - キャッシュキーのプレフィックス
  * @returns {Promise<Array>} プレフィックスに一致するキャッシュアイテムの配列
@@ -263,6 +296,7 @@ module.exports = {
   delete: delete_,  // テスト対応用にdeleteとしてエクスポート
   getWithPrefix,
   clearCache,
+  cleanup,
   getCacheStats,
   // テスト用に定数をエクスポート
   CACHE_TIMES,

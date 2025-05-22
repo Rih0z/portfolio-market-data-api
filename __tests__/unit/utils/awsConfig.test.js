@@ -21,8 +21,8 @@ describe('awsConfig utility', () => {
     process.env.NODE_ENV = 'development';
     process.env.DYNAMODB_ENDPOINT = 'http://localhost:8000';
 
-    const DynamoDBClientMock = jest.fn().mockReturnValue({});
-    const fromMock = jest.fn().mockReturnValue({});
+    const DynamoDBClientMock = jest.fn().mockImplementation(() => ({}));
+    const fromMock = jest.fn().mockImplementation(() => ({}));
 
     jest.doMock('@aws-sdk/client-dynamodb', () => ({ DynamoDBClient: DynamoDBClientMock }));
     jest.doMock('@aws-sdk/lib-dynamodb', () => ({ DynamoDBDocumentClient: { from: fromMock } }));
@@ -42,8 +42,8 @@ describe('awsConfig utility', () => {
   test('resetAWSConfig clears cached clients', () => {
     process.env.NODE_ENV = 'development';
 
-    const DynamoDBClientMock = jest.fn().mockReturnValue({});
-    const fromMock = jest.fn().mockReturnValue({});
+    const DynamoDBClientMock = jest.fn().mockImplementation(() => ({}));
+    const fromMock = jest.fn().mockImplementation(() => ({}));
 
     jest.doMock('@aws-sdk/client-dynamodb', () => ({ DynamoDBClient: DynamoDBClientMock }));
     jest.doMock('@aws-sdk/lib-dynamodb', () => ({ DynamoDBDocumentClient: { from: fromMock } }));

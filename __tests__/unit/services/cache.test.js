@@ -22,6 +22,7 @@ const mockPutCommand = jest.fn();
 const mockGetCommand = jest.fn();
 const mockDeleteCommand = jest.fn();
 const mockQueryCommand = jest.fn();
+const mockScanCommand = jest.fn();
 
 // DynamoDBのモック応答
 const mockSend = jest.fn();
@@ -43,6 +44,10 @@ jest.mock('@aws-sdk/lib-dynamodb', () => {
     }),
     QueryCommand: jest.fn().mockImplementation((params) => {
       mockQueryCommand(params);
+      return { params };
+    }),
+    ScanCommand: jest.fn().mockImplementation((params) => {
+      mockScanCommand(params);
       return { params };
     })
   };
@@ -312,6 +317,32 @@ describe('Cache Service', () => {
       // 検証 - 期限切れのアイテムがフィルタリングされる
       expect(result).toHaveLength(1);
       expect(result[0].key).toBe('us-stock:AAPL');
+    });
+  });
+
+  describe('cleanup', () => {
+    test('期限切れアイテムを削除し件数を返す', async () => {
+      const now = Math.floor(Date.now() / 1000);
+      mockSend
+        .mockResolvedValueOnce({ Items: [ { key: 'old1', ttl: now - 10 }, { key: 'old2', ttl: now - 20 } ] })
+        .mockResolvedValue({});
+
+      const result = await cacheService.cleanup();
+
+      // Scan + 2 deletes
+      expect(mockScanCommand).toHaveBeenCalled();
+      expect(mockDeleteCommand).toHaveBeenCalledTimes(2);
+      expect(result).toEqual({ count: 2 });
+    });
+
+    test('期限切れアイテムがない場合は0を返す', async () => {
+      mockSend.mockResolvedValueOnce({ Items: [] });
+
+      const result = await cacheService.cleanup();
+
+      expect(mockScanCommand).toHaveBeenCalled();
+      expect(mockDeleteCommand).not.toHaveBeenCalled();
+      expect(result).toEqual({ count: 0 });
     });
   });
 });

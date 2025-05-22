@@ -325,4 +325,40 @@ describe('Alert Service', () => {
       expect(logger.error).toHaveBeenCalledWith('Failed to send alert:', error);
     });
   });
+
+  describe('throttledAlert', () => {
+    test('同一キーの連続アラートはスロットリングされる', async () => {
+      const key = 'dup';
+      const now = Date.now();
+      jest.spyOn(Date, 'now').mockReturnValue(now);
+
+      const first = await alertService.throttledAlert({
+        key,
+        subject: 's',
+        message: 'm',
+        detail: {},
+        intervalMinutes: 10
+      });
+
+      const second = await alertService.throttledAlert({
+        key,
+        subject: 's',
+        message: 'm',
+        detail: {},
+        intervalMinutes: 10
+      });
+
+      expect(first).toEqual({ success: true, timestamp: new Date(now).toISOString() });
+      expect(second).toEqual({ throttled: true });
+      Date.now.mockRestore();
+    });
+
+    test('エラー時は失敗レスポンスを返す', async () => {
+      jest.spyOn(Date, 'now').mockImplementation(() => { throw new Error('bad'); });
+      const res = await alertService.throttledAlert({ key: 'x', subject: 's', message: 'm', detail: {}, intervalMinutes: 1 });
+      expect(res.success).toBe(false);
+      expect(logger.error).toHaveBeenCalled();
+      Date.now.mockRestore();
+    });
+  });
 });

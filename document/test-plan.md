@@ -55,6 +55,7 @@
 - `__tests__/unit/scripts/runTestsScript.test.js`
 - `__tests__/unit/scripts/runTestsAllScript.test.js`
 - `__tests__/unit/scripts/runTestsAllScript.extra.test.js` // 新規実装
+- `__tests__/unit/scripts/runTestsAllScript.coverage.test.js` // 追加テスト
 - `__tests__/unit/scripts/generateCoverageChart.test.js`
 - `__tests__/unit/customReporter.test.js`
 

@@ -283,4 +283,46 @@ describe('Alert Service', () => {
       );
     });
   });
+
+  describe('sendAlert', () => {
+    test('正常系: 一般アラートを送信して成功レスポンスを返す', async () => {
+      const result = await alertService.sendAlert({
+        subject: 'Test',
+        message: 'Hello',
+        severity: 'INFO',
+        detail: { foo: 'bar' }
+      });
+
+      expect(result).toEqual({
+        success: true,
+        timestamp: MOCK_TIMESTAMP
+      });
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        'ALERT:',
+        expect.objectContaining({
+          subject: 'Test',
+          message: 'Hello',
+          severity: 'INFO',
+          foo: 'bar'
+        })
+      );
+    });
+
+    test('異常系: 通知処理中にエラーが発生した場合はエラーレスポンスを返す', async () => {
+      const error = new Error('send error');
+      logger.warn.mockImplementationOnce(() => {
+        throw error;
+      });
+
+      const result = await alertService.sendAlert({ message: 'Hello' });
+
+      expect(result).toEqual({
+        success: false,
+        error: error.message
+      });
+
+      expect(logger.error).toHaveBeenCalledWith('Failed to send alert:', error);
+    });
+  });
 });

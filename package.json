@@ -13,7 +13,8 @@
     "test:coverage": "jest --coverage --forceExit",
     "test:clean": "rm -rf ./test-results && mkdir -p ./test-results",
     "dynamodb:start": "java -Djava.library.path=./dynamodb-local/DynamoDBLocal_lib -jar ./dynamodb-local/DynamoDBLocal.jar -inMemory -port 8000",
-    "test:setup": "node scripts/setup-test-env.js"
+    "test:setup": "node scripts/setup-test-env.js",
+    "test:all": "jest --runInBand --all --forceExit"
   },
   "keywords": [
     "portfolio",
@@ -30,11 +31,10 @@
     "@aws-sdk/client-dynamodb": "^3.808.0",
     "@aws-sdk/lib-dynamodb": "^3.808.0",
     "@aws-sdk/util-dynamodb": "^3.808.0",
-    "aws-sdk": "^2.1570.0",
     "@aws-sdk/client-sns": "^3.808.0",
     "@aws-sdk/client-budgets": "^3.808.0",
     "@aws-sdk/client-sts": "^3.808.0",
-    "@aws-sdk/client-lambda": "^3.808.0", 
+    "@aws-sdk/client-lambda": "^3.808.0",
     "@aws-sdk/client-cloudwatch": "^3.808.0",
     "@aws-sdk/client-ssm": "^3.808.0",
     "google-auth-library": "^9.15.1",

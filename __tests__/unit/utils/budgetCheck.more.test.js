@@ -1,10 +1,9 @@
-const mockGetMetricStatistics = jest.fn();
-const mockCloudWatch = {
-  getMetricStatistics: jest.fn(() => ({ promise: mockGetMetricStatistics }))
-};
+const mockSend = jest.fn();
+const mockCloudWatch = { send: mockSend };
 
-jest.mock('aws-sdk', () => ({
-  CloudWatch: jest.fn(() => mockCloudWatch)
+jest.mock('@aws-sdk/client-cloudwatch', () => ({
+  CloudWatchClient: jest.fn(() => mockCloudWatch),
+  GetMetricStatisticsCommand: jest.fn(params => ({ params }))
 }));
 
 jest.mock('../../../src/utils/logger');
@@ -18,28 +17,28 @@ let cache;
 
 beforeEach(() => {
   jest.resetModules();
-  mockGetMetricStatistics.mockReset();
+  mockSend.mockReset();
   cache = require('../../../src/services/cache');
   budgetCheck = require('../../../src/utils/budgetCheck');
 });
 
 describe('getBudgetUsage', () => {
   test('calculates usage rate from CloudWatch metrics', async () => {
-    mockGetMetricStatistics.mockResolvedValue({ Datapoints: [{ Sum: 500000 }] });
+    mockSend.mockResolvedValue({ Datapoints: [{ Sum: 500000 }] });
     const usage = await budgetCheck.getBudgetUsage();
-    expect(mockCloudWatch.getMetricStatistics).toHaveBeenCalled();
+    expect(mockCloudWatch.send).toHaveBeenCalled();
     expect(usage).toBeCloseTo(0.5);
   });
 
   test('returns 0 when no datapoints', async () => {
-    mockGetMetricStatistics.mockResolvedValue({ Datapoints: [] });
+    mockSend.mockResolvedValue({ Datapoints: [] });
     const usage = await budgetCheck.getBudgetUsage();
     expect(usage).toBe(0);
   });
 
   test('throws on CloudWatch error', async () => {
     const err = new Error('fail');
-    mockGetMetricStatistics.mockRejectedValue(err);
+    mockSend.mockRejectedValue(err);
     await expect(budgetCheck.getBudgetUsage()).rejects.toThrow('fail');
   });
 });

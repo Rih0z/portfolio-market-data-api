@@ -57,6 +57,7 @@
 - `__tests__/unit/scripts/runTestsAllScript.extra.test.js` // 新規実装
 - `__tests__/unit/scripts/runTestsAllScript.coverage.test.js` // 追加テスト
 - `__tests__/unit/scripts/runTestsAllScript.forceVerbose.test.js` // --force-coverageと--verbose-coverageオプションのテスト
+- `__tests__/unit/scripts/runTestsAllScript.misc.test.js` // --html-coverageや--visual等の追加オプションテスト
 - `__tests__/unit/scripts/generateCoverageChart.test.js`
 - `__tests__/unit/customReporter.test.js`
 

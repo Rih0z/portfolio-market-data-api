@@ -61,6 +61,7 @@
 - `__tests__/unit/scripts/runTestsAllScript.misc.test.js` // --html-coverageや--visual等の追加オプションテスト
 - `__tests__/unit/scripts/runTestsAllScript.quick.test.js` // quickモードとspecificモードのテスト
 - `__tests__/unit/scripts/runTestsAllScript.ignoreCoverage.test.js` // --ignore-coverage-errorsオプションのテスト
+- `__tests__/unit/scripts/runTestsAllScript.options.test.js` // --autoや--mockなど追加フラグのテスト
 - `__tests__/unit/scripts/generateCoverageChart.test.js`
 - `__tests__/unit/customReporter.test.js`
 

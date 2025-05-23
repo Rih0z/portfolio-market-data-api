@@ -632,7 +632,7 @@ if [ $NO_COVERAGE -ne 1 ] || [ $FORCE_COVERAGE -eq 1 ]; then
   else
     # coverageMapプロパティの存在チェック
     if ! grep -q "coverageMap" ./test-results/detailed-results.json; then
-      print_warning "カバレッジデータが結果ファイルに含まれていません。"
+      print_warning "カバレッジデータが結果ファイルに含まれていません"
       print_info "Jest設定でcollectCoverageオプションが有効になっていることを確認してください。"
       
       # カバレッジファイルを直接コピー（緊急対応）
@@ -641,7 +641,7 @@ if [ $NO_COVERAGE -ne 1 ] || [ $FORCE_COVERAGE -eq 1 ]; then
         cp ./coverage/coverage-final.json ./test-results/coverage-data.json
       fi
     else
-      print_success "カバレッジデータが結果ファイルに含まれています。"
+      print_success "カバレッジデータが結果ファイルに含まれています"
     fi
   fi
 fi

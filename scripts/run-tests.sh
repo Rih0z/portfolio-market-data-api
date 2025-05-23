@@ -609,12 +609,18 @@ if [ $NO_COVERAGE -ne 1 ] || [ $FORCE_COVERAGE -eq 1 ]; then
       # coverage-final.json が存在するか確認
       if [ -f "./coverage/coverage-final.json" ]; then
         print_success "coverage-final.json ファイルが見つかりました。"
-        
+
         # デバッグモードでカバレッジファイルの詳細を表示
         if [ $DEBUG_MODE -eq 1 ] || [ $VERBOSE_COVERAGE -eq 1 ]; then
           print_info "カバレッジファイルの先頭部分:"
           head -n 20 ./coverage/coverage-final.json
         fi
+
+        # coverage データを test-results にコピーして成功扱い
+        print_info "coverage-final.json ファイルを ./test-results/coverage-data.json にコピーします。"
+        mkdir -p ./test-results
+        cp ./coverage/coverage-final.json ./test-results/coverage-data.json
+        print_success "カバレッジデータが結果ファイルに含まれています"
       else
         print_warning "coverage-final.json ファイルが見つかりません。"
         
@@ -638,7 +644,9 @@ if [ $NO_COVERAGE -ne 1 ] || [ $FORCE_COVERAGE -eq 1 ]; then
       # カバレッジファイルを直接コピー（緊急対応）
       if [ -f "./coverage/coverage-final.json" ]; then
         print_info "coverage-final.json ファイルを ./test-results/coverage-data.json にコピーします。"
+        mkdir -p ./test-results
         cp ./coverage/coverage-final.json ./test-results/coverage-data.json
+        print_success "カバレッジデータが結果ファイルに含まれています"
       fi
     else
       print_success "カバレッジデータが結果ファイルに含まれています"

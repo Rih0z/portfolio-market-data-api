@@ -26,8 +26,6 @@
 ```bash
 # 依存関係のインストール
 npm install
-# cross-env がインストールされていることを確認します
-./node_modules/.bin/cross-env --version 2>/dev/null || echo "cross-env が見つからない場合、scripts/run-tests.sh では環境変数を直接設定して実行します"
 
 # DynamoDB Localのセットアップ（初回のみ必要）
 mkdir -p ./dynamodb-local

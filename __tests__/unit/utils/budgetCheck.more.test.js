@@ -58,6 +58,14 @@ describe('getBudgetWarningMessage', () => {
     delete process.env.TEST_BUDGET_WARNING;
   });
 
+  test('critical env flag produces critical message', async () => {
+    cache.get.mockResolvedValue(null);
+    process.env.TEST_BUDGET_CRITICAL = 'true';
+    const message = await budgetCheck.getBudgetWarningMessage();
+    expect(message).toContain('CRITICAL');
+    delete process.env.TEST_BUDGET_CRITICAL;
+  });
+
   test('returns default message on error', async () => {
     cache.get.mockRejectedValue(new Error('x'));
     const message = await budgetCheck.getBudgetWarningMessage();

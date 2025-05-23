@@ -146,3 +146,14 @@ npm warn Unknown env config "http-proxy". This will stop working in the next maj
 
 sh: 1: jest: not found
 ```
+
+## 2025/05/23 テスト実行結果
+
+テスト実行中に依存パッケージを取得できず失敗しました。
+```
+npm ERR! code EHOSTUNREACH
+npm ERR! syscall connect
+npm ERR! errno EHOSTUNREACH
+npm ERR! request to https://registry.npmjs.org/cross-env failed, reason: connect EHOSTUNREACH 172.26.0.3:8080
+npm ERR! A complete log of this run can be found in: /root/.npm/_logs/2025-05-23T18_20_17_338Z-debug-0.log
+```

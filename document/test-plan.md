@@ -9,6 +9,7 @@
 #### 認証関連 (Auth)
 - `__tests__/unit/function/auth/getSession.test.js`
 - `__tests__/unit/function/auth/logout.test.js`
+- `__tests__/unit/function/auth/googleLogin.test.js` // 新規追加
 - `__tests__/unit/services/googleAuthService.test.js`
 - `__tests__/unit/utils/tokenManager.test.js`
 

@@ -59,7 +59,7 @@
 | src/function/admin/manageFallbacks.js | 0.00% | 0.00% | 0.00% | 0.00% |
 | src/function/admin/resetUsage.js | 0.00% | 0.00% | 0.00% | 0.00% |
 | src/function/auth/getSession.js | 83.72% | 78.79% | 100.00% | 83.72% |
-| src/function/auth/googleLogin.js | 84.62% | 56.25% | 100.00% | 84.62% |
+| src/function/auth/googleLogin.js | 100.00% | 100.00% | 100.00% | 100.00% |
 | src/function/auth/logout.js | 79.59% | 78.95% | 100.00% | 79.59% |
 | src/function/drive/fileVersions.js | 86.96% | 72.73% | 100.00% | 86.67% |
 | src/function/drive/listFiles.js | 97.06% | 62.50% | 100.00% | 100.00% |

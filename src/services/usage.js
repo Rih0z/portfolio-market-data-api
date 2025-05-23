@@ -21,6 +21,13 @@
 const fallbackDataStore = require('./fallbackDataStore');
 const { warnDeprecation } = require('../utils/deprecation');
 const { ENV } = require('../config/envConfig');
+const { PutCommand, UpdateCommand, GetCommand } = require('@aws-sdk/lib-dynamodb');
+const { getDynamoDb } = require('../utils/awsConfig');
+const { withRetry } = require('../utils/retry');
+const logger = require('../utils/logger');
+
+// Usage table name
+const USAGE_TABLE = process.env.USAGE_TABLE || `${process.env.DYNAMODB_TABLE_PREFIX || 'portfolio-market-data-'}usage`;
 
 /**
  * 環境に基づいて非推奨機能の処理方法を決定する
@@ -117,12 +124,159 @@ const updateFallbackData = async (dataType, dataItems) => {
   return fallbackDataStore.updateFallbackData(dataType, dataItems);
 };
 
+// ---------------------------------------------------------------------------
+// API usage tracking implementation
+// ---------------------------------------------------------------------------
+
+const getUsageRecord = async (key) => {
+  const db = getDynamoDb();
+  const command = new GetCommand({
+    TableName: USAGE_TABLE,
+    Key: { id: key }
+  });
+  const result = await withRetry(() => db.send(command));
+  return result.Item ? result.Item.count : 0;
+};
+
+const incrementUsageRecord = async (key) => {
+  const db = getDynamoDb();
+  const command = new UpdateCommand({
+    TableName: USAGE_TABLE,
+    Key: { id: key },
+    UpdateExpression: 'ADD #count :inc',
+    ExpressionAttributeNames: { '#count': 'count' },
+    ExpressionAttributeValues: { ':inc': 1 },
+    ReturnValues: 'UPDATED_NEW'
+  });
+  const result = await withRetry(() => db.send(command));
+  return result.Attributes.count;
+};
+
+const formatUsage = (dailyCount, monthlyCount) => ({
+  daily: {
+    count: dailyCount,
+    limit: ENV.DAILY_REQUEST_LIMIT,
+    percentage: Math.round((dailyCount / ENV.DAILY_REQUEST_LIMIT) * 100)
+  },
+  monthly: {
+    count: monthlyCount,
+    limit: ENV.MONTHLY_REQUEST_LIMIT,
+    percentage: Math.round((monthlyCount / ENV.MONTHLY_REQUEST_LIMIT) * 100)
+  }
+});
+
+/**
+ * 使用量を確認して更新する
+ * @param {Object} params - リクエスト情報
+ * @returns {Promise<{allowed:boolean, usage:Object}>}
+ */
+const checkAndUpdateUsage = async (params = {}) => {
+  const now = new Date();
+  const dayKey = `daily:${now.toISOString().slice(0, 10)}`;
+  const monthKey = `monthly:${now.toISOString().slice(0, 7)}`;
+
+  const [dailyCount, monthlyCount] = await Promise.all([
+    incrementUsageRecord(dayKey),
+    incrementUsageRecord(monthKey)
+  ]);
+
+  const usage = formatUsage(dailyCount, monthlyCount);
+  const allowed =
+    dailyCount <= ENV.DAILY_REQUEST_LIMIT &&
+    monthlyCount <= ENV.MONTHLY_REQUEST_LIMIT;
+
+  logger.info('API usage updated', { usage });
+
+  return { allowed, usage };
+};
+
+/**
+ * 使用統計を取得する
+ * @returns {Promise<{current:Object, history:Array}>}
+ */
+const getUsageStats = async () => {
+  const now = new Date();
+  const dayKey = `daily:${now.toISOString().slice(0, 10)}`;
+  const monthKey = `monthly:${now.toISOString().slice(0, 7)}`;
+
+  const [dailyCount, monthlyCount] = await Promise.all([
+    getUsageRecord(dayKey),
+    getUsageRecord(monthKey)
+  ]);
+
+  return {
+    current: formatUsage(dailyCount, monthlyCount),
+    history: []
+  };
+};
+
+/**
+ * 使用量カウンターをリセットする
+ * @param {string} type - 'daily' | 'monthly' | 'all'
+ * @returns {Promise<Object>} 結果
+ */
+const resetUsage = async (type = 'daily') => {
+  const now = new Date();
+  const tasks = [];
+
+  if (type === 'daily' || type === 'all') {
+    const key = `daily:${now.toISOString().slice(0, 10)}`;
+    tasks.push(
+      withRetry(() =>
+        getDynamoDb().send(
+          new PutCommand({ TableName: USAGE_TABLE, Item: { id: key, count: 0 } })
+        )
+      )
+    );
+  }
+
+  if (type === 'monthly' || type === 'all') {
+    const key = `monthly:${now.toISOString().slice(0, 7)}`;
+    tasks.push(
+      withRetry(() =>
+        getDynamoDb().send(
+          new PutCommand({ TableName: USAGE_TABLE, Item: { id: key, count: 0 } })
+        )
+      )
+    );
+  }
+
+  await Promise.all(tasks);
+  logger.info(`Usage counters reset: ${type}`);
+  return { result: true };
+};
+
+/**
+ * ユーザーごとの使用率を取得する（簡易実装）
+ * @param {string} userId - ユーザーID
+ * @param {string} period - 'daily' | 'monthly'
+ * @returns {Promise<Object>} 使用率
+ */
+const getUserRate = async (userId, period = 'daily') => {
+  const now = new Date();
+  const keySuffix = period === 'daily'
+    ? now.toISOString().slice(0, 10)
+    : now.toISOString().slice(0, 7);
+  const key = `user:${userId}:${period}:${keySuffix}`;
+  const count = await getUsageRecord(key);
+  const limit = period === 'daily' ? ENV.DAILY_REQUEST_LIMIT : ENV.MONTHLY_REQUEST_LIMIT;
+  return {
+    count,
+    limit,
+    percentage: Math.round((count / limit) * 100)
+  };
+};
+
 module.exports = {
   recordFailedFetch,
   getFallbackForSymbol,
   getDefaultFallbackData,
   saveFallbackData,
   updateFallbackData,
+  checkAndUpdateUsage,
+  getUsageStats,
+  resetUsage,
+  getUserRate,
   // テスト用にヘルパー関数をエクスポート
   _shouldThrowDeprecationError: shouldThrowDeprecationError
 };

@@ -44,3 +44,49 @@ describe('CustomReporter utility methods', () => {
     delete process.env.COVERAGE_TARGET;
   });
 });
+
+describe('coverage map creation', () => {
+  test('createCoverageMapFromData generates correct summary', () => {
+    const reporter = new CustomReporter({}, {});
+    const coverageData = {
+      '/tmp/file.js': {
+        s: { '1': 1, '2': 0 },
+        f: { '1': 1 },
+        b: { '1': [1, 0] },
+        l: { '1': 1, '2': 0 }
+      }
+    };
+
+    reporter.createCoverageMapFromData(coverageData);
+    const summary = reporter.results.coverageMap.getCoverageSummary().toJSON();
+    expect(summary.statements.pct).toBeCloseTo(50);
+    expect(summary.branches.pct).toBeCloseTo(50);
+    expect(summary.functions.pct).toBeCloseTo(100);
+    expect(summary.lines.pct).toBeCloseTo(50);
+  });
+
+  test('createSimpleCoverageMap uses summary data', () => {
+    const reporter = new CustomReporter({}, {});
+    const summaryData = {
+      total: {
+        statements: { covered: 80, total: 100, pct: 80 },
+        branches: { covered: 40, total: 80, pct: 50 },
+        functions: { covered: 10, total: 20, pct: 50 },
+        lines: { covered: 80, total: 100, pct: 80 }
+      },
+      '/tmp/file.js': {
+        statements: { covered: 80, total: 100, pct: 80 },
+        branches: { covered: 40, total: 80, pct: 50 },
+        functions: { covered: 10, total: 20, pct: 50 },
+        lines: { covered: 80, total: 100, pct: 80 }
+      }
+    };
+
+    reporter.createSimpleCoverageMap(summaryData);
+    const summary = reporter.results.coverageMap.getCoverageSummary().toJSON();
+    expect(summary.statements.pct).toBe(80);
+    const files = reporter.results.coverageMap.getFileCoverageInfo();
+    expect(files[0].filename).toBe('/tmp/file.js');
+    expect(files[0].statements.pct).toBe(80);
+  });
+});

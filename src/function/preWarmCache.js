@@ -165,3 +165,15 @@ async function prewarmExchangeRates() {
     throw error;
   }
 }
+
+// テスト環境向けに内部関数と定数をエクスポート
+if (process.env.NODE_ENV === 'test') {
+  module.exports._testExports = {
+    cleanupExpiredData,
+    prewarmUsStocks,
+    prewarmJpStocks,
+    prewarmMutualFunds,
+    prewarmExchangeRates,
+    PREWARM_SYMBOLS
+  };
+}

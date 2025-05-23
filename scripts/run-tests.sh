@@ -570,7 +570,8 @@ else
 fi
 
 # テスト実行コマンドの準備
-JEST_CMD="jest $JEST_ARGS"
+# ローカルのnode_modulesからJestを確実に実行するためnpxを利用
+JEST_CMD="npx jest $JEST_ARGS"
 
 # cross-env の有無を確認してコマンドを設定
 if command -v cross-env > /dev/null 2>&1; then
@@ -583,7 +584,7 @@ fi
 # デバッグモードの場合、実行予定のコマンドを表示
 if [ $DEBUG_MODE -eq 1 ] || [ $VERBOSE_COVERAGE -eq 1 ]; then
   print_info "実行するJestコマンド:"
-  echo "npx $JEST_CMD"
+  echo "$JEST_CMD"
   if [ -n "$ENV_VARS" ]; then
     print_info "環境変数:"
     echo "$ENV_VARS"

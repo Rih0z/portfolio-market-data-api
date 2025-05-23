@@ -47,6 +47,6 @@ describe('run-tests.sh additional options', () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('クリーンアップ完了');
     expect(result.stdout).toContain('カバレッジ目標: 最終段階');
-    expect(result.stdout).toContain('カバレッジ結果ファイルが見つかりません');
+    expect(result.stdout).toContain('カバレッジデータが結果ファイルに含まれています');
   });
 });

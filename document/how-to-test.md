@@ -279,6 +279,13 @@ npm run dynamodb:start
 open ./test-results/visual-report.html
 ```
 
+### cross-env コマンドが見つからない
+
+```bash
+# cross-env がインストールされていない場合、スクリプトは自動的に env コマンドへフォールバックします。
+# 必要に応じて npm install を実行して cross-env をインストールしてください。
+```
+
 ---
 
 このガイドについて質問や問題がある場合は、お気軽にお問い合わせください。

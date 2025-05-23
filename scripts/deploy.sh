@@ -13,3 +13,6 @@ npm run deploy
 
 # 結果を表示
 serverless info --stage dev
+
+# オプション: ログの確認
+echo "デプロイが完了しました。ログを確認するには 'npm run logs' を実行してください。"

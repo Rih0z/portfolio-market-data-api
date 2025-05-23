@@ -383,7 +383,7 @@ curl "https://[api-id].execute-api.us-west-2.amazonaws.com/dev/api/market-data?t
 **解決策**: 
 1. `.serverlessignore`で不要ファイルを除外
 2. `devDependencies`を本番デプロイから除外
-3. AWS SDKをdependenciesから削除（Lambda環境で利用可能）
+3. AWS SDK v2を削除し、必要なAWS SDK v3クライアントのみインストール
 4. 段階的デプロイ（最小構成から開始）
 
 ### 8.5 リージョン設定エラー
@@ -473,7 +473,7 @@ A: Serverless FrameworkでのLambda関数デプロイには`iam:CreateRole`権�
 
 ### Q2: node_modulesサイズを小さくするには？
 A: 
-- AWS SDKを`devDependencies`に移動
+- AWS SDK v2を使わず、AWS SDK v3クライアントのみ利用
 - `.serverlessignore`で不要ファイルを除外
 - `npm install --production`で本番用のみインストール
 

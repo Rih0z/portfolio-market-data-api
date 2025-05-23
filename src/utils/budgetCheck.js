@@ -13,7 +13,8 @@
  */
 'use strict';
 
-const AWS = require('aws-sdk');
+const { GetMetricStatisticsCommand } = require('@aws-sdk/client-cloudwatch');
+const { getCloudWatch } = require('./awsConfig');
 const logger = require('./logger');
 const cacheService = require('../services/cache');
 
@@ -112,8 +113,8 @@ const isBudgetWarning = async () => {
  * @returns {Promise<number>} 使用率（0～1の範囲）
  */
 const getBudgetUsage = async () => {
-  // AWS SDK の設定
-  const cloudwatch = new AWS.CloudWatch();
+  // CloudWatch クライアントの取得
+  const cloudwatch = getCloudWatch();
   
   // 現在の月の開始と終了を計算
   const now = new Date();
@@ -138,7 +139,8 @@ const getBudgetUsage = async () => {
   
   try {
     // メトリクスの取得
-    const data = await cloudwatch.getMetricStatistics(params).promise();
+    const command = new GetMetricStatisticsCommand(params);
+    const data = await cloudwatch.send(command);
     
     if (!data || !data.Datapoints || data.Datapoints.length === 0) {
       logger.warn('No CloudWatch datapoints found for Lambda usage');

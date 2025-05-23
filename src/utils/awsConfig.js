@@ -19,6 +19,7 @@ const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
 const { DynamoDBDocumentClient } = require('@aws-sdk/lib-dynamodb');
 const { SNSClient } = require('@aws-sdk/client-sns');
 const { STSClient } = require('@aws-sdk/client-sts');
+const { CloudWatchClient } = require('@aws-sdk/client-cloudwatch');
 
 const logger = require('./logger');
 
@@ -46,7 +47,8 @@ const clients = {
   dynamoDb: null,
   dynamoDbDoc: null,
   sns: null,
-  sts: null
+  sts: null,
+  cloudWatch: null
 };
 
 /**
@@ -157,12 +159,28 @@ const getSTS = () => {
   if (clients.sts) {
     return clients.sts;
   }
-  
+
   clients.sts = new STSClient(
     getAWSOptions({ service: 'sts' })
   );
-  
+
   return clients.sts;
+};
+
+/**
+ * CloudWatch クライアントインスタンスを取得
+ * @returns {CloudWatchClient} CloudWatch クライアント
+ */
+const getCloudWatch = () => {
+  if (clients.cloudWatch) {
+    return clients.cloudWatch;
+  }
+
+  clients.cloudWatch = new CloudWatchClient(
+    getAWSOptions({ service: 'cloudwatch' })
+  );
+
+  return clients.cloudWatch;
 };
 
 /**
@@ -173,12 +191,14 @@ const resetAWSConfig = () => {
   clients.dynamoDbDoc = null;
   clients.sns = null;
   clients.sts = null;
+  clients.cloudWatch = null;
 };
 
 module.exports = {
   getDynamoDb,
   getSNS,
   getSTS,
+  getCloudWatch,
   resetAWSConfig,
   // テスト用に追加
   getDynamoDbClient,
